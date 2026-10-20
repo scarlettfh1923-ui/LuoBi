@@ -51,9 +51,10 @@ object ImgSources {
         return when (s.type) {
             "pexafy" -> {
                 val o = when (orient) { "landscape" -> "&orientation=landscape"; "portrait" -> "&orientation=portrait"; else -> "" }
-                val t = get("https://api.pexafy.com/api/v1/search/photos?q=${enc(query)}&page=$page&per_page=$per$o", mapOf("x-api-key" to key(ctx, s.id)))
+                val t = get("https://api.pexafy.com/api/v1/search/photos?q=${enc(query)}&per_page=${(per * page).coerceAtMost(100)}$o", mapOf("x-api-key" to key(ctx, s.id)))
                 val j = JSONObject(t); val a = j.optJSONArray("data") ?: JSONArray()
-                (0 until a.length()).mapNotNull { a.optJSONObject(it) }.mapNotNull { x ->
+                // Pexafy 用游标分页；这里换一批 = 取更大的 per_page 再跳过前几页，免得保存游标
+                (0 until a.length()).mapNotNull { a.optJSONObject(it) }.drop(per * (page - 1)).mapNotNull { x ->
                     val u = x.optJSONObject("urls") ?: return@mapNotNull null
                     val reg = u.optString("regular").ifBlank { return@mapNotNull null }
                     val at = x.optJSONObject("attribution")
