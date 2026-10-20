@@ -130,13 +130,13 @@ fun SharePanel(custom: List<Channel>, act: ChannelActions, editBar: () -> Unit, 
                 }
             }
             if (items.isEmpty()) Text("所有渠道都已在分享栏里", Modifier.padding(vertical = 20.dp), fontSize = 13.sp, color = P3.text3)
-            items.forEach { d ->
-                Row(Modifier.fillMaxWidth().clickable { if (d.id == "xhs") dismiss(); act.run(d.id, custom) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SvgIcon(d.icon, P3.text2, 22.dp)
+            items.forEachIndexed { i, d ->
+                if (i > 0) HorizontalDivider(Modifier.padding(start = 34.dp), thickness = 0.5.dp, color = P3.border)
+                Row(Modifier.fillMaxWidth().clickable { if (d.id == "xhs") dismiss(); act.run(d.id, custom) }.padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SvgIcon(d.icon, P3.text, 22.dp)
                     Text(if (act.busy == d.name) "${d.name}（处理中…）" else d.name, Modifier.weight(1f).padding(start = 12.dp), fontSize = 15.sp, color = P3.text)
                     Text(ChannelIds.note(d.id), fontSize = 12.sp, color = P3.text3)
                 }
-                HorizontalDivider(color = P3.border)
             }
         }
     }

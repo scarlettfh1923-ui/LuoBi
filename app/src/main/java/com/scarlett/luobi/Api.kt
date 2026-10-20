@@ -106,23 +106,34 @@ object Ai {
         return CleanParse.parse(txt, ct.fieldList()) to ct
     }
 
-    const val OUT_RULE = "只输出一个 JSON 对象：{\"title\":\"标题\",\"body\":\"正文 Markdown：段落之间空一行；小标题单独一行，以 ## 开头（下一级用 ###）；全文挑 1–3 句最有力的金句用 **加粗**；需要时可用 > 引用、- 列表、--- 分隔线；不要表格和代码块\",\"tags\":[\"标签1\",\"标签2\"]}，tags 为 3–8 个不带 # 的话题词，不要输出其它内容。"
+    const val OUT_RULE = "只输出一个 JSON 对象：{\"title\":\"标题\",\"body\":\"正文 Markdown：段落之间空一行；小标题单独一行，以 ## 开头（下一级用 ###）；小标题必须是有内容的短语（概括这一节讲什么），不要只写数字或序号（如 ## 1、## 一、## 01）；全文挑 1–3 句最有力的金句用 **加粗**；需要时可用 > 引用、- 列表、--- 分隔线；不要表格和代码块\",\"tags\":[\"标签1\",\"标签2\"]}，tags 为 3–8 个不带 # 的话题词，不要输出其它内容。"
 
     /** 最终提示词 = 模板填值（空变量整行删）+ 篇幅 */
-    fun finalPrompt(tpl: String, values: Map<String, String>, cleaned: String, attachRaw: Boolean, length: Int, range: Pair<Int, Int> = Lengths.DEFAULT[length.coerceIn(0, 2)]): String {
+    fun finalPrompt(tpl: String, values: Map<String, String>, cleaned: String, attachRaw: Boolean, length: Int, range: Pair<Int, Int> = Lengths.DEFAULT[length.coerceIn(0, 2)], known: Set<String> = Vars.defaultKnown): String {
         val v = values.toMutableMap(); if (attachRaw) v[Vars.RAW] = cleaned
-        return Vars.fill(tpl, v).trimEnd() + "\n" + Lengths.hint(length, range)
+        val body = Vars.fill(tpl, v, known + Vars.RAW).trimEnd()
+        return if (Lengths.inTemplate(tpl)) body else body + "\n" + Lengths.hint(length, range)
+    }
+
+    /** 用模板库里当前版本重建提示词；模板已删则返回 null（沿用快照） */
+    suspend fun current(ctx: Context, d: GenJob): String? {
+        if (d.kind != "write" || d.templateId <= 0) return null
+        val db = AppDb.get(ctx); val tpl = db.templates().get(d.templateId) ?: return null
+        val s = Settings(ctx); val known = (db.cleans().active()?.fieldList() ?: Vars.DEFAULT_FIELDS).toSet()
+        return finalPrompt(tpl.prompt, d.values, d.cleaned, s.attachRaw, s.length, s.lengthRange(), known)
     }
 
     /** 第 ③ 步：生成并存入文案库，返回 note id */
     suspend fun write(ctx: Context, d: GenJob): Long {
         val t = target(ctx, d.model)
-        val txt = chatText(t, "你是专业的中文写作者。$OUT_RULE", d.finalPrompt, true)
+        // 1.4：每次（含失败重试）都按「当前」模板重新拼提示词，不用排队时存下的旧快照
+        val prompt = current(ctx, d) ?: d.finalPrompt
+        val txt = chatText(t, "你是专业的中文写作者。$OUT_RULE", prompt, true)
         val a = ArticleParse.parse(txt, d.cleaned.take(20))
         if (a.body.isBlank()) throw AiFormatError("缺少正文", txt.take(200))
         val db = AppDb.get(ctx)
         val n = Note(title = a.title, body = a.body, tags = a.tags.joinToString(" "), raw = d.raw, cleaned = d.cleaned,
-            intent = JSONObject(d.values as Map<*, *>).toString(), templateId = d.templateId, templateName = d.templateName, model = "${t.name} · ${t.model}", finalPrompt = d.finalPrompt)
+            intent = JSONObject(d.values as Map<*, *>).toString(), templateId = d.templateId, templateName = d.templateName, model = "${t.name} · ${t.model}", finalPrompt = prompt)
         val id = db.notes().insert(n); db.notes().update(n.copy(id = id, rootId = id))
         return id
     }

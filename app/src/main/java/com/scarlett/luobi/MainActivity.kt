@@ -154,7 +154,7 @@ fun App() {
                     Box(Modifier.padding(top = pad.calculateTopPadding()).statusBarsPadding()) {
                         val bottom = pad.calculateBottomPadding()
                         when (r.i) {
-                            0 -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) }, { go(Route.Sub("templates")) }, startGen, { go(Route.Sub("length")) })
+                            0 -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) }, { go(Route.Sub("templates")) }, startGen, { go(Route.Sub("length")) }, { go(Route.Sub("template:$it")) })
                             1 -> LibraryScreen(db, bottom, { tab(0) }, libManaging, { libManaging = it }) { go(Route.Read(it)) }
                             else -> SettingsHome(db, bottom) { go(Route.Sub(it)) }
                         }
@@ -194,6 +194,18 @@ private fun StepHead(n: Int, title: String, state: Int, right: (@Composable () -
     }
 }
 
+/** 已完成的步骤收成一行：✓ 标题 · 摘要  修改 */
+@Composable
+private fun DoneRow(title: String, summary: String, edit: () -> Unit) {
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(14.dp))
+        .clickable(onClick = edit).padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(20.dp).clip(CircleShape).background(P3.accent), contentAlignment = Alignment.Center) { SvgIcon(Ic.check, Color.White, 13.dp) }
+        Text(title, Modifier.padding(start = 10.dp), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = P3.text, maxLines = 1)
+        Text("  " + summary, Modifier.weight(1f), fontSize = 13.sp, color = P3.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        TextAction("修改") { edit() }
+    }
+}
+
 @Composable
 private fun Locked(n: Int, title: String, sub: String) {
     Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).alpha(.6f), color = P3.surface) {
@@ -203,7 +215,7 @@ private fun Locked(n: Int, title: String, sub: String) {
 }
 
 @Composable
-fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, genErr: GenErr?, clearGenErr: () -> Unit, goModels: () -> Unit, goTemplates: () -> Unit, start: (GenJob) -> Unit, goLength: () -> Unit = {}) {
+fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, genErr: GenErr?, clearGenErr: () -> Unit, goModels: () -> Unit, goTemplates: () -> Unit, start: (GenJob) -> Unit, goLength: () -> Unit = {}, goTemplate: (Long) -> Unit = {}) {
     val ctx = LocalContext.current; val s = remember { Settings(ctx) }; val scope = rememberCoroutineScope()
     val templates by db.templates().all().collectAsState(initial = emptyList())
     var keyVer by remember { mutableIntStateOf(0) }
@@ -219,7 +231,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                 ws.cleaned = r.cleaned; ws.fields = ct.fieldList()
                 ws.values.clear(); r.values.forEach { (k, v) -> ws.values.add(k to v) }
                 val list = db.templates().list()
-                val rec = CleanParse.match(r.recommend, list) { it.name } ?: list.firstOrNull()
+                val rec = CleanParse.matchPrefer(r.recommend, list, { it.name }, { !it.builtIn }) ?: list.firstOrNull()
                 ws.recommendId = rec?.id ?: 0; ws.templateId = rec?.id ?: 0
                 ws.step = 1
                 ws.cleanedReady = true
@@ -242,18 +254,15 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
     var attachRaw by remember { mutableStateOf(s.attachRaw) }
     var preview by remember { mutableStateOf(false) }
     val vals = ws.map()
-    val finalPrompt = if (tpl != null) Ai.finalPrompt(tpl.prompt, vals, ws.cleaned, attachRaw, length, lenRange) else ""
+    val finalPrompt = if (tpl != null) Ai.finalPrompt(tpl.prompt, vals, ws.cleaned, attachRaw, length, lenRange, ws.fields.toSet()) else ""
+    val known = ws.fields.toSet() + Vars.RAW
 
     LazyColumnFill(bottom) {
         item { BigTitle("落笔", "三步：理清 → 选模板 → 生成") }
         // ① 清洗与意图
         item {
-            if (ws.step > 1) Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                StepHead(1, "内容清洗与意图识别", 2) { TextAction("修改") { ws.step = 1 } }
-                Text(ws.values.filter { it.second.isNotBlank() }.joinToString(" ") { "{${it.first}}" }.ifBlank { "未识别到意图" } +
-                    (templates.firstOrNull { it.id == ws.recommendId }?.let { " · 推荐「${it.name}」" } ?: ""),
-                    Modifier.padding(start = 40.dp, top = 4.dp), fontSize = 13.sp, color = P3.text2)
-            } else Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+            if (ws.step > 1) DoneRow("清洗与意图", ws.values.filter { it.second.isNotBlank() }.joinToString(" · ") { it.first }.ifBlank { "未识别到意图" }) { ws.step = 1 }
+            else Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 if (!ws.cleanedReady) {
                     StepHead(1, "内容清洗与意图识别", 1) { Text("DeepSeek", Modifier.clip(RoundedCornerShape(50)).background(P3.surface2).padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, color = P3.text2, fontFamily = Mono) }
                     Spacer(Modifier.height(12.dp))
@@ -312,10 +321,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
         item {
             when {
                 ws.step < 2 -> Locked(2, "选择模板", "根据意图推荐模板")
-                ws.step > 2 -> Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                    StepHead(2, "选择模板", 2) { TextAction("修改") { ws.step = 2 } }
-                    Text((tpl?.name ?: "未选择") + if (tpl?.id == ws.recommendId) "（推荐）" else "", Modifier.padding(start = 40.dp, top = 4.dp), fontSize = 13.sp, color = P3.text2)
-                }
+                ws.step > 2 -> DoneRow("模板", (tpl?.name ?: "未选择") + (if (tpl != null && !tpl.builtIn) " · 我的" else "") + if (tpl?.id == ws.recommendId) " · 推荐" else "") { ws.step = 2 }
                 else -> Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                     StepHead(2, "选择模板", 1)
                     Spacer(Modifier.height(10.dp))
@@ -328,7 +334,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(t.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
                                 if (t.id == ws.recommendId) Text("推荐", Modifier.padding(start = 8.dp).clip(RoundedCornerShape(50)).background(P3.accent).padding(horizontal = 8.dp, vertical = 2.dp), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                if (!t.builtIn) Text("我的", Modifier.padding(start = 8.dp), color = P3.text3, fontSize = 11.sp)
+                                if (!t.builtIn) Text("我的", Modifier.padding(start = 8.dp).clip(RoundedCornerShape(50)).background(P3.surface).border(1.dp, P3.borderStrong, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp), color = P3.text2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                             Text(t.desc, Modifier.padding(top = 3.dp), fontSize = 13.sp, color = P3.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
@@ -347,18 +353,20 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
             if (ws.step < 3) Locked(3, "选择模型并生成", "从已配置的模型里选一个")
             else Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 StepHead(3, "选择模型并生成", 1)
-                FieldLabel("已配置的模型")
+                FieldLabel("模型")
                 if (configured.isEmpty()) WarnBox("还没有配置任何模型的 Key，请先到「设置 → 模型与密钥」填写。", Modifier.clickable { goModels() })
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    configured.forEach { m -> Pill("${m.label} · ${m.sub}", ws.model == m.ref) { ws.model = m.ref } }
+                else ChoiceList(configured.map { Triple(it.label, it.sub, ws.model == it.ref) }) { i -> ws.model = configured[i].ref }
+                Spacer(Modifier.height(10.dp))
+                HorizontalDivider(color = P3.border)
+                Row(Modifier.fillMaxWidth().clickable { goLength() }.padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("篇幅", Modifier.weight(1f), fontSize = 15.sp, color = P3.text)
+                    Text(if (tpl != null && Lengths.inTemplate(tpl.prompt)) "模板已指定" else Lengths.label(length, lenRange).replace("（", " · ").replace("）", ""), fontSize = 14.sp, color = P3.text2)
+                    Text("  ›", fontSize = 15.sp, color = P3.text3)
                 }
-                Row(Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(P3.accentSoft).clickable { goLength() }.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("篇幅：" + Lengths.label(length, lenRange), Modifier.weight(1f), fontSize = 13.sp, color = P3.accent)
-                    Text("设置中修改 ›", fontSize = 13.sp, color = P3.accent)
-                }
-                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                HorizontalDivider(color = P3.border)
+                Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("附上清洗后的原文 {原文}", fontSize = 14.sp, color = P3.text)
+                        Text("附上清洗后的原文", fontSize = 15.sp, color = P3.text)
                         Text("作为参考交给写作模型", fontSize = 12.sp, color = P3.text3)
                     }
                     Switch(attachRaw, { attachRaw = it; s.attachRaw = it }, colors = SwitchDefaults.colors(checkedTrackColor = P3.accent))
@@ -373,13 +381,24 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                 }
                 if (preview) {
                     val v2 = vals.toMutableMap().apply { if (attachRaw) put(Vars.RAW, ws.cleaned) }
-                    val segs = Vars.segments(tpl.prompt, v2)
+                    val segs = Vars.segmentsK(tpl.prompt, v2, known)
+                    val ownLen = Lengths.inTemplate(tpl.prompt)
                     Text(buildAnnotatedString {
-                        segs.forEach { (t, hl) -> if (hl) withStyle(SpanStyle(background = P3.accentSoft, color = P3.onAccentSoft, fontWeight = FontWeight.SemiBold)) { append(t) } else append(t) }
-                        append("\n"); append(finalPrompt.substringAfterLast("\n"))
+                        segs.forEach { (t, k) -> when (k) {
+                            1 -> withStyle(SpanStyle(background = P3.accentSoft, color = P3.onAccentSoft, fontWeight = FontWeight.SemiBold)) { append(t) }
+                            2 -> withStyle(SpanStyle(background = P3.warnBg, color = P3.warnText)) { append(t) }
+                            else -> append(t) } }
+                        if (!ownLen) { append("\n"); append(Lengths.hint(length, lenRange)) }
                     }, Modifier.padding(top = 10.dp), fontSize = 14.sp, lineHeight = 23.sp, color = P3.text)
-                    val empties = Vars.emptyUsed(tpl.prompt, v2)
-                    Text("高亮的是识别出的意图" + if (empties.isNotEmpty()) " · ${empties.joinToString("") { "{$it}" }} 为空，那一行已去掉" else "", Modifier.padding(top = 8.dp), fontSize = 12.sp, color = P3.text3)
+                    val unk = Vars.unknown(tpl.prompt, v2, known)
+                    if (unk.isNotEmpty()) Text("${unk.joinToString("") { "{$it}" }} 不是清洗字段，按原样发送（黄色）", Modifier.padding(top = 6.dp), fontSize = 12.sp, color = P3.warnText)
+                    if (ownLen) Text("模板里已写「篇幅」，以模板为准，不再追加设置里的篇幅", Modifier.padding(top = 6.dp), fontSize = 12.sp, color = P3.text3)
+                    val empties = Vars.emptyUsed(tpl.prompt, v2); val dropped = Vars.droppedLines(tpl.prompt, v2, known)
+                    Text("高亮的是识别出的意图" + if (empties.isNotEmpty()) " · ${empties.joinToString("") { "{$it}" }} 为空" + (if (dropped > 0) "，去掉了 $dropped 个只含该变量的短行" else "，只去掉占位") else "", Modifier.padding(top = 8.dp), fontSize = 12.sp, color = P3.text3)
+                }
+                Row(Modifier.padding(top = 10.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("模板「${tpl.name}」" + (if (tpl.updatedAt > 0) "最后修改 " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA).format(java.util.Date(tpl.updatedAt)) else "未修改过"), Modifier.weight(1f), fontSize = 12.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("编辑", Modifier.clip(RoundedCornerShape(6.dp)).clickable { goTemplate(tpl.id) }.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 12.sp, color = P3.accent)
                 }
             }
         }

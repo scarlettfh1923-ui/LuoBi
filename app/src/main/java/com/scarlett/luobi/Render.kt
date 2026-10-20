@@ -283,7 +283,8 @@ object Render {
             val ml = Md.line(p, paras.size)
             when (ml.kind) {
                 MdKind.H2, MdKind.H3 -> {
-                    val lay = layoutRaw(rich(ml.text), if (ml.kind == MdKind.H2) headP else h3P, iw, 1.3f)
+                    val no = Md.sectionNo(ml.text)
+                    val lay = if (no != null) layoutRaw(rich("%02d".format(no)), TextPaint(h3P).apply { color = accent; textSize = h3P.textSize * 0.8f; letterSpacing = 0.12f }, iw, 1.3f) else layoutRaw(rich(ml.text), if (ml.kind == MdKind.H2) headP else h3P, iw, 1.3f)
                     val padTop = if (i > 0) beforeHead else 0f
                     blocks += LBlock(lay, padTop, padTop + lay.height + afterHead)
                 }

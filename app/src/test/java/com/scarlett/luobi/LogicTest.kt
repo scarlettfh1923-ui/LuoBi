@@ -29,12 +29,14 @@ class VarsTest {
         assertFalse(Vars.fill("A：{观点}\nB", mapOf("观点" to "   ")).contains("A："))
     }
 
-    @Test fun lineWithTwoVarsDroppedIfAnyEmpty() {
-        assertEquals("头", Vars.fill("头\n{疑问} / {观点}", mapOf("疑问" to "q")))
+    @Test fun lineWithTwoVarsKeepsFilledOne() {
+        // 1.4：不再因为一个变量为空删掉整行
+        assertEquals("头\nq / ", Vars.fill("头\n{疑问} / {观点}", mapOf("疑问" to "q")))
+        assertEquals("头", Vars.fill("头\n{疑问} / {观点}", mapOf()))
     }
 
-    @Test fun unknownVariableLineDropped() {
-        assertEquals("a", Vars.fill("a\n目标读者：{读者}", mapOf("疑问" to "q")))
+    @Test fun unknownVariableKeptVerbatim() {
+        assertEquals("a\n目标读者：{读者}", Vars.fill("a\n目标读者：{读者}", mapOf("疑问" to "q")))
     }
 
     @Test fun jsonBracesAreKept() {

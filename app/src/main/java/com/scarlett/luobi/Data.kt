@@ -36,6 +36,7 @@ data class Template(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String, val desc: String, val builtIn: Boolean, val prompt: String,
     val defaultModel: String = "", val sort: Int = 0,
+    @androidx.room.ColumnInfo(defaultValue = "0") val updatedAt: Long = 0,
 )
 
 /** 清洗模板（第 ① 步提示词）。fields 用 \n 分隔存储 */
@@ -96,7 +97,7 @@ data class Channel(
     @Delete suspend fun delete(c: Channel)
 }
 
-@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class], version = 2, exportSchema = false)
+@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class], version = 3, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun notes(): NoteDao
     abstract fun templates(): TemplateDao
@@ -105,7 +106,7 @@ abstract class AppDb : RoomDatabase() {
     companion object {
         @Volatile private var inst: AppDb? = null
         fun get(c: Context): AppDb = inst ?: synchronized(this) {
-            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").addMigrations(MIGRATION_1_2).build().also { inst = it }
+            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { inst = it }
         }
     }
 }
@@ -287,4 +288,8 @@ class Settings(val c: Context) {
 /** 1.0 → 1.2：notes 增加 images 列（插图 JSON），旧数据保留 */
 val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) { db.execSQL("ALTER TABLE notes ADD COLUMN images TEXT NOT NULL DEFAULT '[]'") }
+}
+
+val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) { db.execSQL("ALTER TABLE templates ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0") }
 }

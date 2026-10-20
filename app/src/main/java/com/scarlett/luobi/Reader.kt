@@ -110,43 +110,41 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 Text(if (tab == 1) "配图" else "", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = pal.text)
             }
             if (tab == 0) {
-                IconButton(onClick = { il.start() }) { SvgIcon(Ic.imgplus, pal.accent, 22.dp, desc = "文中插图") }
-                IconButton(onClick = { showFont = !showFont }) { SvgIcon(Ic.text, if (showFont) pal.accent else pal.text, desc = "阅读设置") }
-                IconButton(onClick = { editing = true }) { SvgIcon(Ic.write, pal.text, desc = "编辑") }
+                IconButton(onClick = { il.start() }) { SvgIcon(Ic.imgplus, pal.text, 22.dp, desc = "文中插图") }
+                IconButton(onClick = { showFont = !showFont }) { SvgIcon(Ic.text, if (showFont) pal.accent else pal.text, 22.dp, desc = "阅读设置") }
+                IconButton(onClick = { editing = true }) { SvgIcon(Ic.write, pal.text, 22.dp, desc = "编辑") }
             } else Spacer(Modifier.width(48.dp))
         }
     }, bottomBar = {
-        Column(Modifier.fillMaxWidth().background(pal.surface)) {
-            HorizontalDivider(color = pal.border)
-            if (tab == 0 && il.props.isNotEmpty()) Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("已插 ${il.inserted} · 待选 ${il.props.size}", Modifier.weight(1f), fontSize = 13.sp, color = pal.sub, maxLines = 1, softWrap = false)
-                OutlinedButton({ il.insertAll() }) { Text("全部插入", fontSize = 14.sp, color = P3.text) }
-                Spacer(Modifier.width(8.dp))
-                Button({ il.done() }, colors = ButtonDefaults.buttonColors(containerColor = P3.accent)) { Text("完成", fontSize = 14.sp) }
-            } else if (tab == 1) Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.widthIn(min = 58.dp).clip(RoundedCornerShape(10.dp)).clickable { scope.launch { if (imgs.isEmpty()) snack("配图还在生成，请稍候") else { val c = withContext(Dispatchers.IO) { Share.save(ctx, imgs) }; snack("已保存 $c 张图片到相册「落笔」") } } }.padding(horizontal = 6.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    SvgIcon(Ic.download, pal.text, 22.dp); Text("存相册", fontSize = 11.sp, color = pal.sub, maxLines = 1, softWrap = false)
+        // 1.4：毛玻璃悬浮胶囊（方案 B）。正文在胶囊下面滚动；ArticleView 底部留出 bottomBar 高度 + 余量
+        val glass = (if (pal.dark) pal.surface else Color.White).copy(alpha = .86f)
+        val rim = if (pal.dark) Color.White.copy(alpha = .10f) else Color.Black.copy(alpha = .07f)
+        if (tab == 0 && il.props.isNotEmpty()) Capsule(glass, rim, pal.bg) {
+                Text("已插 ${il.inserted} · 待选 ${il.props.size}", Modifier.weight(1f).padding(start = 8.dp), fontSize = 13.sp, color = pal.sub, maxLines = 1, softWrap = false)
+                Text("全部插入", Modifier.clip(RoundedCornerShape(50)).clickable { il.insertAll() }.padding(horizontal = 14.dp, vertical = 10.dp), fontSize = 14.sp, color = pal.text, fontWeight = FontWeight.Medium)
+                Box(Modifier.height(44.dp).clip(RoundedCornerShape(50)).background(pal.accent).clickable { il.done() }.padding(horizontal = 22.dp), contentAlignment = Alignment.Center) { Text("完成", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.SemiBold) }
+        } else if (tab == 1) Capsule(glass, rim, pal.bg) {
+                Row(Modifier.fillMaxHeight().clip(RoundedCornerShape(50)).clickable { scope.launch { if (imgs.isEmpty()) snack("配图还在生成，请稍候") else { val c = withContext(Dispatchers.IO) { Share.save(ctx, imgs) }; snack("已保存 $c 张图片到相册「落笔」") } } }.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SvgIcon(Ic.download, pal.text, 20.dp); Text(" 存相册", fontSize = 14.sp, color = pal.text, maxLines = 1, softWrap = false)
                 }
-                Spacer(Modifier.width(10.dp))
-                Row(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(50)).background(pal.accent).clickable { act.openXhs() }, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    SvgIcon(Ic.share, Color.White, 18.dp); Spacer(Modifier.width(6.dp)); Text("分享到小红书", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                Spacer(Modifier.width(6.dp))
+                Row(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(50)).background(pal.accent).clickable { act.openXhs() }, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    SvgIcon(Ic.send, Color.White, 18.dp); Spacer(Modifier.width(6.dp)); Text("分享到小红书", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                 }
-            } else
-            Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
-                // 分享栏：所选渠道（≤5）+ 固定最右的「更多」，等宽均分
+        } else Capsule(glass, rim, pal.bg) {
+                // 分享栏：所选渠道（1–5）+ 固定最右的「更多」，等宽均分；只有小红书用强调色
                 val bar = remember(barTick) { s.shareBar }
                 (bar.mapNotNull { ChannelIds.def(it, channels) } + ChannelIds.more).forEach { d ->
-                    Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable { if (d.id == ShareBar.MORE) panel = true else act.run(d.id, channels) }.padding(vertical = 2.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally) {
-                        val hi = d.id == "xhs"
-                        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(if (hi) P3.accentSoft else pal.soft), contentAlignment = Alignment.Center) {
-                            if (act.busy == d.name) CircularProgressIndicator(Modifier.size(18.dp), color = pal.accent, strokeWidth = 2.dp)
+                    val hi = d.id == "xhs"
+                    Column(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(50)).clickable { if (d.id == ShareBar.MORE) panel = true else act.run(d.id, channels) },
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                            if (act.busy == d.name) CircularProgressIndicator(Modifier.size(16.dp), color = pal.accent, strokeWidth = 2.dp)
                             else SvgIcon(d.icon, if (hi) pal.accent else pal.text, 22.dp)
                         }
-                        Text(d.name, Modifier.padding(top = 5.dp), fontSize = 11.sp, color = pal.sub, maxLines = 1, softWrap = false)
+                        Text(d.name, Modifier.padding(top = 2.dp), fontSize = 10.sp, color = if (hi) pal.accent else pal.sub, fontWeight = if (hi) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
                     }
                 }
-            }
         }
     }) { pad ->
         Column(Modifier.padding(top = pad.calculateTopPadding())) {
@@ -234,7 +232,7 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
         Spacer(Modifier.height(12.dp))
         TagEditor(n.tagList(), onTags, pal.accent, pal.bg, pal.text, pal.dark, collapsible = true)
         Spacer(Modifier.height(16.dp))
-        Box(Modifier.width(36.dp).height(4.dp).background(pal.accent, RoundedCornerShape(2.dp)))
+        HorizontalDivider(thickness = 0.5.dp, color = pal.border)
         Spacer(Modifier.height(18.dp))
         paras.forEachIndexed { i, p ->
           Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(if (paraMenu == i) pal.soft else androidx.compose.ui.graphics.Color.Transparent).combinedClickable(onClick = {}, onLongClick = { paraMenu = i })) {
@@ -455,8 +453,12 @@ fun ArticleBlock(ml: MdLine, next: MdKind?, font: Float, pal: ReadPalette, famil
     val body = androidx.compose.ui.text.TextStyle(color = pal.text, fontSize = font.sp, lineHeight = (font * 1.8f).sp, letterSpacing = 0.2.sp, fontFamily = family)
     val paraGap = (font * 1.0f).dp
     when (ml.kind) {
-        MdKind.H2 -> { val hs = font * 1.24f; Text(mdAnnotated(ml.text), Modifier.padding(top = (font * 0.9f).dp, bottom = (font * 0.5f).dp), color = pal.text, fontWeight = FontWeight.Bold, fontSize = hs.sp, lineHeight = (hs * 1.45f).sp, fontFamily = family) }
-        MdKind.H3 -> { val hs = font * 1.08f; Text(mdAnnotated(ml.text), Modifier.padding(top = (font * 0.6f).dp, bottom = (font * 0.4f).dp), color = pal.text, fontWeight = FontWeight.Bold, fontSize = hs.sp, lineHeight = (hs * 1.45f).sp, fontFamily = family) }
+        MdKind.H2, MdKind.H3 -> if (Md.sectionNo(ml.text) != null) Row(Modifier.padding(top = (font * 0.9f).dp, bottom = (font * 0.45f).dp), verticalAlignment = Alignment.CenterVertically) {
+            // 1.4：AI 偶尔只写「## 1」，显示成小号蓝色序号「01」+ 短线
+            Text("%02d".format(Md.sectionNo(ml.text)), color = pal.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = Mono, letterSpacing = 1.sp)
+            Box(Modifier.padding(start = 10.dp).width(28.dp).height(1.5.dp).background(pal.accent.copy(alpha = .7f)))
+        } else if (ml.kind == MdKind.H2) { val hs = font * 1.24f; Text(mdAnnotated(ml.text), Modifier.padding(top = (font * 0.9f).dp, bottom = (font * 0.5f).dp), color = pal.text, fontWeight = FontWeight.Bold, fontSize = hs.sp, lineHeight = (hs * 1.45f).sp, fontFamily = family) }
+          else { val hs = font * 1.08f; Text(mdAnnotated(ml.text), Modifier.padding(top = (font * 0.6f).dp, bottom = (font * 0.4f).dp), color = pal.text, fontWeight = FontWeight.Bold, fontSize = hs.sp, lineHeight = (hs * 1.45f).sp, fontFamily = family) }
         MdKind.QUOTE -> Row(Modifier.padding(top = 4.dp, bottom = paraGap).fillMaxWidth().height(IntrinsicSize.Min).clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp)).background(if (pal.dark) pal.soft else Color(0xFFF1F4F8))) {
             Box(Modifier.width(3.dp).fillMaxHeight().background(if (pal.dark) pal.sub else Color(0xFFCBD5E1)))
             Text(mdAnnotated(ml.text), Modifier.padding(horizontal = 14.dp, vertical = 10.dp), style = body.copy(color = if (pal.dark) pal.sub else Color(0xFF5B6576), fontSize = (font * 0.95f).sp))

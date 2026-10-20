@@ -8,6 +8,15 @@ import org.json.JSONObject
  * - 变量写成 {名字}；名字来自当前清洗模板的输出字段，另有系统变量 {原文}。
  * - 生成时把值原样替换进去；某行引用的变量全部为空时，这一行整行去掉。
  */
+object Names {
+    /** 模板名去重：与已有名字（不含自己）重复时加「 2」「 3」… */
+    fun unique(want: String, taken: Collection<String>): String {
+        val base = want.trim().ifBlank { "未命名模板" }
+        if (base !in taken) return base
+        var i = 2; while ("$base $i" in taken) i++; return "$base $i"
+    }
+}
+
 object Vars {
     const val RAW = "原文"
     val DEFAULT_FIELDS = listOf("疑问", "观点", "想写什么")
@@ -21,45 +30,63 @@ object Vars {
         referenced(prompt).filter { it != RAW && it !in fields }
 
     /**
-     * 按行替换：
-     * - 一行里只要有一个被引用的变量为空（或不存在），整行删除；
-     * - 否则把所有变量原样替换（不转义、不裁剪值本身）。
-     * 变量名只认汉字/字母/数字/下划线，所以 JSON 示例这类花括号原样保留；
-     * 引用了不存在的变量（如 {读者}）等同于空，整行去掉（编辑器会提前警告）。
+     * 1.4 填值规则（从不删除用户写的句子）：
+     * - 有值 → 原样替换；连在一起的多个占位（如 {疑问}{观点}{想写什么}）只拼有值的，用「；」隔开；
+     * - 已知字段但为空 → 只去掉这个占位，所在句子保留；
+     * - 未知变量（不是清洗字段，如 {读者}）→ 原样保留，预览里标黄；
+     * - 唯一例外：纯「标签：{变量}」行（如「我的观点：{观点}」）全部为空时整行省略，避免留下孤零零的「我的观点：」。
+     * 1.3 是「一行里任一变量为空就整行删」，她模板里「创作的主题围绕{疑问}{观点}{想写什么}，你要写一篇……默认要求：」整行因此消失。
      */
-    fun fill(prompt: String, values: Map<String, String>): String {
-                val out = ArrayList<String>()
-        for (line in prompt.replace("\r\n", "\n").split("\n")) {
-            val used = re.findAll(line).map { it.groupValues[1].trim() }.toList()
-            if (used.any { values[it].isNullOrBlank() }) continue
-            out += re.replace(line) { m -> val k = m.groupValues[1].trim(); values[k].orEmpty() }
-        }
-        return out.joinToString("\n")
+    private val run = Regex("(?:\\{[\\p{IsHan}\\w]{1,20}\\}\\s*)+")
+    private val labelRe = Regex("^\\s*[^。！？!?；;，,{}]{0,12}[：:]?\\s*$")
+    fun isLabelLine(line: String): Boolean = line.contains(re) && labelRe.matches(re.replace(line, "").replace(Regex("[/、|\\s]"), ""))
+    val defaultKnown get() = (DEFAULT_FIELDS + RAW).toSet()
+    private fun has(values: Map<String, String>, k: String) = !values[k].isNullOrBlank()
+    private fun dropLine(line: String, values: Map<String, String>, known: Set<String>): Boolean {
+        if (!isLabelLine(line)) return false
+        val used = re.findAll(line).map { it.groupValues[1].trim() }.toList()
+        return used.none { has(values, it) || (it !in known && it !in values) }
     }
-
-    /** 预览高亮用：返回 [文本, 是否是替换进来的值] 片段 */
-    fun segments(prompt: String, values: Map<String, String>): List<Pair<String, Boolean>> {
-                val res = ArrayList<Pair<String, Boolean>>()
-        val lines = prompt.replace("\r\n", "\n").split("\n").filter { line ->
-            re.findAll(line).map { it.groupValues[1].trim() }.none { values[it].isNullOrBlank() }
-        }
-        lines.forEachIndexed { li, line ->
-            var last = 0
-            for (m in re.findAll(line)) {
-                val k = m.groupValues[1].trim()
-                if (m.range.first > last) res += line.substring(last, m.range.first) to false
-                res += values[k].orEmpty() to true
-                last = m.range.last + 1
+    /** 一行 → [文本, 种类] 片段；种类 0=原文 1=填入的值 2=未知变量（原样） */
+    fun lineSegs(line: String, values: Map<String, String>, known: Set<String>): List<Pair<String, Int>> {
+        val out = ArrayList<Pair<String, Int>>(); var last = 0
+        for (m in run.findAll(line)) {
+            if (m.range.first > last) out += line.substring(last, m.range.first) to 0
+            val trail = m.value.length - m.value.trimEnd().length
+            val parts = re.findAll(m.value).toList()
+            var first = true
+            for (pm in parts) {
+                val k = pm.groupValues[1].trim()
+                when {
+                    has(values, k) -> { if (!first) out += "；" to 0; out += values[k]!! to 1; first = false }
+                    k !in known && k !in values -> { if (!first) out += "；" to 0; out += pm.value to 2; first = false }
+                }
             }
-            if (last < line.length) res += line.substring(last) to false
-            if (li < lines.lastIndex) res += "\n" to false
+            if (trail > 0) out += m.value.takeLast(trail) to 0
+            last = m.range.last + 1
         }
+        if (last < line.length) out += line.substring(last) to 0
+        return out
+    }
+    fun segmentsK(prompt: String, values: Map<String, String>, known: Set<String> = defaultKnown): List<Pair<String, Int>> {
+        val lines = prompt.replace("\r\n", "\n").split("\n").filterNot { dropLine(it, values, known) }
+        val res = ArrayList<Pair<String, Int>>()
+        lines.forEachIndexed { i, l -> res += lineSegs(l, values, known); if (i < lines.lastIndex) res += "\n" to 0 }
         return res
     }
+    fun fill(prompt: String, values: Map<String, String>, known: Set<String> = defaultKnown): String =
+        segmentsK(prompt, values, known).joinToString("") { it.first }
+    /** 预览高亮用：返回 [文本, 是否是替换进来的值]；与 fill 同规则 */
+    fun segments(prompt: String, values: Map<String, String>, known: Set<String> = defaultKnown): List<Pair<String, Boolean>> =
+        segmentsK(prompt, values, known).filter { it.first.isNotEmpty() }.map { it.first to (it.second == 1) }
+    /** 未知变量（会原样留在提示词里） */
+    fun unknown(prompt: String, values: Map<String, String>, known: Set<String> = defaultKnown) = referenced(prompt).filter { it !in known && it !in values }
 
     /** 被删掉的空变量（提示用户「{观点} 为空，那一行已去掉」） */
     fun emptyUsed(prompt: String, values: Map<String, String>): List<String> =
         referenced(prompt).filter { values[it].isNullOrBlank() }
+    /** 因变量为空被整行删掉的行数（只算标签行） */
+    fun droppedLines(prompt: String, values: Map<String, String>, known: Set<String> = defaultKnown): Int = prompt.replace("\r\n", "\n").split("\n").count { dropLine(it, values, known) }
 
     /** 清洗模板的系统变量 */
     fun fillClean(prompt: String, raw: String, templateList: String) =
@@ -108,6 +135,12 @@ object CleanParse {
     fun <T> match(recommend: String, list: List<T>, name: (T) -> String): T? {
         if (recommend.isBlank()) return null
         return list.firstOrNull { name(it) == recommend } ?: list.firstOrNull { recommend.contains(name(it)) || name(it).contains(recommend) }
+    }
+    /** 同名时优先「我的」模板（mine=true），再按名字包含 */
+    fun <T> matchPrefer(recommend: String, list: List<T>, name: (T) -> String, mine: (T) -> Boolean): T? {
+        val r = recommend.trim().removePrefix("「").removeSuffix("」"); if (r.isBlank()) return null
+        val exact = list.filter { name(it).trim() == r }
+        return exact.firstOrNull(mine) ?: exact.firstOrNull() ?: match(r, list.sortedByDescending(mine), name)
     }
 }
 
@@ -209,6 +242,9 @@ ${htmlBody(body, tags, pics = pics, showCredit = showCredit)}</article></body></
 
 /** 篇幅：短 / 中 / 长 各自的最少–最多字数 */
 object Lengths {
+    private val own = Regex("(?m)^\\s*(篇幅|字数|全文字数|长度)\\s*[：:]")
+    /** 模板里自己写了「篇幅：…」行 → 以模板为准，不再追加设置里的篇幅 */
+    fun inTemplate(prompt: String) = own.containsMatchIn(prompt)
     val NAMES = listOf("短", "中", "长")
     val DEFAULT = listOf(150 to 300, 400 to 800, 1000 to 1800)
     /** 校验输入；合法返回 null，否则返回提示 */
@@ -233,6 +269,15 @@ enum class MdKind { H2, H3, P, QUOTE, BULLET, NUM, HR }
 data class MdLine(val kind: MdKind, val text: String, val num: String = "")
 
 object Md {
+    private val zh = "零一二三四五六七八九十"
+    /** 「1」「01」「一」「1.」「第一部分」这类纯序号标题 → 序号；否则 null */
+    fun sectionNo(t: String): Int? {
+        val x = t.replace("**", "").trim().removePrefix("第").removeSuffix("部分").removeSuffix("节").trimEnd('.', '、', '．', ' ')
+        x.toIntOrNull()?.let { return it.takeIf { n -> n in 0..99 } }
+        if (x.length == 1 && x[0] in zh) return zh.indexOf(x[0])
+        if (x.length == 2 && x[0] == '十' && x[1] in zh) return 10 + zh.indexOf(x[1])
+        return null
+    }
     private val numRe = Regex("^(\\d{1,3})[.、．)]\\s*(.+)$")
     fun line(raw: String, total: Int): MdLine {
         val p = raw.trim()

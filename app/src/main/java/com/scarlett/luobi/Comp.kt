@@ -177,3 +177,19 @@ fun ConfirmDialog(title: String, text: String, ok: String, danger: Boolean = fal
 
 @Composable
 fun Dot(color: Color, size: Dp = 7.dp) = Box(Modifier.size(size).clip(CircleShape).background(color))
+
+/** 单选列表：一行一个，右侧勾选圆 */
+@Composable
+fun ChoiceList(items: List<Triple<String, String, Boolean>>, pick: (Int) -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, P3.border, RoundedCornerShape(12.dp))) {
+        items.forEachIndexed { i, (a, b, sel) ->
+            if (i > 0) HorizontalDivider(Modifier.padding(start = 14.dp), color = P3.border)
+            Row(Modifier.fillMaxWidth().clickable { pick(i) }.padding(start = 14.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(a, fontSize = 15.sp, color = P3.text, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                Text("  $b", Modifier.weight(1f), fontSize = 13.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (sel) Box(Modifier.size(20.dp).clip(CircleShape).background(P3.accent), contentAlignment = Alignment.Center) { SvgIcon(Ic.check, Color.White, 13.dp) }
+                else Box(Modifier.size(20.dp).border(1.5.dp, P3.borderStrong, CircleShape))
+            }
+        }
+    }
+}

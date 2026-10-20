@@ -139,6 +139,7 @@ fun TagEditor(tags: List<String>, onTags: (List<String>) -> Unit, accent: Color,
     var adding by remember { mutableStateOf(false) }
     var newTag by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(!collapsible) }
+    var editTags by remember { mutableStateOf(!collapsible) }
     fun commit() {
         val add = newTag.split(" ", ",", "，", "#").map { it.trim() }.filter { it.isNotEmpty() }
         val dup = add.filter { it in tags }; val fresh = add.filter { it !in tags }.distinct()
@@ -150,9 +151,10 @@ fun TagEditor(tags: List<String>, onTags: (List<String>) -> Unit, accent: Color,
     val chipBg = accent.copy(alpha = if (dark) .2f else .12f)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         show.forEach { t ->
-            Row(Modifier.height(28.dp).clip(RoundedCornerShape(50)).background(chipBg).padding(start = 10.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("#$t", fontSize = 12.sp, color = accent)
-                Box(Modifier.size(26.dp).clip(CircleShape).clickable { onTags(tags - t) }, contentAlignment = Alignment.Center) { Ico(R.drawable.ic_x, accent, 12, "删除标签") }
+            // 1.4：轻量标签——平时是纯蓝字，进入编辑（点「编辑」）才显示删除
+            Row(Modifier.height(28.dp).clip(RoundedCornerShape(50)).then(if (editTags) Modifier.background(chipBg) else Modifier).padding(start = if (editTags) 10.dp else 2.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("#$t", fontSize = 13.sp, color = accent)
+                if (editTags) Box(Modifier.size(26.dp).clip(CircleShape).clickable { onTags(tags - t) }, contentAlignment = Alignment.Center) { Ico(R.drawable.ic_x, accent, 12, "删除标签") }
             }
         }
         if (!expanded && tags.size > 6) {
@@ -167,10 +169,13 @@ fun TagEditor(tags: List<String>, onTags: (List<String>) -> Unit, accent: Color,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { commit(); adding = false }))
                 Box(Modifier.padding(start = 4.dp).size(22.dp).clip(CircleShape).background(accent).clickable { commit(); adding = false }, contentAlignment = Alignment.Center) { Ico(R.drawable.ic_enter, Color.White, 14, "添加") }
             }
+        } else if (!editTags) {
+            Text("编辑", Modifier.height(28.dp).clip(RoundedCornerShape(50)).clickable { editTags = true }.padding(horizontal = 6.dp, vertical = 5.dp), fontSize = 13.sp, color = text.copy(alpha = .45f))
         } else {
             Row(Modifier.height(28.dp).clip(RoundedCornerShape(50)).border(1.dp, accent.copy(alpha = .6f), RoundedCornerShape(50)).clickable { adding = true }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Ico(R.drawable.ic_plus, accent, 13); Spacer(Modifier.width(3.dp)); Text("添加标签", fontSize = 12.sp, color = accent)
             }
+            if (collapsible) Text("完成", Modifier.height(28.dp).clip(RoundedCornerShape(50)).clickable { editTags = false }.padding(horizontal = 8.dp, vertical = 5.dp), fontSize = 13.sp, color = accent, fontWeight = FontWeight.SemiBold)
         }
     }
 }

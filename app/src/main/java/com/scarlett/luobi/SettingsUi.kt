@@ -110,7 +110,7 @@ fun TemplatesPage(db: AppDb, back: () -> Unit, go: (String) -> Unit) {
     val active by db.cleans().activeFlow().collectAsState(initial = null)
     val fields = active?.fieldList() ?: Vars.DEFAULT_FIELDS
     var del by remember { mutableStateOf<Template?>(null) }
-    Page("模板管理", back, { NewButton { scope.launch { val id = db.templates().insert(Template(name = "新模板", desc = "", builtIn = false, prompt = "你是一名作者。\n我的观点：{观点}\n读者的疑问：{疑问}\n要写成：{想写什么}\n写作要求：\n参考原文：{原文}", sort = 100)); go("template:$id") } } }) {
+    Page("模板管理", back, { NewButton { scope.launch { val id = db.templates().insert(Template(name = Names.unique("新模板", list.map { it.name }), updatedAt = System.currentTimeMillis(), desc = "", builtIn = false, prompt = "你是一名作者。\n我的观点：{观点}\n读者的疑问：{疑问}\n要写成：{想写什么}\n写作要求：\n参考原文：{原文}", sort = 100)); go("template:$id") } } }) {
         listOf(true to "内置模板", false to "我的模板").forEach { (b, label) ->
             item { GroupLabel(label) }
             val l = list.filter { it.builtIn == b }
@@ -122,6 +122,7 @@ fun TemplatesPage(db: AppDb, back: () -> Unit, go: (String) -> Unit) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(t.name, Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
                             if (t.builtIn) Text("内置", Modifier.clip(RoundedCornerShape(50)).background(P3.surface2).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.text2)
+                            else Text("我的", Modifier.clip(RoundedCornerShape(50)).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.onAccentSoft)
                         }
                         Text(t.desc.ifBlank { "（无说明）" }, Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -129,8 +130,8 @@ fun TemplatesPage(db: AppDb, back: () -> Unit, go: (String) -> Unit) {
                         }
                         Row(Modifier.padding(top = 6.dp)) {
                             Spacer(Modifier.weight(1f))
-                            TextAction("复制") { scope.launch { db.templates().insert(t.copy(id = 0, name = t.name + "（副本）", builtIn = false, sort = 100)); snack("已复制为「${t.name}（副本）」") } }
-                            if (t.builtIn && Defaults.builtinPrompt(t.name) != null && Defaults.builtinPrompt(t.name) != t.prompt) TextAction("恢复默认", P3.text2) { scope.launch { db.templates().update(t.copy(prompt = Defaults.builtinPrompt(t.name)!!)); snack("已恢复默认") } }
+                            TextAction("复制") { scope.launch { val nm = Names.unique(t.name + "（副本）", list.map { it.name }); db.templates().insert(t.copy(id = 0, name = nm, builtIn = false, sort = 100, updatedAt = System.currentTimeMillis())); snack("已复制为「$nm」") } }
+                            if (t.builtIn && Defaults.builtinPrompt(t.name) != null && Defaults.builtinPrompt(t.name) != t.prompt) TextAction("恢复默认", P3.text2) { scope.launch { db.templates().update(t.copy(prompt = Defaults.builtinPrompt(t.name)!!, updatedAt = System.currentTimeMillis())); snack("已恢复默认") } }
                             if (!t.builtIn) TextAction("删除", P3.danger) { del = t }
                         }
                     }
@@ -168,8 +169,23 @@ fun TemplateEdit(db: AppDb, id: Long, back: () -> Unit) {
     val fields = active?.fieldList() ?: Vars.DEFAULT_FIELDS
     val known = (fields + Vars.RAW).toSet()
     val miss = Vars.missing(prompt.text, fields)
-    fun save() { scope.launch { db.templates().update(tpl.copy(name = name.trim().ifBlank { tpl.name }, desc = desc.trim(), prompt = prompt.text, defaultModel = dm)); snack("已保存"); back() } }
-    Page("编辑模板", back, { TextAction("保存") { save() } }) {
+    // 1.4：自动保存。改动 600ms 后写库；离开页面（返回键 / 手势 / 左上角）时再兜底写一次并提示「已保存」
+    var saved by remember(tpl.id) { mutableStateOf(tpl) }
+    fun draft(): Template = tpl.copy(name = name.trim().ifBlank { tpl.name }, desc = desc.trim(), prompt = prompt.text, defaultModel = dm)
+    suspend fun persist(): Boolean {
+        val d0 = draft(); if (d0.name == saved.name && d0.desc == saved.desc && d0.prompt == saved.prompt && d0.defaultModel == saved.defaultModel) return false
+        val others = db.templates().list().filter { it.id != tpl.id }.map { it.name }
+        val d = d0.copy(name = Names.unique(d0.name, others), updatedAt = System.currentTimeMillis())
+        db.templates().update(d); saved = d; return true
+    }
+    LaunchedEffect(name, desc, prompt.text, dm) { kotlinx.coroutines.delay(600); persist() }
+    val latest by rememberUpdatedState(::persist)
+    DisposableEffect(tpl.id) { onDispose { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { latest(); } } }
+    fun save() { scope.launch { val renamed = draft().name; persist(); snack(if (saved.name != renamed) "已保存（重名，已改为「${saved.name}」）" else "已保存"); back() } }
+    fun leave() { scope.launch { persist(); snack(if (saved.name != draft().name.trim()) "已保存（重名，已改为「${saved.name}」）" else "已保存"); back() } }
+    androidx.activity.compose.BackHandler { leave() }
+    Page("编辑模板", { leave() }, { TextAction("完成") { save() } }) {
+        item { Text("改动会自动保存" + if (saved.updatedAt > 0) "，最后修改 ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA).format(java.util.Date(saved.updatedAt))}" else "", Modifier.padding(bottom = 4.dp), fontSize = 12.sp, color = P3.text3) }
         if (tpl.builtIn) item { Text("内置模板可以直接修改，也可以在模板管理里「恢复默认」；不能删除。", Modifier.padding(bottom = 8.dp), fontSize = 12.sp, color = P3.text3) }
         item {
             Card(pad = 0.dp) {
@@ -195,7 +211,7 @@ fun TemplateEdit(db: AppDb, id: Long, back: () -> Unit) {
             }
         }
         if (miss.isNotEmpty()) item {
-            WarnBox("${miss.joinToString("") { "{$it}" }} 不是当前清洗模板「${active?.name ?: ""}」的输出字段，生成时会是空的，这一行会被去掉。", Modifier.padding(top = 10.dp))
+            WarnBox("${miss.joinToString("") { "{$it}" }} 不是当前清洗模板「${active?.name ?: ""}」的输出字段，生成时会是空的：如果它在「标签：{变量}」这种短行里，那一行会去掉；在长段落里只去掉占位，段落保留。", Modifier.padding(top = 10.dp))
         }
         item { GroupLabel("可插入变量 · 来自清洗模板「${active?.name ?: ""}」") }
         item {
@@ -211,10 +227,8 @@ fun TemplateEdit(db: AppDb, id: Long, back: () -> Unit) {
         }
         item { GroupLabel("默认模型（可选）") }
         item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Pill("不指定", dm.isBlank()) { dm = "" }
-                s.configured().forEach { m -> Pill("${m.label} · ${m.sub}", dm == m.ref) { dm = m.ref } }
-            }
+            val cm = s.configured()
+            ChoiceList(listOf(Triple("不指定", "用写作页选的模型", dm.isBlank())) + cm.map { Triple(it.label, it.sub, dm == it.ref) }) { i -> dm = if (i == 0) "" else cm[i - 1].ref }
         }
     }
 }
