@@ -180,6 +180,8 @@ object Defaults {
 /** 加密存储：所有 Key / Token 只存在本机（EncryptedSharedPreferences，AES256-GCM，主钥匙在 Android Keystore） */
 object Secure {
     @Volatile private var p: SharedPreferences? = null
+    /** 仅供 JVM 截图测试注入（Robolectric 没有 AndroidKeyStore） */
+    fun overrideForTest(sp: SharedPreferences) { p = sp }
     fun prefs(c: Context): SharedPreferences = p ?: synchronized(this) {
         p ?: try {
             val mk = MasterKey.Builder(c.applicationContext).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()

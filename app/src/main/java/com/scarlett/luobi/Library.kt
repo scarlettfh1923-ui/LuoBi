@@ -287,9 +287,11 @@ private fun LibraryRow(
             }
         }
     } else {
-        Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().heightIn(min = 48.dp).clip(Sq.l)) {
+        Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().heightIn(min = 48.dp).clip(Sq.xl)) {
             // Left reveal: red delete — TAP required
-            Box(Modifier.matchParentSize().background(P3.danger), contentAlignment = Alignment.CenterStart) {
+            // 1.7 修复：红色底层只在卡片滑开时才画。之前它常驻在卡片后面（圆角还比卡片小），
+            // 圆角处抗锯齿把红色透出来——这就是 1.5/1.6 一直存在的「红色毛边」。
+            Box(Modifier.matchParentSize().background(if (offset.value != 0f) P3.danger else Color.Transparent), contentAlignment = Alignment.CenterStart) {
                 Column(
                     Modifier.width(80.dp).fillMaxHeight().clickable { onTapDelete() },
                     horizontalAlignment = Alignment.CenterHorizontally,

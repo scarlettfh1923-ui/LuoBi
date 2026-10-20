@@ -148,15 +148,15 @@ fun TagEditor(tags: List<String>, onTags: (List<String>) -> Unit, accent: Color,
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         show.forEach { t ->
             // 1.4：轻量标签——平时是纯蓝字，进入编辑（点「编辑」）才显示删除
-            Row(Modifier.height(28.dp).clip(Sq.full).then(if (editTags) Modifier.background(chipBg) else Modifier).padding(start = if (editTags) 10.dp else 2.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.heightIn(min = 28.dp).clip(Sq.full).then(if (editTags) Modifier.background(chipBg) else Modifier).padding(start = if (editTags) 10.dp else 2.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("#$t", fontSize = 13.sp, color = accent)
                 if (editTags) Box(Modifier.size(26.dp).clip(Sq.full).clickable { onTags(tags - t) }, contentAlignment = Alignment.Center) { Ico(R.drawable.ic_x, accent, 12, "删除标签") }
             }
         }
         if (!expanded && tags.size > 6) {
-            Text("+${tags.size - 6}", Modifier.height(28.dp).clip(Sq.full).hairline(Sq.full, accent.copy(alpha = .5f)).clickable { expanded = true }.padding(horizontal = 12.dp, vertical = 5.dp), fontSize = 12.sp, color = accent)
+            Text("+${tags.size - 6}", Modifier.heightIn(min = 28.dp).clip(Sq.full).hairline(Sq.full, accent.copy(alpha = .5f)).clickable { expanded = true }.padding(horizontal = 12.dp, vertical = 5.dp), fontSize = 12.sp, color = accent)
         } else if (adding) {
-            Row(Modifier.height(28.dp).clip(Sq.full).background(bg).hairline(Sq.full, accent, 2.dp).padding(start = 10.dp, end = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.heightIn(min = 28.dp).clip(Sq.full).background(bg).hairline(Sq.full, accent, 2.dp).padding(start = 10.dp, end = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("#", color = accent, fontSize = 13.sp)
                 val fr = remember { FocusRequester() }
                 LaunchedEffect(Unit) { fr.requestFocus() }
@@ -166,12 +166,12 @@ fun TagEditor(tags: List<String>, onTags: (List<String>) -> Unit, accent: Color,
                 Box(Modifier.padding(start = 4.dp).size(22.dp).clip(Sq.full).background(accent).clickable { commit(); adding = false }, contentAlignment = Alignment.Center) { Ico(R.drawable.ic_enter, Color.White, 14, "添加") }
             }
         } else if (!editTags) {
-            Text("编辑", Modifier.height(28.dp).clip(Sq.full).clickable { editTags = true }.padding(horizontal = 6.dp, vertical = 5.dp), fontSize = 13.sp, color = text.copy(alpha = .45f))
+            Text("编辑", Modifier.heightIn(min = 28.dp).clip(Sq.full).clickable { editTags = true }.padding(horizontal = 6.dp, vertical = 5.dp), fontSize = 13.sp, color = text.copy(alpha = .45f))
         } else {
-            Row(Modifier.height(28.dp).clip(Sq.full).hairline(Sq.full, accent.copy(alpha = .6f)).clickable { adding = true }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.heightIn(min = 28.dp).clip(Sq.full).hairline(Sq.full, accent.copy(alpha = .6f)).clickable { adding = true }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Ico(R.drawable.ic_plus, accent, 13); Spacer(Modifier.width(3.dp)); Text("添加标签", fontSize = 12.sp, color = accent)
             }
-            if (collapsible) Text("完成", Modifier.height(28.dp).clip(Sq.full).clickable { editTags = false }.padding(horizontal = 8.dp, vertical = 5.dp), fontSize = 13.sp, color = accent, fontWeight = FontWeight.SemiBold)
+            if (collapsible) Text("完成", Modifier.heightIn(min = 28.dp).clip(Sq.full).clickable { editTags = false }.padding(horizontal = 8.dp, vertical = 5.dp), fontSize = 13.sp, color = accent, fontWeight = FontWeight.SemiBold)
         }
     }
 }

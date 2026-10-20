@@ -98,7 +98,7 @@ fun GroupLabel(t: String, modifier: Modifier = Modifier) {
 @Composable
 fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, busy: Boolean = false, onClick: () -> Unit) {
     Button(onClick, modifier.fillMaxWidth().height(52.dp), enabled = enabled && !busy, shape = Sq.full,
-        colors = ButtonDefaults.buttonColors(containerColor = P3.accent, contentColor = Color.White, disabledContainerColor = P3.surface2, disabledContentColor = P3.text3)) {
+        colors = ButtonDefaults.buttonColors(containerColor = P3.accent, contentColor = Color.White, disabledContainerColor = Color(0xFFE5E7EB), disabledContentColor = Color(0xFF6B7280))) {
         if (busy) { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = P3.accent); Spacer(Modifier.width(8.dp)) }
         Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
@@ -210,7 +210,7 @@ fun ChoiceList(items: List<Triple<String, String, Boolean>>, pick: (Int) -> Unit
 /** 分段胶囊（1.6）：选中 = 浅蓝底 + 蓝字；未选 = 白底细线 */
 @Composable
 fun SegChip(text: String, sel: Boolean, onClick: () -> Unit) {
-    Text(text, Modifier.height(32.dp).clip(Sq.full).background(if (sel) P3.accentSoft else P3.surface).let { if (sel) it else it.hairline(Sq.full, P3.border) }
+    Text(text, Modifier.heightIn(min = 32.dp).clip(Sq.full).background(if (sel) P3.accentSoft else P3.surface).let { if (sel) it else it.hairline(Sq.full, P3.border) }
         .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 6.dp), fontSize = 13.sp, color = if (sel) P3.accent else P3.text,
         fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
 }

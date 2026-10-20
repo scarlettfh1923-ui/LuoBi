@@ -35,7 +35,7 @@ android {
   buildFeatures { compose = true; buildConfig = true }
   compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
   kotlinOptions { jvmTarget = "17" }
-  testOptions { unitTests.isReturnDefaultValues = true }
+  testOptions { unitTests.isReturnDefaultValues = true; unitTests.isIncludeAndroidResources = true; unitTests.all { it.systemProperty("roborazzi.test.record", "true"); it.maxHeapSize = "2g" } }
 }
 dependencies {
   val bom = platform("androidx.compose:compose-bom:2024.09.00")
@@ -52,5 +52,11 @@ dependencies {
   implementation("androidx.security:security-crypto:1.1.0-alpha06")
   ksp("androidx.room:room-compiler:2.6.1")
   testImplementation("junit:junit:4.13.2")
+  testImplementation("org.robolectric:robolectric:4.13")
+  testImplementation("io.github.takahirom.roborazzi:roborazzi:1.32.2")
+  testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.32.2")
+  testImplementation(bom)
+  testImplementation("androidx.compose.ui:ui-test-junit4")
+  debugImplementation("androidx.compose.ui:ui-test-manifest")
   testImplementation("org.json:json:20231013")
 }

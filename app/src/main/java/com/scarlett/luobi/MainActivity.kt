@@ -407,7 +407,9 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
         if (genErr != null && ws.step == 3) item { ErrorCard(genErr.f, { clearGenErr(); genErr.retry() }, if (genErr.f.settings) goModels else null) { clearGenErr() } }
     }
     // 1.5：主按钮固定在浮动导航之上，永远不会被挡
-    Box(Modifier.fillMaxSize().padding(bottom = bottom + 4.dp), contentAlignment = Alignment.BottomCenter) {
+    // 1.7：键盘弹出时按钮跟到键盘上方（不叠加导航高度）
+    val imeB = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    Box(Modifier.fillMaxSize().padding(bottom = maxOf(bottom + 4.dp, imeB + 8.dp)), contentAlignment = Alignment.BottomCenter) {
         val m = Modifier.padding(horizontal = 16.dp)
         when {
             ws.step == 1 && !ws.cleanedReady -> PrimaryButton(if (ws.cleanBusy) "正在清洗…" else "清洗并识别意图", m, busy = ws.cleanBusy, enabled = ws.raw.isNotBlank()) { clean() }

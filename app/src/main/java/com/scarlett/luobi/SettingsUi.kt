@@ -58,7 +58,7 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
 fun SubPage(db: AppDb, r: Route.Sub, back: () -> Unit, go: (Route) -> Unit) {
     val name = r.page.substringBefore(":"); val arg = r.page.substringAfter(":", "0").toLongOrNull() ?: 0L
     val sub: (String) -> Unit = { go(Route.Sub(it)) }
-    Scaffold(containerColor = P3.bg, bottomBar = { BottomNav(2) { back() } }) { pad ->
+    Scaffold(containerColor = P3.bg, bottomBar = { FloatingNav(2) { back() } }) { pad ->
         Box(Modifier.padding(bottom = pad.calculateBottomPadding())) {
             when (name) {
                 "templates" -> TemplatesPage(db, back, sub)
