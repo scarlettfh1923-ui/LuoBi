@@ -106,13 +106,12 @@ object Ai {
         return CleanParse.parse(txt, ct.fieldList()) to ct
     }
 
-    private val lengthHint = listOf("篇幅：短，约 500 字。", "篇幅：中，约 1200 字。", "篇幅：长，约 2500 字。")
     const val OUT_RULE = "只输出一个 JSON 对象：{\"title\":\"标题\",\"body\":\"正文，段落之间空一行，小标题单独一行并以 ## 开头\",\"tags\":[\"标签1\",\"标签2\"]}，tags 为 3–8 个不带 # 的话题词，不要输出其它内容。"
 
     /** 最终提示词 = 模板填值（空变量整行删）+ 篇幅 */
-    fun finalPrompt(tpl: String, values: Map<String, String>, cleaned: String, attachRaw: Boolean, length: Int): String {
+    fun finalPrompt(tpl: String, values: Map<String, String>, cleaned: String, attachRaw: Boolean, length: Int, range: Pair<Int, Int> = Lengths.DEFAULT[length.coerceIn(0, 2)]): String {
         val v = values.toMutableMap(); if (attachRaw) v[Vars.RAW] = cleaned
-        return Vars.fill(tpl, v).trimEnd() + "\n" + lengthHint[length.coerceIn(0, 2)]
+        return Vars.fill(tpl, v).trimEnd() + "\n" + Lengths.hint(length, range)
     }
 
     /** 第 ③ 步：生成并存入文案库，返回 note id */

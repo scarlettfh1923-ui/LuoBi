@@ -190,3 +190,24 @@ ${htmlBody(body, tags)}</article></body></html>
         return emoji || p[0].isDigit() || p.startsWith("【") || Regex("^[一二三四五六七八九十]+[、.．]").containsMatchIn(p) || p.endsWith("：") || p.endsWith(":")
     }
 }
+
+/** 篇幅：短 / 中 / 长 各自的最少–最多字数 */
+object Lengths {
+    val NAMES = listOf("短", "中", "长")
+    val DEFAULT = listOf(150 to 300, 400 to 800, 1000 to 1800)
+    /** 校验输入；合法返回 null，否则返回提示 */
+    fun validate(min: String, max: String): String? {
+        val a = min.trim().toIntOrNull(); val b = max.trim().toIntOrNull()
+        if (a == null || b == null || a <= 0 || b <= 0) return "请填正整数"
+        if (a > 99999 || b > 99999) return "字数太大了"
+        if (a > b) return "最少不能大于最多"
+        return null
+    }
+    fun encode(l: List<Pair<Int, Int>>) = l.joinToString(",") { "${it.first}-${it.second}" }
+    fun decode(s: String): List<Pair<Int, Int>> {
+        val r = s.split(",").mapNotNull { p -> val x = p.split("-"); val a = x.getOrNull(0)?.trim()?.toIntOrNull(); val b = x.getOrNull(1)?.trim()?.toIntOrNull(); if (a != null && b != null && a in 1..b) a to b else null }
+        return if (r.size == 3) r else DEFAULT
+    }
+    fun hint(i: Int, r: Pair<Int, Int>) = "篇幅：${NAMES[i.coerceIn(0, 2)]}篇，正文字数控制在 ${r.first}–${r.second} 字之间。"
+    fun label(i: Int, r: Pair<Int, Int>) = "${NAMES[i.coerceIn(0, 2)]}（${r.first}–${r.second} 字）"
+}

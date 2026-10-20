@@ -233,6 +233,8 @@ class Settings(val c: Context) {
     var defaultModel get() = s("defaultModel", ""); set(v) = put("defaultModel", v)
     /** 0 短 · 1 中 · 2 长 */
     var length get() = p.getInt("length", 1); set(v) = put("length", v)
+    var lengths get() = Lengths.decode(s("lengths", Lengths.encode(Lengths.DEFAULT))); set(v) = put("lengths", Lengths.encode(v))
+    fun lengthRange() = lengths[length.coerceIn(0, 2)]
     var attachRaw get() = p.getBoolean("attachRaw", true); set(v) = put("attachRaw", v)
 
     // ----- 阅读 / 出图 -----

@@ -154,7 +154,7 @@ fun App() {
                     Box(Modifier.padding(top = pad.calculateTopPadding()).statusBarsPadding()) {
                         val bottom = pad.calculateBottomPadding()
                         when (r.i) {
-                            0 -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) }, { go(Route.Sub("templates")) }, startGen)
+                            0 -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) }, { go(Route.Sub("templates")) }, startGen, { go(Route.Sub("length")) })
                             1 -> LibraryScreen(db, bottom, { tab(0) }, libManaging, { libManaging = it }) { go(Route.Read(it)) }
                             else -> SettingsHome(db, bottom) { go(Route.Sub(it)) }
                         }
@@ -203,7 +203,7 @@ private fun Locked(n: Int, title: String, sub: String) {
 }
 
 @Composable
-fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, genErr: GenErr?, clearGenErr: () -> Unit, goModels: () -> Unit, goTemplates: () -> Unit, start: (GenJob) -> Unit) {
+fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, genErr: GenErr?, clearGenErr: () -> Unit, goModels: () -> Unit, goTemplates: () -> Unit, start: (GenJob) -> Unit, goLength: () -> Unit = {}) {
     val ctx = LocalContext.current; val s = remember { Settings(ctx) }; val scope = rememberCoroutineScope()
     val templates by db.templates().all().collectAsState(initial = emptyList())
     var keyVer by remember { mutableIntStateOf(0) }
@@ -238,11 +238,11 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
             ws.model = pref ?: configured.firstOrNull()?.ref ?: ""
         }
     }
-    var length by remember { mutableIntStateOf(s.length) }
+    val length = s.length; val lenRange = s.lengthRange()
     var attachRaw by remember { mutableStateOf(s.attachRaw) }
     var preview by remember { mutableStateOf(false) }
     val vals = ws.map()
-    val finalPrompt = if (tpl != null) Ai.finalPrompt(tpl.prompt, vals, ws.cleaned, attachRaw, length) else ""
+    val finalPrompt = if (tpl != null) Ai.finalPrompt(tpl.prompt, vals, ws.cleaned, attachRaw, length, lenRange) else ""
 
     LazyColumnFill(bottom) {
         item { BigTitle("落笔", "三步：理清 → 选模板 → 生成") }
@@ -352,9 +352,9 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     configured.forEach { m -> Pill("${m.label} · ${m.sub}", ws.model == m.ref) { ws.model = m.ref } }
                 }
-                Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("篇幅", Modifier.weight(1f), fontSize = 14.sp, color = P3.text)
-                    listOf("短", "中", "长").forEachIndexed { i, l -> Pill(l, length == i, Modifier.padding(start = 6.dp)) { length = i; s.length = i } }
+                Row(Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(P3.accentSoft).clickable { goLength() }.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("篇幅：" + Lengths.label(length, lenRange), Modifier.weight(1f), fontSize = 13.sp, color = P3.accent)
+                    Text("设置中修改 ›", fontSize = 13.sp, color = P3.accent)
                 }
                 Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

@@ -48,7 +48,9 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
                 SettingRow(Ic.pin, "常用渠道排序", (listOf("小红书") + s.pinned.map { ChannelIds.short(it, channels) }).joinToString(" · ")) { go("pinned") }
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
-                SettingRow(Ic.image, "出图与默认", "卡片比例、配色、长图配色、默认模型和篇幅") { go("style") }
+                SettingRow(Ic.text, "篇幅设置", "默认 " + Lengths.label(s.length, s.lengthRange())) { go("length") }
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
+                SettingRow(Ic.image, "出图与默认", "卡片比例、配色、长图配色、默认模型") { go("style") }
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
                 SettingRow(Ic.info, "关于", "落笔 v${BuildConfig.VERSION_NAME} · 名字暂定") { go("about") }
             }
@@ -75,6 +77,7 @@ fun SubPage(db: AppDb, r: Route.Sub, back: () -> Unit, go: (Route) -> Unit) {
                 "channel" -> ChannelEdit(db, arg, back)
                 "pinned" -> PinnedPage(db, back)
                 "style" -> StylePage(back)
+                "length" -> LengthPage(back)
                 else -> AboutPage(back)
             }
         }
@@ -565,10 +568,10 @@ fun PinnedPage(db: AppDb, back: () -> Unit) {
     val ctx = LocalContext.current; val s = remember { Settings(ctx) }
     val channels by db.channels().all().collectAsState(initial = emptyList())
     var pinned by remember { mutableStateOf(s.pinned) }
-    fun set(l: List<String>) { pinned = l.take(4); s.pinned = pinned }
+    fun set(l: List<String>) { pinned = l.take(8); s.pinned = pinned }
     Page("常用渠道排序", back) {
-        item { Text("结果页底栏最多放 4 个常用渠道（「分享到小红书」主按钮始终在右侧）。点「上移」调整顺序。", Modifier.padding(bottom = 10.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
-        item { GroupLabel("已置顶 ${pinned.size} / 4") }
+        item { Text("结果页底栏最多放 8 个常用渠道，「小红书」固定在最左，放不下时可左右滑动。点「上移」调整顺序。", Modifier.padding(bottom = 10.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
+        item { GroupLabel("已置顶 ${pinned.size} / 8") }
         pinned.forEachIndexed { i, id ->
             val d = ChannelIds.all(channels).firstOrNull { it.id == id } ?: return@forEachIndexed
             item(key = "p$id") {
@@ -587,7 +590,7 @@ fun PinnedPage(db: AppDb, back: () -> Unit) {
                 Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(d.icon, P3.text2, 20.dp); Spacer(Modifier.width(10.dp))
                     Text(d.name, Modifier.weight(1f), fontSize = 15.sp)
-                    TextAction(if (pinned.size >= 4) "已满" else "置顶", enabled = pinned.size < 4) { set(pinned + d.id) }
+                    TextAction(if (pinned.size >= 8) "已满" else "置顶", enabled = pinned.size < 8) { set(pinned + d.id) }
                 }
             }
         }
@@ -612,8 +615,6 @@ fun StylePage(back: () -> Unit) {
         item { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { readPalettes.forEachIndexed { i, p -> Pill(p.name, mode == i) { mode = i; s.readMode = i } } } }
         item { GroupLabel("默认模型（改写和第 ③ 步默认选中）") }
         item { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Pill("自动", dm.isBlank()) { dm = ""; s.defaultModel = "" }; s.configured().forEach { m -> Pill("${m.label} · ${m.sub}", dm == m.ref) { dm = m.ref; s.defaultModel = m.ref } } } }
-        item { GroupLabel("默认篇幅") }
-        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("短", "中", "长").forEachIndexed { i, l -> Pill(l, len == i) { len = i; s.length = i } } } }
     }
 }
 
@@ -629,4 +630,53 @@ fun AboutPage(back: () -> Unit) {
             }
         }
     }
+}
+
+/** 篇幅设置：短 / 中 / 长 各自最少–最多字数 + 默认篇幅 */
+@Composable
+fun LengthPage(back: () -> Unit) {
+    val ctx = LocalContext.current; val s = remember { Settings(ctx) }
+    val mins = remember { mutableStateListOf(*s.lengths.map { it.first.toString() }.toTypedArray()) }
+    val maxs = remember { mutableStateListOf(*s.lengths.map { it.second.toString() }.toTypedArray()) }
+    var def by remember { mutableIntStateOf(s.length) }
+    fun save() { if ((0..2).all { Lengths.validate(mins[it], maxs[it]) == null }) s.lengths = (0..2).map { mins[it].trim().toInt() to maxs[it].trim().toInt() } }
+    Page("篇幅设置", back) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.End) {
+                TextAction("恢复默认") { Lengths.DEFAULT.forEachIndexed { i, r -> mins[i] = r.first.toString(); maxs[i] = r.second.toString() }; def = 1; s.length = 1; save(); snack("已恢复默认篇幅") }
+            }
+        }
+        (0..2).forEach { i ->
+            item {
+                val err = Lengths.validate(mins[i], maxs[i])
+                Card(Modifier.padding(bottom = 10.dp).then(if (def == i) Modifier.border(1.5.dp, P3.accent, RoundedCornerShape(18.dp)) else Modifier)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(Lengths.NAMES[i] + "篇", Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
+                        if (def == i) Text("默认", Modifier.clip(RoundedCornerShape(50)).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.accent)
+                    }
+                    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("最少 ", fontSize = 14.sp, color = P3.text)
+                        NumBox(mins[i]) { mins[i] = it.filter(Char::isDigit).take(5); save() }
+                        Text(" 字 至 最多 ", fontSize = 14.sp, color = P3.text)
+                        NumBox(maxs[i]) { maxs[i] = it.filter(Char::isDigit).take(5); save() }
+                        Text(" 字", fontSize = 14.sp, color = P3.text)
+                    }
+                    if (err != null) Text(err + "，修正前不会保存", Modifier.padding(top = 6.dp), fontSize = 12.sp, color = P3.danger)
+                }
+            }
+        }
+        item { GroupLabel("默认篇幅") }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Lengths.NAMES.forEachIndexed { i, l -> Pill(l, def == i) { def = i; s.length = i } } } }
+        item {
+            Text("篇幅如何影响生成：第 ③ 步不再单独选篇幅，生成时一律使用这里的默认篇幅，并在最终提示词末尾追加一行「篇幅：中篇，正文字数控制在 400–800 字之间。」模型据此控制长度；数字只是约束提示，实际字数可能有少量偏差。",
+                Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(P3.surface2).padding(14.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 20.sp)
+        }
+    }
+}
+
+@Composable
+private fun NumBox(v: String, on: (String) -> Unit) {
+    androidx.compose.foundation.text.BasicTextField(v, on, Modifier.width(64.dp).clip(RoundedCornerShape(10.dp)).background(P3.surface).border(1.dp, P3.borderStrong, RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 8.dp),
+        singleLine = true, textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = P3.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontFamily = Mono),
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
 }

@@ -70,7 +70,7 @@ class VarsTest {
 
     @Test fun finalPromptAddsLengthAndRaw() {
         val f = Ai.finalPrompt("问：{疑问}\n参考原文：{原文}", mapOf("疑问" to "Q"), "清洗后", attachRaw = false, length = 2)
-        assertEquals("问：Q\n篇幅：长，约 2500 字。", f)
+        assertEquals("问：Q\n篇幅：长篇，正文字数控制在 1000–1800 字之间。", f)
         val g = Ai.finalPrompt("问：{疑问}\n参考原文：{原文}", mapOf("疑问" to "Q"), "清洗后", attachRaw = true, length = 0)
         assertTrue(g.contains("参考原文：清洗后"))
     }
@@ -134,5 +134,28 @@ class ArticleExportTest {
     }
     @Test fun jsonTemplateEscapes() {
         assertEquals("""{"t":"a\"b","c":"x\ny"}""", Export.jsonTpl("""{"t":"{title}","c":"{body}"}""", "a\"b", "x\ny", emptyList()))
+    }
+}
+
+class LengthsTest {
+    @Test fun defaults() { assertEquals(listOf(150 to 300, 400 to 800, 1000 to 1800), Lengths.DEFAULT) }
+    @Test fun validateOk() { assertNull(Lengths.validate("150", "300")); assertNull(Lengths.validate(" 400 ", "400")) }
+    @Test fun validateBad() {
+        assertEquals("请填正整数", Lengths.validate("", "300"))
+        assertEquals("请填正整数", Lengths.validate("0", "300"))
+        assertEquals("请填正整数", Lengths.validate("-5", "300"))
+        assertEquals("请填正整数", Lengths.validate("1.5", "300"))
+        assertEquals("最少不能大于最多", Lengths.validate("800", "400"))
+    }
+    @Test fun roundTrip() { val l = listOf(100 to 200, 300 to 600, 900 to 2000); assertEquals(l, Lengths.decode(Lengths.encode(l))) }
+    @Test fun decodeBrokenFallsBack() {
+        assertEquals(Lengths.DEFAULT, Lengths.decode("garbage"))
+        assertEquals(Lengths.DEFAULT, Lengths.decode("300-100,400-800,1000-1800"))
+        assertEquals(Lengths.DEFAULT, Lengths.decode("150-300"))
+    }
+    @Test fun hintText() { assertEquals("篇幅：中篇，正文字数控制在 400–800 字之间。", Lengths.hint(1, 400 to 800)) }
+    @Test fun finalPromptAppendsRange() {
+        val p = Ai.finalPrompt("写一篇关于{疑问}的文章\n观点：{观点}", mapOf("疑问" to "早起"), "原文", false, 0, 120 to 260)
+        assertEquals("写一篇关于早起的文章\n篇幅：短篇，正文字数控制在 120–260 字之间。", p)
     }
 }
