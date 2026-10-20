@@ -8,6 +8,12 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawOutline
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.min
@@ -60,3 +66,29 @@ object Sq {
     val rightS = Squircle(0.dp, Corner.s, Corner.s, 0.dp)
     val topXl = Squircle(Corner.xl, Corner.xl, 0.dp, 0.dp)
 }
+
+/**
+ * 1.6：squircle 的描边 / 阴影都自己画，和裁切用同一条 Path。
+ * 原因：Compose 的 Modifier.border 对 Outline.Generic 会先光栅成位图遮罩再着色，
+ * 1.5 的文案库卡片还把 border 放在裁切之外，曲线处半透明边缘在她手机上变成暗红色毛边。
+ */
+fun androidx.compose.ui.Modifier.hairline(shape: Shape, color: androidx.compose.ui.graphics.Color, width: Dp = 0.75.dp): androidx.compose.ui.Modifier =
+    this.drawWithCache {
+        val w = width.toPx()
+        val outline = shape.createOutline(androidx.compose.ui.geometry.Size(size.width - w, size.height - w), layoutDirection, this)
+        onDrawWithContent {
+            drawContent()
+            translate(w / 2, w / 2) { drawOutline(outline, color, style = androidx.compose.ui.graphics.drawscope.Stroke(w)) }
+        }
+    }
+
+/** 中性柔阴影：同一形状，阴影色固定为中性灰（不带色偏） */
+fun androidx.compose.ui.Modifier.softShadow(shape: Shape, elevation: Dp = 6.dp): androidx.compose.ui.Modifier =
+    if (elevation.value <= 0f) this else this.shadow(elevation, shape, clip = false, ambientColor = androidx.compose.ui.graphics.Color(0x14000000), spotColor = androidx.compose.ui.graphics.Color(0x1F000000))
+
+/**
+ * 1.6 唯一的表面助手：卡片 / 面板 / 列表组都走这里。
+ * 无描边，极柔中性阴影；selected 时用 1dp 强调色细线（同一形状，自绘）。
+ */
+fun androidx.compose.ui.Modifier.surface(shape: Shape = Sq.xl, color: androidx.compose.ui.graphics.Color = P3.surface, elevation: Dp = 3.dp, outline: androidx.compose.ui.graphics.Color? = null): androidx.compose.ui.Modifier =
+    this.softShadow(shape, elevation).clip(shape).background(color, shape).let { if (outline != null) it.hairline(shape, outline, 1.dp) else it }

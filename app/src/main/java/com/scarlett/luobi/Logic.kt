@@ -320,6 +320,12 @@ object Md {
         MdKind.HR -> "——"; MdKind.BULLET -> "• " + strip(l.text); MdKind.NUM -> l.num + ". " + strip(l.text)
         MdKind.QUOTE -> "「" + strip(l.text) + "」"; else -> strip(l.text)
     }
+    /** 列表摘要：跳过所有小标题（含纯序号「1」「01」）、分隔线，取正文第一句起 */
+    fun snippet(body: String, max: Int = 80): String {
+        val ps = Export.paras(body)
+        return ps.map { line(it, ps.size) }.filter { it.kind != MdKind.H2 && it.kind != MdKind.H3 && it.kind != MdKind.HR && sectionNo(it.text) == null }
+            .joinToString(" ") { plainLine(it) }.replace(Regex("\\s+"), " ").trim().take(max)
+    }
     fun plainBody(body: String): String { val ps = Export.paras(body); return ps.joinToString("\n\n") { plainLine(line(it, ps.size)) } }
     fun mdLine(l: MdLine) = when (l.kind) {
         MdKind.H2 -> "## " + l.text; MdKind.H3 -> "### " + l.text; MdKind.QUOTE -> "> " + l.text; MdKind.BULLET -> "- " + l.text

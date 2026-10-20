@@ -41,7 +41,7 @@ fun ImgSrcPage(back: () -> Unit, go: (String) -> Unit) {
                     key(src.id) {
                         val ready = remember(tick, src) { ImgSources.ready(ctx, src) }
                         Column(Modifier.fillMaxWidth().zIndexIf(drag == i).graphicsLayer { translationY = if (drag == i) dy else 0f; shadowElevation = if (drag == i) 12f else 0f }
-                            .clip(Sq.l).background(P3.surface).border(1.dp, if (drag == i) P3.accent else P3.border, Sq.l)) {
+                            .clip(Sq.l).background(P3.surface).hairline(Sq.l, if (drag == i) P3.accent else P3.border, 1.dp)) {
                             Row(Modifier.fillMaxWidth().height(rowH).pointerInput(list) {
                                 detectDragGesturesAfterLongPress(onDragStart = { drag = i; dy = 0f }, onDragEnd = { drag = -1; dy = 0f }, onDragCancel = { drag = -1; dy = 0f }) { ch, d ->
                                     ch.consume(); dy += d.y
@@ -174,7 +174,7 @@ fun ShareBarPage(db: AppDb, back: () -> Unit) {
     var drag by remember { mutableIntStateOf(-1) }; var dy by remember { mutableFloatStateOf(0f) }
     Page("分享栏", back, action = { TextAction("恢复默认") { set(ShareBar.DEFAULT) } }) {
         item {
-            Row(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l).padding(vertical = 12.dp, horizontal = 4.dp)) {
+            Row(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border, 1.dp).padding(vertical = 12.dp, horizontal = 4.dp)) {
                 (bar.mapNotNull { ChannelIds.def(it, channels) } + ChannelIds.more).forEach { d ->
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         SvgIcon(d.icon, if (d.id == ShareBar.MORE) P3.text3 else P3.accent, 20.dp)
@@ -185,7 +185,7 @@ fun ShareBarPage(db: AppDb, back: () -> Unit) {
         }
         item { Text("显示在栏中 · 最多 ${ShareBar.MAX} 个 + 更多（固定）· 长按拖动排序", Modifier.padding(top = 14.dp, bottom = 6.dp), fontSize = 12.sp, color = P3.text2) }
         item {
-            Column(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l).padding(horizontal = 14.dp)) {
+            Column(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border, 1.dp).padding(horizontal = 14.dp)) {
                 bar.forEachIndexed { i, id ->
                     val d = ChannelIds.def(id, channels) ?: return@forEachIndexed
                     key(id) {
@@ -216,7 +216,7 @@ fun ShareBarPage(db: AppDb, back: () -> Unit) {
         item { Text(if (bar.size >= ShareBar.MAX) "可添加 · 已满 ${ShareBar.MAX} 个，先移出一个" else "可添加", Modifier.padding(top = 14.dp, bottom = 6.dp), fontSize = 12.sp, color = P3.text2) }
         item {
             val avail = ShareBar.others(ChannelIds.all(channels).map { it.id }, bar).mapNotNull { ChannelIds.def(it, channels) }
-            Column(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l).padding(horizontal = 14.dp)) {
+            Column(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border, 1.dp).padding(horizontal = 14.dp)) {
                 (if (showAll) avail else avail.take(4)).forEach { d ->
                     Row(Modifier.fillMaxWidth().height(rowH).clickable(enabled = bar.size < ShareBar.MAX) { set(ShareBar.add(bar, d.id)) }, verticalAlignment = Alignment.CenterVertically) {
                         SvgIcon(d.icon, P3.text2, 20.dp)
@@ -230,7 +230,7 @@ fun ShareBarPage(db: AppDb, back: () -> Unit) {
             }
         }
         item {
-            Row(Modifier.padding(top = 14.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = 14.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border, 1.dp).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("显示图片来源小字", fontSize = 15.sp, color = P3.text)
                     Text("图片下方显示「图片来自 Pexafy」；关掉后阅读页和所有导出都不显示", fontSize = 12.sp, color = P3.text3, lineHeight = 16.sp)

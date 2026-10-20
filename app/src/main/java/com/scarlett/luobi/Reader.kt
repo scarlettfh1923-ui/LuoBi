@@ -138,7 +138,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 // 分享栏：所选渠道（1–5）+ 固定最右「更多」；detail.png 网格；选中态只换颜色
                 val bar = remember(barTick) { s.shareBar }
                 (bar.mapNotNull { ChannelIds.def(it, channels) } + ChannelIds.more).forEach { d ->
-                    GridCell(d.icon, d.name, d.id == "xhs", pal.text, pal.sub, busy = act.busy == d.name) { if (d.id == ShareBar.MORE) panel = true else act.run(d.id, channels) }
+                    GridCell(d.icon, d.name, d.id == "xhs", if (pal.dark) pal.text else NavInk, if (pal.dark) pal.sub else NavInk, busy = act.busy == d.name) { if (d.id == ShareBar.MORE) panel = true else act.run(d.id, channels) }
                 }
         }
     }) { pad ->
@@ -272,7 +272,7 @@ fun XhsSheet(n: Note, imgs: List<Bitmap>, pal: ReadPalette, dismiss: () -> Unit)
                     }
                 }
                 items.forEachIndexed { i, (h, where, text) ->
-                    Row(Modifier.padding(top = 10.dp).fillMaxWidth().clip(Sq.m).background(P3.surface2).border(1.dp, P3.border, Sq.m)
+                    Row(Modifier.padding(top = 10.dp).fillMaxWidth().clip(Sq.m).background(P3.surface2).hairline(Sq.m, P3.border, 1.dp)
                         .padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) { Dot(if (copied > i) P3.accent else P3.text3.copy(alpha = .5f)); Text("  ${i + 1} · $h → $where", fontSize = 12.sp, color = P3.accent, fontWeight = FontWeight.SemiBold) }
@@ -295,7 +295,7 @@ fun XhsSheet(n: Note, imgs: List<Bitmap>, pal: ReadPalette, dismiss: () -> Unit)
 @Composable
 fun AaPanel(font: Float, setFont: (Float) -> Unit, fontId: String, setFontId: (String) -> Unit, mode: Int, setMode: (Int) -> Unit, pal: ReadPalette) {
     val ctx = LocalContext.current; val scope = rememberCoroutineScope()
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).shadow(6.dp, Sq.xl).clip(Sq.xl).background(pal.surface).border(1.dp, pal.border, Sq.xl).padding(16.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).shadow(6.dp, Sq.xl).clip(Sq.xl).background(pal.surface).hairline(Sq.xl, pal.border, 1.dp).padding(16.dp)) {
         Text("字号 · ${font.toInt()}", fontSize = 12.sp, color = pal.sub)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("A", color = pal.sub, fontSize = 13.sp)
@@ -308,7 +308,7 @@ fun AaPanel(font: Float, setFont: (Float) -> Unit, fontId: String, setFontId: (S
                 val sel = f.id == fontId; val ready = Fonts.ready(ctx, f.id); val prog = Fonts.progress[f.id]
                 val fam = remember(f.id, ready, prog) { Fonts.family(ctx, f.id) }
                 Column(Modifier.weight(1f).clip(Sq.m).background(if (sel) pal.accent.copy(alpha = .12f) else pal.bg)
-                    .border(if (sel) 2.dp else 1.dp, if (sel) pal.accent else pal.border, Sq.m)
+                    .hairline(Sq.m, if (sel) pal.accent else pal.border, if (sel) 2.dp else 1.dp)
                     .clickable {
                         if (ready) setFontId(f.id)
                         else if (prog == null || prog < 0f) scope.launch {
@@ -326,7 +326,7 @@ fun AaPanel(font: Float, setFont: (Float) -> Unit, fontId: String, setFontId: (S
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             readPalettes.forEachIndexed { i, p ->
                 Box(Modifier.weight(1f).height(36.dp).clip(Sq.full).background(p.bg)
-                    .border(if (mode == i) 2.dp else 1.dp, if (mode == i) pal.accent else pal.border, Sq.full)
+                    .hairline(Sq.full, if (mode == i) pal.accent else pal.border, if (mode == i) 2.dp else 1.dp)
                     .clickable { setMode(i) }, contentAlignment = Alignment.Center) { Text(p.name, color = p.text, fontSize = 13.sp) }
             }
         }
@@ -341,14 +341,14 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Render.styles.forEachIndexed { i, st ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(Sq.m).clickable { setStyle(i) }.padding(2.dp)) {
-                    Box(Modifier.size(46.dp).border(2.dp, if (style == i) pal.accent else Color.Transparent, Sq.full).padding(4.dp).clip(Sq.full).background(Color(st.bg2)).border(1.dp, pal.border, Sq.full), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(46.dp).hairline(Sq.full, if (style == i) pal.accent else Color.Transparent, 2.dp).padding(4.dp).clip(Sq.full).background(Color(st.bg2)).hairline(Sq.full, pal.border, 1.dp), contentAlignment = Alignment.Center) {
                         if (style == i) SvgIcon(Ic.check, Color(st.accent), 16.dp)
                     }
                     Text(st.name, Modifier.padding(top = 2.dp), fontSize = 12.sp, color = if (style == i) pal.accent else pal.sub)
                 }
             }
         }
-        Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(Sq.xl).background(pal.surface).border(1.dp, pal.border, Sq.xl).padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(Sq.xl).background(pal.surface).hairline(Sq.xl, pal.border, 1.dp).padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("正文排版", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = pal.text)
                 val many = imgs.size > 18
@@ -362,7 +362,7 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
                     val label = "${r.label} ${r.sub}"
                     Box(Modifier.weight(1f).height(40.dp).clip(Sq.m)
                         .background(if (sel) pal.accent.copy(alpha = .14f) else pal.bg)
-                        .border(if (sel) 1.5.dp else 1.dp, if (sel) pal.accent else pal.border, Sq.m)
+                        .hairline(Sq.m, if (sel) pal.accent else pal.border, if (sel) 1.5.dp else 1.dp)
                         .clickable { setRatio(i) }, contentAlignment = Alignment.Center) {
                         Text(label, fontSize = 13.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, color = if (sel) pal.accent else pal.sub, maxLines = 1)
                     }
@@ -383,7 +383,7 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
         else {
             val ps = rememberPagerState { imgs.size }
             HorizontalPager(ps, contentPadding = PaddingValues(horizontal = 48.dp), pageSpacing = 12.dp) { i ->
-                Image(imgs[i].asImageBitmap(), null, Modifier.fillMaxWidth().aspectRatio(CardRatio.fromIndex(ratio).aspect).border(1.dp, pal.border, Sq.m).clip(Sq.m), contentScale = ContentScale.Fit)
+                Image(imgs[i].asImageBitmap(), null, Modifier.fillMaxWidth().aspectRatio(CardRatio.fromIndex(ratio).aspect).hairline(Sq.m, pal.border, 1.dp).clip(Sq.m), contentScale = ContentScale.Fit)
             }
             Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                 val cur = ps.currentPage; val win = if (imgs.size <= 9) 0 until imgs.size else (cur - 4).coerceIn(0, imgs.size - 9).let { it until it + 9 }
@@ -392,7 +392,7 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
             Text("${ps.currentPage + 1} / ${imgs.size}  ·  ${if (ps.currentPage == 0) "封面" else "正文"}  ·  ${CardRatio.fromIndex(ratio).label}", fontFamily = Mono, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = pal.sub, fontSize = 12.sp)
         }
         Column(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            OutlinedButton(onClick = save, enabled = imgs.isNotEmpty(), shape = Sq.full, border = BorderStroke(1.dp, pal.border)) {
+            OutlinedButton(onClick = save, enabled = imgs.isNotEmpty(), shape = Sq.full, border = null, modifier = Modifier.hairline(Sq.full, pal.border)) {
                 SvgIcon(Ic.download, pal.accent, 18.dp); Spacer(Modifier.width(6.dp)); Text("保存到相册", color = pal.text)
             }
             if (imgOn) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {

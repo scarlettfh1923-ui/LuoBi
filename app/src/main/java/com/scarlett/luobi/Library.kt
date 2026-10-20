@@ -118,7 +118,7 @@ fun LibraryScreen(
                 }
             }
             item {
-                Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(42.dp).clip(Sq.full).background(P3.surface).border(1.dp, P3.border, Sq.full).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(42.dp).clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.border, 1.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(Ic.search, t3(), 18.dp); Spacer(Modifier.width(8.dp))
                     Box(Modifier.weight(1f)) {
                         BasicTextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true, textStyle = TextStyle(fontSize = 15.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary))
@@ -171,7 +171,7 @@ fun LibraryScreen(
                 }
             } else {
                 shown.groupBy { dayLabel(it.createdAt) }.forEach { (d, list) ->
-                    item(key = "d$d$sort") { Text(d, Modifier.padding(start = 24.dp, top = 12.dp, bottom = 4.dp), fontSize = 12.sp, color = t3()) }
+                    item(key = "d$d$sort") { SectionLabel(d, Modifier.padding(start = 16.dp)) }
                     items(list, key = { it.id }) { n ->
                         LibraryRow(n, managing, n.id in selected, openSwipeId == n.id,
                             onOpen = {
@@ -241,19 +241,8 @@ fun LibraryScreen(
 private fun ElevCard(modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     val cs = MaterialTheme.colorScheme
     val shape = Sq.xl
-    Surface(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth().border(1.dp, P3.border, shape).then(
-            if (selected) Modifier.border(1.5.dp, cs.primary.copy(alpha = .4f), shape) else Modifier
-        ),
-        shape = shape,
-        color = if (selected) P3.accentSoft else P3.surface,
-        shadowElevation = 0.dp,
-        tonalElevation = 0.dp,
-        border = null,
-    ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), content = content)
-    }
+    Column(modifier.fillMaxWidth().surface(shape, if (selected) P3.accentSoft else P3.surface, outline = if (selected) cs.primary.copy(alpha = .4f) else null)
+        .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), content = content)
 }
 
 @Composable
@@ -261,10 +250,9 @@ private fun NoteTitleBlock(n: Note, showHeart: Boolean, onToggleFav: () -> Unit 
     val cs = MaterialTheme.colorScheme
     // 1.5：标题一行 + 摘要一行 + 一行弱化信息
     Text(n.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 23.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = P3.text)
-    Text(Md.plainBody(n.body).replace("\n", " ").take(80), Modifier.padding(top = 4.dp), fontSize = 13.sp, color = P3.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Text(Md.snippet(n.body), Modifier.padding(top = 4.dp), fontSize = 13.sp, color = P3.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
     Row(Modifier.padding(top = 6.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(listOf(n.templateName, shortDate(n.createdAt), "%,d".format(n.body.length) + " 字", if (n.version > 1) "v${n.version}" else "").filter { it.isNotBlank() }.joinToString(" · "), Modifier.weight(1f, fill = false), fontSize = 12.sp, color = t3(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.weight(1f))
+        Text(listOf(n.templateName, java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA).format(java.util.Date(n.createdAt)), "%,d".format(n.body.length) + " 字", if (n.version > 1) "v${n.version}" else "").filter { it.isNotBlank() }.joinToString(" · "), Modifier.weight(1f), fontSize = 12.sp, color = t3(), maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (showHeart) Box(Modifier.size(32.dp).clip(Sq.full).clickable { onToggleFav() }, contentAlignment = Alignment.Center) {
             SvgIcon(Ic.heart, if (n.favorite) P3.accent else t3(), 18.dp, if (n.favorite) P3.accent else null, "收藏")
         }
@@ -292,7 +280,7 @@ private fun LibraryRow(
             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.padding(top = 2.dp).size(22.dp).clip(Sq.full)
                     .background(if (selected) cs.primary else Color.Transparent)
-                    .border(1.5.dp, if (selected) cs.primary else cs.outline, Sq.full), contentAlignment = Alignment.Center) {
+                    .hairline(Sq.full, if (selected) cs.primary else cs.outline, 1.5.dp), contentAlignment = Alignment.Center) {
                     if (selected) SvgIcon(Ic.check, Color.White, 12.dp)
                 }
                 Column(Modifier.weight(1f)) { NoteTitleBlock(n, showHeart = false) }

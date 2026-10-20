@@ -151,7 +151,7 @@ fun App() {
         }, label = "nav") { r ->
             when (r) {
                 is Route.Tab -> { val bd = rememberBackdrop(); CompositionLocalProvider(LocalBackdrop provides bd) { Scaffold(containerColor = P3.bg, bottomBar = { if (!(r.i == 1 && libManaging)) FloatingNav(r.i) { libManaging = false; tab(it) } }) { pad ->
-                    Box(Modifier.fillMaxSize().backdropSource(bd).padding(top = pad.calculateTopPadding()).statusBarsPadding()) {
+                    Box(Modifier.fillMaxSize().backdropSource(bd).padding(top = pad.calculateTopPadding())) {
                         val bottom = pad.calculateBottomPadding()
                         when (r.i) {
                             0 -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) }, { go(Route.Sub("templates")) }, startGen, { go(Route.Sub("length")) }, { go(Route.Sub("template:$it")) })
@@ -197,7 +197,7 @@ private fun StepHead(n: Int, title: String, state: Int, right: (@Composable () -
 /** 已完成的步骤收成一行：✓ 标题 · 摘要  修改 */
 @Composable
 private fun DoneRow(title: String, summary: String, edit: () -> Unit) {
-    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l)
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border, 1.dp)
         .clickable(onClick = edit).padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(20.dp).clip(Sq.full).background(P3.accent), contentAlignment = Alignment.Center) { SvgIcon(Ic.check, Color.White, 13.dp) }
         Text(title, Modifier.padding(start = 10.dp), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = P3.text, maxLines = 1)
@@ -296,7 +296,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                     InputBox(ws.cleaned, { ws.cleaned = it }, "清洗后的文字", minHeight = 80.dp)
                     FieldLabel("识别到的意图", "可编辑")
                     ws.values.toList().forEachIndexed { i, (k, v) ->
-                        Column(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.m).background(P3.surface2).border(1.dp, P3.border, Sq.m).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 10.dp)) {
+                        Column(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.m).background(P3.surface2).hairline(Sq.m, P3.border, 1.dp).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 10.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("{$k}", fontSize = 13.sp, color = P3.accent, fontWeight = FontWeight.SemiBold)
                                 Text(fieldHint(k), Modifier.weight(1f).padding(start = 8.dp), fontSize = 12.sp, color = P3.text3, textAlign = TextAlign.End, maxLines = 1)
@@ -307,7 +307,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                         }
                     }
                     ws.fields.filter { f -> ws.values.none { it.first == f } }.forEach { f ->
-                        Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.m).border(1.dp, P3.borderStrong, Sq.m).clickable { ws.values.add(f to "") }
+                        Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.m).hairline(Sq.m, P3.borderStrong, 1.dp).clickable { ws.values.add(f to "") }
                             .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             SvgIcon(Ic.plus, P3.accent, 16.dp); Text(" 添加 {$f}", fontSize = 14.sp, color = P3.accent)
                             Text("  ${fieldHint(f)}（没识别到）", fontSize = 12.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -332,11 +332,11 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                     (if (all) sorted else sorted.take(4)).forEach { t ->
                         val sel = t.id == ws.templateId
                         Column(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(if (sel) P3.accentSoft else P3.surface2)
-                            .border(if (sel) 1.5.dp else 1.dp, if (sel) P3.accent else P3.border, Sq.l).clickable { ws.templateId = t.id }.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                            .hairline(Sq.l, if (sel) P3.accent else P3.border, if (sel) 1.5.dp else 1.dp).clickable { ws.templateId = t.id }.padding(horizontal = 14.dp, vertical = 12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(t.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
                                 if (t.id == ws.recommendId) Text("推荐", Modifier.padding(start = 8.dp).clip(Sq.full).background(P3.accent).padding(horizontal = 8.dp, vertical = 2.dp), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                if (!t.builtIn) Text("我的", Modifier.padding(start = 8.dp).clip(Sq.full).background(P3.surface).border(1.dp, P3.borderStrong, Sq.full).padding(horizontal = 8.dp, vertical = 1.dp), color = P3.text2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                if (!t.builtIn) Text("我的", Modifier.padding(start = 8.dp).clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.borderStrong, 1.dp).padding(horizontal = 8.dp, vertical = 1.dp), color = P3.text2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                             Text(t.desc, Modifier.padding(top = 3.dp), fontSize = 13.sp, color = P3.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }

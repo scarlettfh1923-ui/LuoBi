@@ -15,7 +15,7 @@ object P3 {
     val bg = Color(0xFFF5F7FA)
     val surface = Color(0xFFFFFFFF)
     val surface2 = Color(0xFFEEF2F7)
-    val border = Color(0xFFE3E8EF)
+    val border = Color(0xFFE2E5EA)   // 1.6：全 App 唯一细线色
     val borderStrong = Color(0xFFCDD5E0)
     val text = Color(0xFF111827)
     val text2 = Color(0xFF5B6576)

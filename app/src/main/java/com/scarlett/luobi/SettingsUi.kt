@@ -37,15 +37,15 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottom + 20.dp)) {
         item { BigTitle("设置") }
         item { RowGroup("写作", listOf(
-            { SettingRow(Ic.key, "模型与密钥", "已配置 ${s.configured().size} 个") { go("models") } },
-            { SettingRow(Ic.text, "模板管理", "内置 ${templates.count { it.builtIn }} · 我的 ${templates.count { !it.builtIn }}") { go("templates") } },
+            { SettingRow(Ic.key, "模型与密钥", "${s.configured().size} 个") { go("models") } },
+            { SettingRow(Ic.tpl, "模板管理", "${templates.size} 个") { go("templates") } },
             { SettingRow(Ic.wand, "清洗模板", active?.name ?: "未选择") { go("cleans") } },
-            { SettingRow(Ic.text, "篇幅", Lengths.label(s.length, s.lengthRange())) { go("length") } })) }
+            { SettingRow(Ic.ruler, "篇幅", Lengths.NAMES[s.length.coerceIn(0, 2)] + " · " + s.lengthRange().let { "${it.first}–${it.second}" }) { go("length") } })) }
         item { RowGroup("分享与图片", listOf(
-            { SettingRow(Ic.share, "分享栏", (s.shareBar.map { ChannelIds.short(it, channels) } + "更多").joinToString(" · ")) { go("sharebar") } },
-            { SettingRow(Ic.send, "发布渠道", (listOf("Notion", "语雀", "Telegraph") + channels.map { it.name }).joinToString(" · ")) { go("channels") } },
-            { SettingRow(Ic.image, "图片来源", ImgSources.list(ctx).filter { it.on }.joinToString(" · ") { it.name.substringBefore("（") }) { go("imgsrc") } },
-            { SettingRow(Ic.image, "出图与默认", "卡片 · 长图 · 默认模型") { go("style") } })) }
+            { SettingRow(Ic.share, "分享栏", "${s.shareBar.size} 项") { go("sharebar") } },
+            { SettingRow(Ic.send, "发布渠道", "${3 + channels.size} 个") { go("channels") } },
+            { SettingRow(Ic.image, "图片来源", "${ImgSources.list(ctx).count { it.on }} 个来源") { go("imgsrc") } },
+            { SettingRow(Ic.palette, "出图与默认", "卡片 · 长图") { go("style") } })) }
         item { RowGroup("其他", listOf({ SettingRow(Ic.info, "关于落笔", "v${BuildConfig.VERSION_NAME}") { go("about") } })) }
         item {
             Text("所有 Key 只加密存在这台手机上，不经过任何服务器。", Modifier.padding(horizontal = 28.dp, vertical = 14.dp).fillMaxWidth(), fontSize = 12.sp, color = P3.text3)
@@ -87,7 +87,7 @@ fun Page(title: String, back: () -> Unit, action: (@Composable RowScope.() -> Un
 
 @Composable
 private fun NewButton(onClick: () -> Unit) {
-    Row(Modifier.padding(end = 12.dp).clip(Sq.full).background(P3.accentSoft).border(1.dp, P3.accent, Sq.full).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(end = 12.dp).clip(Sq.full).background(P3.accentSoft).hairline(Sq.full, P3.accent, 1.dp).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
         SvgIcon(Ic.plus, P3.onAccentSoft, 16.dp); Text(" 新建", color = P3.onAccentSoft, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }
@@ -207,7 +207,7 @@ fun TemplateEdit(db: AppDb, id: Long, back: () -> Unit) {
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 (fields + Vars.RAW).forEach { v ->
-                    Row(Modifier.clip(Sq.full).background(P3.surface).border(1.dp, P3.borderStrong, Sq.full).clickable {
+                    Row(Modifier.clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.borderStrong, 1.dp).clickable {
                         val ins = "{$v}"; val sel = prompt.selection
                         val txt = prompt.text.replaceRange(sel.min, sel.max, ins)
                         prompt = TextFieldValue(txt, TextRange(sel.min + ins.length))
@@ -264,7 +264,7 @@ fun CleansPage(db: AppDb, back: () -> Unit) {
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 c.fieldList().forEach { f ->
-                    Row(Modifier.clip(Sq.full).background(P3.surface).border(1.dp, P3.accent, Sq.full).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.accent, 1.dp).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(f, fontSize = 14.sp, color = P3.onAccentSoft)
                         Box(Modifier.size(28.dp).clip(Sq.full).clickable {
                             val nf = c.fieldList() - f
@@ -272,7 +272,7 @@ fun CleansPage(db: AppDb, back: () -> Unit) {
                         }, contentAlignment = Alignment.Center) { SvgIcon(Ic.close, P3.accent, 14.dp, desc = "删除字段") }
                     }
                 }
-                Row(Modifier.clip(Sq.full).border(1.dp, P3.borderStrong, Sq.full).clickable { newField = "" }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.clip(Sq.full).hairline(Sq.full, P3.borderStrong, 1.dp).clickable { newField = "" }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(Ic.plus, P3.text2, 14.dp); Text(" 字段", fontSize = 14.sp, color = P3.text)
                 }
             }
@@ -350,7 +350,7 @@ fun ModelsPage(back: () -> Unit) {
         item { GroupLabel("自定义模型（OpenAI 兼容）") }
         customs.forEach { cm -> item(key = cm.id) { CustomModelCard(cm, s, { customs = s.customs; ver++ }) } }
         item {
-            Column(Modifier.fillMaxWidth().clip(Sq.l).border(1.dp, P3.accent.copy(alpha = .6f), Sq.l).clickable {
+            Column(Modifier.fillMaxWidth().clip(Sq.l).hairline(Sq.l, P3.accent.copy(alpha = .6f), 1.dp).clickable {
                 s.customs = s.customs + CustomModel(System.currentTimeMillis().toString(36), "自定义模型", "", ""); customs = s.customs
             }.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) { SvgIcon(Ic.plus, P3.accent, 18.dp); Text(" 自定义模型（OpenAI 兼容）", fontSize = 16.sp, color = P3.accent, fontWeight = FontWeight.SemiBold) }
@@ -371,7 +371,7 @@ fun TestRow(test: suspend () -> String) {
         OutlinedButton(onClick = {
             busy = true; res = null
             scope.launch { res = try { true to test() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: ConfigError) { false to (e.message ?: "") } catch (e: PublishError) { false to (e.message ?: "") } catch (e: Throwable) { false to Errors.explain(e).text }; busy = false }
-        }, enabled = !busy, shape = Sq.full, border = BorderStroke(1.dp, P3.borderStrong)) {
+        }, enabled = !busy, shape = Sq.full, border = null, modifier = Modifier.hairline(Sq.full, P3.borderStrong)) {
             if (busy) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = P3.accent) else SvgIcon(Ic.refresh, P3.accent, 16.dp)
             Text(if (busy) "  测试中…" else "  测试连接", color = P3.text, fontSize = 14.sp)
         }
@@ -582,7 +582,7 @@ fun PinnedPage(db: AppDb, back: () -> Unit) {
         pinned.forEachIndexed { i, id ->
             val d = ChannelIds.all(channels).firstOrNull { it.id == id } ?: return@forEachIndexed
             item(key = "p$id") {
-                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.accent, Sq.l).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.accent, 1.dp).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${i + 1}", fontFamily = Mono, color = P3.accent, fontSize = 14.sp); Spacer(Modifier.width(10.dp))
                     SvgIcon(d.icon, P3.accent, 20.dp, P3.accent); Spacer(Modifier.width(10.dp))
                     Text(d.name, Modifier.weight(1f), fontSize = 15.sp)
@@ -594,7 +594,7 @@ fun PinnedPage(db: AppDb, back: () -> Unit) {
         item { GroupLabel("全部渠道") }
         ChannelIds.all(channels).filter { it.id != "xhs" && it.id !in pinned }.forEach { d ->
             item(key = "a${d.id}") {
-                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border, 1.dp).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(d.icon, P3.text2, 20.dp); Spacer(Modifier.width(10.dp))
                     Text(d.name, Modifier.weight(1f), fontSize = 15.sp)
                     TextAction(if (pinned.size >= 8) "已满" else "置顶", enabled = pinned.size < 8) { set(pinned + d.id) }
@@ -656,7 +656,7 @@ fun LengthPage(back: () -> Unit) {
         (0..2).forEach { i ->
             item {
                 val err = Lengths.validate(mins[i], maxs[i])
-                Card(Modifier.padding(bottom = 10.dp).then(if (def == i) Modifier.border(1.5.dp, P3.accent, Sq.xl) else Modifier)) {
+                Card(Modifier.padding(bottom = 10.dp).then(if (def == i) Modifier.hairline(Sq.xl, P3.accent, 1.5.dp) else Modifier)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(Lengths.NAMES[i] + "篇", Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
                         if (def == i) Text("默认", Modifier.clip(Sq.full).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.accent)
@@ -683,7 +683,7 @@ fun LengthPage(back: () -> Unit) {
 
 @Composable
 private fun NumBox(v: String, on: (String) -> Unit) {
-    androidx.compose.foundation.text.BasicTextField(v, on, Modifier.width(64.dp).clip(Sq.m).background(P3.surface).border(1.dp, P3.borderStrong, Sq.m).padding(horizontal = 8.dp, vertical = 8.dp),
+    androidx.compose.foundation.text.BasicTextField(v, on, Modifier.width(64.dp).clip(Sq.m).background(P3.surface).hairline(Sq.m, P3.borderStrong, 1.dp).padding(horizontal = 8.dp, vertical = 8.dp),
         singleLine = true, textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = P3.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontFamily = Mono),
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
 }
