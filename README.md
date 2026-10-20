@@ -3,7 +3,7 @@
 把一段话（口播、想表达的意思、疑问）变成一篇完整文章，再一键变成小红书图、长图、HTML，或同步到 Notion / 语雀 / Telegraph / 自定义博客接口。
 以「小红书助手 v2.9」源码为基础复制扩展（原项目未改动），独立包名 `com.scarlett.luobi`、独立签名钥匙。
 
-- 版本：1.1.0（versionCode 2），minSdk 29，targetSdk 35
+- 版本：1.2.0（versionCode 2），minSdk 29，targetSdk 35
 - 技术：Kotlin + Jetpack Compose + Room + WorkManager + EncryptedSharedPreferences
 
 ## 构建
@@ -35,10 +35,15 @@ echo "sdk.dir=/opt/android-sdk" > local.properties
 - 写作模板引用当前清洗模板不输出的字段 → 编辑器黄色警告；切换清洗模板 / 删字段时列出受影响模板。
 - 最终提示词 = 填好的模板 + 篇幅行（「设置 → 篇幅设置」的默认篇幅，如「篇幅：中篇，正文字数控制在 400–800 字之间。」）；写作时 system 消息要求输出 JSON {title, body, tags}，解析失败按纯文本兜底。
 
-## 1.1.0 改动
+## 1.2.0 改动（含原 1.1 计划）
 - 启动器图标换成「抽象一笔」（adaptive：浅底背景 + 蓝色笔画前景 + monochrome；mipmap 各密度 PNG 兜底）。
 - 分享面板改成 4 列同尺寸宫格；微信 / QQ 只发正文全文纯文字（ACTION_SEND text/plain 定向包名，失败弹系统菜单）；微博 / 抖音发长图或配图。
 - 修复 sendImagesTo 的 ClipData 可能重复放图（改为按 Uri 去重、每张一项）；小红书流程未改。
 - 阅读页删除改写胶囊整条；底栏「小红书」与其它渠道同样是图标+文字格子，置顶上限 8 个，放不下可横向滑动。
 - 写作第 ③ 步去掉篇幅选择，换只读提示行（点它进篇幅设置）；新增「设置 → 篇幅设置」。
 - 思源宋体裁剪为 GB2312 + ASCII + 常用中文标点子集（pyftsubset），缺字由系统字体回退；开启 R8 混淆/资源压缩。
+- 结果页去掉「阅读 / 配图」切换，打开即阅读；点底栏「小红书」或「存相册 → 配图卡片」进入独立配图页（卡片预览 + 比例 / 配色等），页底主按钮「分享到小红书」走原 Share 流程。
+- 文中插图（Pics.kt / ImgSrc.kt / Illustrate.kt / ImgSrcUi.kt）：顶栏图片图标 → 默认模型通读全文给出插图位置 + 英文描述 → 段落间候选卡片（横滑候选、换一批、跳过、插入），底栏全部插入 / 完成；长按段落「在此插图 / 复制段落」，长按图片「换图 / 编辑图注 / 删除」。
+- 图片缓存在 filesDir/pics；插图 JSON 存在 notes.images 列（Room 1→2 迁移，ALTER TABLE 加列，旧数据保留），随版本复制。
+- 导出：长图（画进图里）、HTML（figure/img）、Markdown（![]()）、Notion（external image block）、语雀（Markdown）、Telegraph（figure/img）、自定义端点（html / markdown 格式）；微信 / QQ 仍只发纯文字。AI 生成的本地图只进长图。
+- 设置 → 图片来源：Pexafy、Pexels、AI 生图（复用配图模型）、自定义接口（{query} 模板、Header / Query 鉴权、字段路径 results[].urls.regular），长按拖动排序、开关、测试搜索，失败或无结果顺延；每篇张数（1–6）、方向偏好。
