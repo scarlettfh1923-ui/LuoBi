@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 仅 debug 构建：截图用的示例数据入口，不进 release -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <activity android:name=".SeedActivity" android:exported="true" />
+  </application>
+</manifest>
