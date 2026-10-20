@@ -276,7 +276,7 @@ object Out {
         val ok = x != null && ctx.packageManager.queryIntentActivities(x, 0).isNotEmpty()
         if (pkg != null && !ok) toast(ctx, "未检测到该 APP，请选择分享方式")
         try { ctx.startActivity((if (ok) x!! else Intent.createChooser(it, "分享到")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        catch (_: Exception) { ctx.startActivity(Intent.createChooser(it, "分享到").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        catch (_: Exception) { Share.safeStart(ctx, Intent.createChooser(it, "分享到")) }
     }
     /** 指定包名分享图片；失败时弹系统菜单。单图只放 EXTRA_STREAM + 同一 ClipData 项，不重复 */
     fun sendImagesTo(ctx: Context, pkg: String?, uris: ArrayList<android.net.Uri>, text: String) {
@@ -290,6 +290,6 @@ object Out {
         val ok = x != null && ctx.packageManager.queryIntentActivities(x, 0).isNotEmpty()
         if (pkg != null && !ok) toast(ctx, "未检测到该 APP，请选择分享方式")
         try { ctx.startActivity((if (ok) x!! else Intent.createChooser(it, "分享到")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        catch (_: Exception) { ctx.startActivity(Intent.createChooser(it, "分享到").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        catch (_: Exception) { Share.safeStart(ctx, Intent.createChooser(it, "分享到")) }
     }
 }

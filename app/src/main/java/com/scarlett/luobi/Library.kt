@@ -118,7 +118,7 @@ fun LibraryScreen(
                 }
             }
             item {
-                Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(42.dp).clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.border, 1.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(42.dp).clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.border).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(Ic.search, t3(), 18.dp); Spacer(Modifier.width(8.dp))
                     Box(Modifier.weight(1f)) {
                         BasicTextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true, textStyle = TextStyle(fontSize = 15.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary))

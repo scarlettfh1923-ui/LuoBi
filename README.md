@@ -3,7 +3,7 @@
 把一段话（口播、想表达的意思、疑问）变成一篇完整文章，再一键变成小红书图、长图、HTML，或同步到 Notion / 语雀 / Telegraph / 自定义博客接口。
 以「小红书助手 v2.9」源码为基础复制扩展（原项目未改动），独立包名 `com.scarlett.luobi`、独立签名钥匙。
 
-- 版本：1.6.0（versionCode 5），minSdk 29，targetSdk 35
+- 版本：1.7.0（versionCode 5），minSdk 29，targetSdk 35
 - 技术：Kotlin + Jetpack Compose + Room + WorkManager + EncryptedSharedPreferences
 
 ## 构建
@@ -35,7 +35,7 @@ echo "sdk.dir=/opt/android-sdk" > local.properties
 - 写作模板引用当前清洗模板不输出的字段 → 编辑器黄色警告；切换清洗模板 / 删字段时列出受影响模板。
 - 最终提示词 = 填好的模板 + 篇幅行（「设置 → 篇幅设置」的默认篇幅，如「篇幅：中篇，正文字数控制在 400–800 字之间。」）；写作时 system 消息要求输出 JSON {title, body, tags}，解析失败按纯文本兜底。
 
-## 1.6.0 改动（方向 A · 冷白磨砂）
+## 1.7.0 改动（方向 A · 冷白磨砂）
 - **金句变标题（修复）**：解析器把整段 `**…**`（5–42 字）当成 H2，这是 1.0 旧格式遗留；1.3 起 AI 用 ** 标金句，单独成段的金句被放大成小标题。现在整段加粗只有 ≤14 字且无句读才算小标题，其余是正文字号加粗；`#` 开头但像句子（有句读或 >24 字）的也降为加粗正文；提示词明确金句不能用 #。阅读页、长图、HTML/Markdown/Notion/Telegraph 共用同一解析，一并修好。
 - **统一圆角**：新增 Shapes.kt，全 App 唯一的连续曲率（squircle，超椭圆 n=4、角区 1.28×）形状族；刻度 8/14/20/24/28dp + 全圆胶囊，同一曲线。卡片/弹层/对话框 28dp，按钮/标签/胶囊/浮动圆全圆。代码里已无 RoundedCornerShape/CircleShape（Theme 里仅作 Material 兜底，所有组件显式传 Squircle）。
 - **浮动磨砂**：主导航、阅读页分享栏、返回圆、右上动作组、配图页/插图底栏都是浮动胶囊。Android 12+ 用 RenderEffect 真模糊（内容录进 GraphicsLayer，再录一份模糊副本给胶囊画）；11 及以下回退半透明白。

@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -197,7 +198,7 @@ private fun StepHead(n: Int, title: String, state: Int, right: (@Composable () -
 /** 已完成的步骤收成一行：✓ 标题 · 摘要  修改 */
 @Composable
 private fun DoneRow(title: String, summary: String, edit: () -> Unit) {
-    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border, 1.dp)
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border)
         .clickable(onClick = edit).padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(20.dp).clip(Sq.full).background(P3.accent), contentAlignment = Alignment.Center) { SvgIcon(Ic.check, Color.White, 13.dp) }
         Text(title, Modifier.padding(start = 10.dp), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = P3.text, maxLines = 1)
@@ -276,7 +277,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                             androidx.compose.foundation.text.BasicTextField(ws.raw, { ws.raw = it }, Modifier.fillMaxWidth(),
                                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, lineHeight = 27.sp, color = P3.text), cursorBrush = androidx.compose.ui.graphics.SolidColor(P3.accent))
                         }
-                        HorizontalDivider(Modifier.padding(top = 8.dp), thickness = 0.5.dp, color = P3.border)
+                        HorizontalDivider(Modifier.padding(top = 8.dp), thickness = Dp.Hairline, color = P3.border)
                         Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("${ws.raw.length} 字", Modifier.weight(1f), fontSize = 12.sp, color = P3.text3, fontFamily = Mono)
                             TextAction("粘贴") {
@@ -296,7 +297,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                     InputBox(ws.cleaned, { ws.cleaned = it }, "清洗后的文字", minHeight = 80.dp)
                     FieldLabel("识别到的意图", "可编辑")
                     ws.values.toList().forEachIndexed { i, (k, v) ->
-                        Column(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.m).background(P3.surface2).hairline(Sq.m, P3.border, 1.dp).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 10.dp)) {
+                        Column(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.m).background(P3.surface2).hairline(Sq.m, P3.border).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 10.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("{$k}", fontSize = 13.sp, color = P3.accent, fontWeight = FontWeight.SemiBold)
                                 Text(fieldHint(k), Modifier.weight(1f).padding(start = 8.dp), fontSize = 12.sp, color = P3.text3, textAlign = TextAlign.End, maxLines = 1)
@@ -307,7 +308,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                         }
                     }
                     ws.fields.filter { f -> ws.values.none { it.first == f } }.forEach { f ->
-                        Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.m).hairline(Sq.m, P3.borderStrong, 1.dp).clickable { ws.values.add(f to "") }
+                        Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.m).hairline(Sq.m, P3.borderStrong).clickable { ws.values.add(f to "") }
                             .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             SvgIcon(Ic.plus, P3.accent, 16.dp); Text(" 添加 {$f}", fontSize = 14.sp, color = P3.accent)
                             Text("  ${fieldHint(f)}（没识别到）", fontSize = 12.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -336,7 +337,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(t.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
                                 if (t.id == ws.recommendId) Text("推荐", Modifier.padding(start = 8.dp).clip(Sq.full).background(P3.accent).padding(horizontal = 8.dp, vertical = 2.dp), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                if (!t.builtIn) Text("我的", Modifier.padding(start = 8.dp).clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.borderStrong, 1.dp).padding(horizontal = 8.dp, vertical = 1.dp), color = P3.text2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                if (!t.builtIn) Text("我的", Modifier.padding(start = 8.dp).clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.borderStrong).padding(horizontal = 8.dp, vertical = 1.dp), color = P3.text2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                             Text(t.desc, Modifier.padding(top = 3.dp), fontSize = 13.sp, color = P3.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
@@ -358,13 +359,13 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                 if (configured.isEmpty()) WarnBox("还没有配置任何模型的 Key，请先到「设置 → 模型与密钥」填写。", Modifier.clickable { goModels() })
                 else ChoiceList(configured.map { Triple(it.label, it.sub, ws.model == it.ref) }) { i -> ws.model = configured[i].ref }
                 Spacer(Modifier.height(10.dp))
-                HorizontalDivider(color = P3.border)
+                HorizontalDivider(thickness = Dp.Hairline, color = P3.border)
                 Row(Modifier.fillMaxWidth().clickable { goLength() }.padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("篇幅", Modifier.weight(1f), fontSize = 15.sp, color = P3.text)
                     Text(if (tpl != null && Lengths.inTemplate(tpl.prompt)) "模板已指定" else Lengths.label(length, lenRange).replace("（", " · ").replace("）", ""), fontSize = 14.sp, color = P3.text2)
                     Text("  ›", fontSize = 15.sp, color = P3.text3)
                 }
-                HorizontalDivider(color = P3.border)
+                HorizontalDivider(thickness = Dp.Hairline, color = P3.border)
                 Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("附上清洗后的原文", fontSize = 15.sp, color = P3.text)

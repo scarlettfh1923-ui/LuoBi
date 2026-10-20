@@ -230,7 +230,7 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
         Spacer(Modifier.height(12.dp))
         TagEditor(n.tagList(), onTags, pal.accent, pal.bg, pal.text, pal.dark, collapsible = true)
         Spacer(Modifier.height(16.dp))
-        HorizontalDivider(thickness = 0.5.dp, color = pal.border)
+        HorizontalDivider(thickness = Dp.Hairline, color = pal.border)
         Spacer(Modifier.height(18.dp))
         paras.forEachIndexed { i, p ->
           Box(Modifier.fillMaxWidth().clip(Sq.s).background(if (paraMenu == i) pal.soft else androidx.compose.ui.graphics.Color.Transparent).combinedClickable(onClick = {}, onLongClick = { paraMenu = i })) {
@@ -272,7 +272,7 @@ fun XhsSheet(n: Note, imgs: List<Bitmap>, pal: ReadPalette, dismiss: () -> Unit)
                     }
                 }
                 items.forEachIndexed { i, (h, where, text) ->
-                    Row(Modifier.padding(top = 10.dp).fillMaxWidth().clip(Sq.m).background(P3.surface2).hairline(Sq.m, P3.border, 1.dp)
+                    Row(Modifier.padding(top = 10.dp).fillMaxWidth().clip(Sq.m).background(P3.surface2).hairline(Sq.m, P3.border)
                         .padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) { Dot(if (copied > i) P3.accent else P3.text3.copy(alpha = .5f)); Text("  ${i + 1} · $h → $where", fontSize = 12.sp, color = P3.accent, fontWeight = FontWeight.SemiBold) }
@@ -295,7 +295,7 @@ fun XhsSheet(n: Note, imgs: List<Bitmap>, pal: ReadPalette, dismiss: () -> Unit)
 @Composable
 fun AaPanel(font: Float, setFont: (Float) -> Unit, fontId: String, setFontId: (String) -> Unit, mode: Int, setMode: (Int) -> Unit, pal: ReadPalette) {
     val ctx = LocalContext.current; val scope = rememberCoroutineScope()
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).shadow(6.dp, Sq.xl).clip(Sq.xl).background(pal.surface).hairline(Sq.xl, pal.border, 1.dp).padding(16.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).shadow(6.dp, Sq.xl).clip(Sq.xl).background(pal.surface).hairline(Sq.xl, pal.border).padding(16.dp)) {
         Text("字号 · ${font.toInt()}", fontSize = 12.sp, color = pal.sub)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("A", color = pal.sub, fontSize = 13.sp)
@@ -341,14 +341,14 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Render.styles.forEachIndexed { i, st ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(Sq.m).clickable { setStyle(i) }.padding(2.dp)) {
-                    Box(Modifier.size(46.dp).hairline(Sq.full, if (style == i) pal.accent else Color.Transparent, 2.dp).padding(4.dp).clip(Sq.full).background(Color(st.bg2)).hairline(Sq.full, pal.border, 1.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(46.dp).hairline(Sq.full, if (style == i) pal.accent else Color.Transparent, 2.dp).padding(4.dp).clip(Sq.full).background(Color(st.bg2)).hairline(Sq.full, pal.border), contentAlignment = Alignment.Center) {
                         if (style == i) SvgIcon(Ic.check, Color(st.accent), 16.dp)
                     }
                     Text(st.name, Modifier.padding(top = 2.dp), fontSize = 12.sp, color = if (style == i) pal.accent else pal.sub)
                 }
             }
         }
-        Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(Sq.xl).background(pal.surface).hairline(Sq.xl, pal.border, 1.dp).padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(Sq.xl).background(pal.surface).hairline(Sq.xl, pal.border).padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("正文排版", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = pal.text)
                 val many = imgs.size > 18
@@ -383,7 +383,7 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
         else {
             val ps = rememberPagerState { imgs.size }
             HorizontalPager(ps, contentPadding = PaddingValues(horizontal = 48.dp), pageSpacing = 12.dp) { i ->
-                Image(imgs[i].asImageBitmap(), null, Modifier.fillMaxWidth().aspectRatio(CardRatio.fromIndex(ratio).aspect).hairline(Sq.m, pal.border, 1.dp).clip(Sq.m), contentScale = ContentScale.Fit)
+                Image(imgs[i].asImageBitmap(), null, Modifier.fillMaxWidth().aspectRatio(CardRatio.fromIndex(ratio).aspect).hairline(Sq.m, pal.border).clip(Sq.m), contentScale = ContentScale.Fit)
             }
             Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                 val cur = ps.currentPage; val win = if (imgs.size <= 9) 0 until imgs.size else (cur - 4).coerceIn(0, imgs.size - 9).let { it until it + 9 }
@@ -424,9 +424,9 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
                     BasicTextField(t, { t = it.replace("\n", "") }, Modifier.fillMaxWidth().padding(top = 8.dp),
                         textStyle = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 31.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary),
                         decorationBox = { inner -> Box { if (t.isEmpty()) Text("标题", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = t3()); inner() } })
-                    HorizontalDivider(Modifier.padding(vertical = 12.dp), color = cs.outlineVariant)
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp), thickness = Dp.Hairline, color = cs.outlineVariant)
                     TagEditor(g, { g = it }, cs.primary, cs.background, cs.onSurface, false, collapsible = false)
-                    HorizontalDivider(Modifier.padding(vertical = 12.dp), color = cs.outlineVariant)
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp), thickness = Dp.Hairline, color = cs.outlineVariant)
                     BasicTextField(b, { b = it }, Modifier.fillMaxWidth().weight(1f),
                         textStyle = TextStyle(fontSize = 16.sp, lineHeight = 27.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary),
                         decorationBox = { inner -> Box { if (b.isEmpty()) Text("正文", fontSize = 16.sp, color = t3()); inner() } })

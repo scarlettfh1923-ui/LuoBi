@@ -12,10 +12,10 @@ import androidx.compose.ui.unit.sp
 
 /** P3 冷白 + 电光蓝（需求说明 1.5），只用一个强调色，不用渐变和光晕 */
 object P3 {
-    val bg = Color(0xFFF5F7FA)
+    val bg = Color(0xFFF2F2F7)
     val surface = Color(0xFFFFFFFF)
     val surface2 = Color(0xFFEEF2F7)
-    val border = Color(0xFFE2E5EA)   // 1.6：全 App 唯一细线色
+    val border = Color(0xFFE3E4E8)   // 1.6：全 App 唯一细线色
     val borderStrong = Color(0xFFCDD5E0)
     val text = Color(0xFF111827)
     val text2 = Color(0xFF5B6576)

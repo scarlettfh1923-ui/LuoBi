@@ -172,7 +172,7 @@ fun ProposalCard(ctx: Context, p: Proposal, heading: String, idx: Int, total: In
 @Composable
 fun AnalyzingCard(il: Illustrator) {
     if (!il.analyzing) return
-    Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border, 1.dp).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(Modifier.size(18.dp), color = P3.accent, strokeWidth = 2.dp)
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text("文中插图", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = P3.text)

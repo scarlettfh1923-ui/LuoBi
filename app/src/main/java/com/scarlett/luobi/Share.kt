@@ -40,7 +40,7 @@ object Share {
         val ok = ctx.packageManager.queryIntentActivities(x, 0).isNotEmpty()
         if (!ok) Toast.makeText(ctx, "未检测到小红书，请选择分享方式", Toast.LENGTH_LONG).show()
         val target = if (ok) x else Intent.createChooser(it, "分享到")
-        ctx.startActivity(target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        safeStart(ctx, target)
     }
 
     /** 系统分享单张长图（微信等） */
@@ -52,7 +52,7 @@ object Share {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             clipData = ClipData.newRawUri("", uri)
         }
-        ctx.startActivity(Intent.createChooser(it, "分享长图").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        safeStart(ctx, Intent.createChooser(it, "分享长图"))
     }
 
     /** 系统分享多张长图（文章太长被拆开时） */
@@ -62,7 +62,7 @@ object Share {
         else Intent(Intent.ACTION_SEND_MULTIPLE).apply { type = "image/jpeg"; putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris) }
         it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         it.clipData = ClipData.newRawUri("", uris[0]).apply { uris.drop(1).forEach { u -> addItem(ClipData.Item(u)) } }
-        ctx.startActivity(Intent.createChooser(it, "分享长图").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        safeStart(ctx, Intent.createChooser(it, "分享长图"))
     }
 
     /** 系统分享纯文本 */
@@ -72,7 +72,7 @@ object Share {
             putExtra(Intent.EXTRA_SUBJECT, n.title)
             putExtra(Intent.EXTRA_TEXT, text(n))
         }
-        ctx.startActivity(Intent.createChooser(it, "分享文案").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        safeStart(ctx, Intent.createChooser(it, "分享文案"))
     }
 
     fun save(ctx: Context, imgs: List<Bitmap>): Int {
@@ -83,8 +83,10 @@ object Share {
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
                 put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/落笔")
             }
-            ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v)?.let { u ->
-                ctx.contentResolver.openOutputStream(u)?.use { b.compress(Bitmap.CompressFormat.JPEG, 95, it); n++ }
+            val u = try { ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v) } catch (_: Exception) { null }
+            if (u != null) {
+                val ok = try { ctx.contentResolver.openOutputStream(u)?.use { b.compress(Bitmap.CompressFormat.JPEG, 95, it) } == true } catch (_: Exception) { false }
+                if (ok) n++ else try { ctx.contentResolver.delete(u, null, null) } catch (_: Exception) {}
             }
         }
         return n
@@ -109,4 +111,8 @@ object Share {
         }
         return true
     }
+
+    /** 1.7：目标应用不存在 / 被禁用时不再崩溃 */
+    fun safeStart(ctx: Context, i: Intent): Boolean = try { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true }
+        catch (_: Exception) { Toast.makeText(ctx, "没有可用的应用来完成分享", Toast.LENGTH_LONG).show(); false }
 }

@@ -57,7 +57,7 @@ fun Card(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, pad: Dp =
 @Composable
 fun BottomNav(sel: Int, onSel: (Int) -> Unit) {
     Column(Modifier.fillMaxWidth().background(P3.surface)) {
-        HorizontalDivider(color = P3.border)
+        HorizontalDivider(thickness = Dp.Hairline, color = P3.border)
         Row(Modifier.fillMaxWidth().navigationBarsPadding().height(64.dp)) {
             listOf(Triple("写作", Ic.write, 0), Triple("文案库", Ic.library, 1), Triple("设置", Ic.settings, 2)).forEach { (l, ic, i) ->
                 val on = sel == i
@@ -108,7 +108,7 @@ fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean 
 @Composable
 fun Pill(text: String, sel: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Text(text, modifier.clip(Sq.full).background(if (sel) P3.accentSoft else P3.surface)
-        .hairline(Sq.full, if (sel) P3.accent else P3.borderStrong, 1.dp).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+        .hairline(Sq.full, if (sel) P3.accent else P3.borderStrong).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
         color = if (sel) P3.onAccentSoft else P3.text, fontSize = 14.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
 }
 
@@ -117,7 +117,7 @@ fun Pill(text: String, sel: Boolean, modifier: Modifier = Modifier, onClick: () 
 fun InputBox(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, minHeight: Dp = 0.dp, singleLine: Boolean = false,
              secret: Boolean = false, mono: Boolean = false, fontSize: Int = 15) {
     var show by remember { mutableStateOf(false) }
-    Row(modifier.fillMaxWidth().clip(Sq.m).background(P3.surface2).hairline(Sq.m, P3.border, 1.dp)
+    Row(modifier.fillMaxWidth().clip(Sq.m).background(P3.surface2).hairline(Sq.m, P3.border)
         .padding(horizontal = 12.dp, vertical = 10.dp).heightIn(min = minHeight), verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top) {
         Box(Modifier.weight(1f)) {
             BasicTextField(value, onChange, Modifier.fillMaxWidth(), singleLine = singleLine,
@@ -140,7 +140,7 @@ fun FieldLabel(t: String, sub: String = "") {
 /** 黄色警告条 */
 @Composable
 fun WarnBox(t: String, modifier: Modifier = Modifier) {
-    Text(t, modifier.fillMaxWidth().clip(Sq.m).background(P3.warnBg).hairline(Sq.m, P3.warnBorder, 1.dp).padding(12.dp),
+    Text(t, modifier.fillMaxWidth().clip(Sq.m).background(P3.warnBg).hairline(Sq.m, P3.warnBorder).padding(12.dp),
         color = P3.warnText, fontSize = 13.sp, lineHeight = 19.sp)
 }
 
@@ -167,7 +167,7 @@ fun RowGroup(label: String?, rows: List<@Composable () -> Unit>) {
         Card(pad = 0.dp) { rows.forEachIndexed { i, r -> if (i > 0) RowDivider(); r() } }
     }
 }
-@Composable fun RowDivider() = HorizontalDivider(Modifier.padding(start = 50.dp), thickness = 0.5.dp, color = P3.border)
+@Composable fun RowDivider() = HorizontalDivider(Modifier.padding(start = 50.dp), thickness = Dp.Hairline, color = P3.border)
 
 /** 变量块 {疑问} */
 @Composable
@@ -194,9 +194,9 @@ fun Dot(color: Color, size: Dp = 7.dp) = Box(Modifier.size(size).clip(Sq.full).b
 /** 单选列表：一行一个，右侧勾选圆 */
 @Composable
 fun ChoiceList(items: List<Triple<String, String, Boolean>>, pick: (Int) -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(Sq.m).hairline(Sq.m, P3.border, 1.dp)) {
+    Column(Modifier.fillMaxWidth().clip(Sq.m).hairline(Sq.m, P3.border)) {
         items.forEachIndexed { i, (a, b, sel) ->
-            if (i > 0) HorizontalDivider(Modifier.padding(start = 14.dp), color = P3.border)
+            if (i > 0) HorizontalDivider(Modifier.padding(start = 14.dp), thickness = Dp.Hairline, color = P3.border)
             Row(Modifier.fillMaxWidth().clickable { pick(i) }.padding(start = 14.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(a, fontSize = 15.sp, color = P3.text, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
                 Text("  $b", Modifier.weight(1f), fontSize = 13.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)

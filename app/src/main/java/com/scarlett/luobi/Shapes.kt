@@ -8,6 +8,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.clip
@@ -58,13 +59,16 @@ object Corner {
     val l = 24.dp      // 选项卡片、提示框
     val xl = 28.dp     // 卡片、面板、对话框、底部弹层
 }
+/**
+ * 1.7：全部改为系统 RoundedCornerShape（Outline.Rounded，凸形）。
+ * 1.5/1.6 的自定义连续曲线是 Outline.Generic，部分 Android 版本/ROM 对它画阴影、描边会退化成毛边，
+ * 所以 1.7 不再在任何自定义路径上画阴影或描边。Squircle 类保留但不再被界面使用。
+ */
 object Sq {
-    val xs = Squircle(Corner.xs); val s = Squircle(Corner.s); val m = Squircle(Corner.m); val l = Squircle(Corner.l); val xl = Squircle(Corner.xl)
-    /** 胶囊 / 圆：同一曲线，半径 = 短边一半 */
-    val full = Squircle(0.dp, full = true)
-    /** 只圆右侧（引用块） */
-    val rightS = Squircle(0.dp, Corner.s, Corner.s, 0.dp)
-    val topXl = Squircle(Corner.xl, Corner.xl, 0.dp, 0.dp)
+    val xs = RoundedCornerShape(10.dp); val s = RoundedCornerShape(14.dp); val m = RoundedCornerShape(18.dp); val l = RoundedCornerShape(22.dp); val xl = RoundedCornerShape(24.dp)
+    val full = RoundedCornerShape(50)
+    val rightS = RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp)
+    val topXl = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
 }
 
 /**
@@ -72,9 +76,10 @@ object Sq {
  * 原因：Compose 的 Modifier.border 对 Outline.Generic 会先光栅成位图遮罩再着色，
  * 1.5 的文案库卡片还把 border 放在裁切之外，曲线处半透明边缘在她手机上变成暗红色毛边。
  */
-fun androidx.compose.ui.Modifier.hairline(shape: Shape, color: androidx.compose.ui.graphics.Color, width: Dp = 0.75.dp): androidx.compose.ui.Modifier =
+/** 1.7：细线始终为整数物理像素（默认 1px），只用于凸形 RoundedCornerShape */
+fun androidx.compose.ui.Modifier.hairline(shape: Shape, color: androidx.compose.ui.graphics.Color, width: Dp = Dp.Hairline): androidx.compose.ui.Modifier =
     this.drawWithCache {
-        val w = width.toPx()
+        val w = if (width == Dp.Hairline) 1f else kotlin.math.max(1f, kotlin.math.round(width.toPx()))
         val outline = shape.createOutline(androidx.compose.ui.geometry.Size(size.width - w, size.height - w), layoutDirection, this)
         onDrawWithContent {
             drawContent()
@@ -82,13 +87,13 @@ fun androidx.compose.ui.Modifier.hairline(shape: Shape, color: androidx.compose.
         }
     }
 
-/** 中性柔阴影：同一形状，阴影色固定为中性灰（不带色偏） */
+/** 1.7：只给凸形胶囊（浮动条）用的极柔阴影；卡片一律不用 */
 fun androidx.compose.ui.Modifier.softShadow(shape: Shape, elevation: Dp = 6.dp): androidx.compose.ui.Modifier =
-    if (elevation.value <= 0f) this else this.shadow(elevation, shape, clip = false, ambientColor = androidx.compose.ui.graphics.Color(0x14000000), spotColor = androidx.compose.ui.graphics.Color(0x1F000000))
+    if (elevation.value <= 0f || shape !is RoundedCornerShape) this else this.shadow(elevation, shape, clip = false, ambientColor = androidx.compose.ui.graphics.Color(0x0F000000), spotColor = androidx.compose.ui.graphics.Color(0x14000000))
 
 /**
- * 1.6 唯一的表面助手：卡片 / 面板 / 列表组都走这里。
- * 无描边，极柔中性阴影；selected 时用 1dp 强调色细线（同一形状，自绘）。
+ * 1.7 唯一的表面助手：纯色白 + 24dp 圆角裁切，无阴影无描边（Apple inset-grouped 做法，靠 #F2F2F7 底色分层）。
+ * selected 时加 1px 强调色线。
  */
-fun androidx.compose.ui.Modifier.surface(shape: Shape = Sq.xl, color: androidx.compose.ui.graphics.Color = P3.surface, elevation: Dp = 3.dp, outline: androidx.compose.ui.graphics.Color? = null): androidx.compose.ui.Modifier =
-    this.softShadow(shape, elevation).clip(shape).background(color, shape).let { if (outline != null) it.hairline(shape, outline, 1.dp) else it }
+fun androidx.compose.ui.Modifier.surface(shape: Shape = Sq.xl, color: androidx.compose.ui.graphics.Color = P3.surface, elevation: Dp = 0.dp, outline: androidx.compose.ui.graphics.Color? = null): androidx.compose.ui.Modifier =
+    this.clip(shape).background(color).let { if (outline != null) it.hairline(shape, outline) else it }

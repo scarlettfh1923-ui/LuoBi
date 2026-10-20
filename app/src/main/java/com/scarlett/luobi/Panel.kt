@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -131,7 +132,7 @@ fun SharePanel(custom: List<Channel>, act: ChannelActions, editBar: () -> Unit, 
             }
             if (items.isEmpty()) Text("所有渠道都已在分享栏里", Modifier.padding(vertical = 20.dp), fontSize = 13.sp, color = P3.text3)
             items.forEachIndexed { i, d ->
-                if (i > 0) HorizontalDivider(Modifier.padding(start = 34.dp), thickness = 0.5.dp, color = P3.border)
+                if (i > 0) HorizontalDivider(Modifier.padding(start = 34.dp), thickness = Dp.Hairline, color = P3.border)
                 // 1.5：与设置页同一行网格（18dp 图标列 + 16dp 间距，分隔线从文字起点开始）
                 Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(Sq.m).clickable { if (d.id == "xhs") dismiss(); act.run(d.id, custom) }, verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { SvgIcon(d.icon, P3.text, 18.dp) }

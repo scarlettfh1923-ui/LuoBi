@@ -154,9 +154,9 @@ fun TagEditor(tags: List<String>, onTags: (List<String>) -> Unit, accent: Color,
             }
         }
         if (!expanded && tags.size > 6) {
-            Text("+${tags.size - 6}", Modifier.height(28.dp).clip(Sq.full).hairline(Sq.full, accent.copy(alpha = .5f), 1.dp).clickable { expanded = true }.padding(horizontal = 12.dp, vertical = 5.dp), fontSize = 12.sp, color = accent)
+            Text("+${tags.size - 6}", Modifier.height(28.dp).clip(Sq.full).hairline(Sq.full, accent.copy(alpha = .5f)).clickable { expanded = true }.padding(horizontal = 12.dp, vertical = 5.dp), fontSize = 12.sp, color = accent)
         } else if (adding) {
-            Row(Modifier.height(28.dp).clip(Sq.full).background(bg).hairline(Sq.full, accent, 1.5.dp).padding(start = 10.dp, end = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.height(28.dp).clip(Sq.full).background(bg).hairline(Sq.full, accent, 2.dp).padding(start = 10.dp, end = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("#", color = accent, fontSize = 13.sp)
                 val fr = remember { FocusRequester() }
                 LaunchedEffect(Unit) { fr.requestFocus() }
@@ -168,7 +168,7 @@ fun TagEditor(tags: List<String>, onTags: (List<String>) -> Unit, accent: Color,
         } else if (!editTags) {
             Text("编辑", Modifier.height(28.dp).clip(Sq.full).clickable { editTags = true }.padding(horizontal = 6.dp, vertical = 5.dp), fontSize = 13.sp, color = text.copy(alpha = .45f))
         } else {
-            Row(Modifier.height(28.dp).clip(Sq.full).hairline(Sq.full, accent.copy(alpha = .6f), 1.dp).clickable { adding = true }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.height(28.dp).clip(Sq.full).hairline(Sq.full, accent.copy(alpha = .6f)).clickable { adding = true }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Ico(R.drawable.ic_plus, accent, 13); Spacer(Modifier.width(3.dp)); Text("添加标签", fontSize = 12.sp, color = accent)
             }
             if (collapsible) Text("完成", Modifier.height(28.dp).clip(Sq.full).clickable { editTags = false }.padding(horizontal = 8.dp, vertical = 5.dp), fontSize = 13.sp, color = accent, fontWeight = FontWeight.SemiBold)
@@ -193,7 +193,7 @@ fun ErrorCard(f: Friendly, onRetry: (() -> Unit)?, onSettings: (() -> Unit)?, on
     val red = Color(0xFFA23A2C)
     val title = f.title; val detail = f.detail
     var rawOpen by remember(f) { mutableStateOf(false) }
-    Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(Sq.xl).background(Color(0xFFFDF1EE)).hairline(Sq.xl, Color(0xFFF2C9C0), 1.dp).padding(14.dp)) {
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(Sq.xl).background(Color(0xFFFDF1EE)).hairline(Sq.xl, Color(0xFFF2C9C0)).padding(14.dp)) {
         Ico(R.drawable.ic_xcircle, red, 22)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
@@ -203,7 +203,7 @@ fun ErrorCard(f: Friendly, onRetry: (() -> Unit)?, onSettings: (() -> Unit)?, on
                 maxLines = if (rawOpen) 12 else 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (onRetry != null) Text("重试", Modifier.clip(Sq.full).background(red).clickable { onRetry() }.padding(horizontal = 14.dp, vertical = 6.dp), color = Color.White, fontSize = 13.sp)
-                if (onSettings != null) Text("去设置", Modifier.clip(Sq.full).hairline(Sq.full, Color(0xFFE7B3A8), 1.dp).clickable { onSettings() }.padding(horizontal = 14.dp, vertical = 5.dp), color = red, fontSize = 13.sp)
+                if (onSettings != null) Text("去设置", Modifier.clip(Sq.full).hairline(Sq.full, Color(0xFFE7B3A8)).clickable { onSettings() }.padding(horizontal = 14.dp, vertical = 5.dp), color = red, fontSize = 13.sp)
             }
         }
         Box(Modifier.size(28.dp).clip(Sq.full).clickable { onClose() }, contentAlignment = Alignment.Center) { Ico(R.drawable.ic_x, red.copy(alpha = .6f), 16, "关闭") }

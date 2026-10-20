@@ -87,7 +87,7 @@ fun Page(title: String, back: () -> Unit, action: (@Composable RowScope.() -> Un
 
 @Composable
 private fun NewButton(onClick: () -> Unit) {
-    Row(Modifier.padding(end = 12.dp).clip(Sq.full).background(P3.accentSoft).hairline(Sq.full, P3.accent, 1.dp).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(end = 12.dp).clip(Sq.full).background(P3.accentSoft).hairline(Sq.full, P3.accent).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
         SvgIcon(Ic.plus, P3.onAccentSoft, 16.dp); Text(" 新建", color = P3.onAccentSoft, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }
@@ -183,7 +183,7 @@ fun TemplateEdit(db: AppDb, id: Long, back: () -> Unit) {
                     Text("名称", Modifier.width(56.dp), fontSize = 14.sp, color = P3.text2)
                     BasicTextField(name, { name = it }, Modifier.weight(1f), singleLine = true, textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text), cursorBrush = SolidColor(P3.accent))
                 }
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = Dp.Hairline, color = P3.border)
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("说明", Modifier.width(56.dp), fontSize = 14.sp, color = P3.text2)
                     Box(Modifier.weight(1f)) {
@@ -207,7 +207,7 @@ fun TemplateEdit(db: AppDb, id: Long, back: () -> Unit) {
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 (fields + Vars.RAW).forEach { v ->
-                    Row(Modifier.clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.borderStrong, 1.dp).clickable {
+                    Row(Modifier.clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.borderStrong).clickable {
                         val ins = "{$v}"; val sel = prompt.selection
                         val txt = prompt.text.replaceRange(sel.min, sel.max, ins)
                         prompt = TextFieldValue(txt, TextRange(sel.min + ins.length))
@@ -244,7 +244,7 @@ fun CleansPage(db: AppDb, back: () -> Unit) {
         item {
             Card(pad = 0.dp) {
                 list.forEachIndexed { i, c ->
-                    if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
+                    if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = Dp.Hairline, color = P3.border)
                     Row(Modifier.fillMaxWidth().clickable { editId = c.id }.background(if (c.id == cur?.id) P3.surface2.copy(alpha = .5f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(c.active, { scope.launch { db.cleans().activate(c.id); affected = impact(c.fieldList()) } }, colors = RadioButtonDefaults.colors(selectedColor = P3.accent))
                         Column(Modifier.weight(1f)) {
@@ -264,7 +264,7 @@ fun CleansPage(db: AppDb, back: () -> Unit) {
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 c.fieldList().forEach { f ->
-                    Row(Modifier.clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.accent, 1.dp).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.accent).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(f, fontSize = 14.sp, color = P3.onAccentSoft)
                         Box(Modifier.size(28.dp).clip(Sq.full).clickable {
                             val nf = c.fieldList() - f
@@ -272,7 +272,7 @@ fun CleansPage(db: AppDb, back: () -> Unit) {
                         }, contentAlignment = Alignment.Center) { SvgIcon(Ic.close, P3.accent, 14.dp, desc = "删除字段") }
                     }
                 }
-                Row(Modifier.clip(Sq.full).hairline(Sq.full, P3.borderStrong, 1.dp).clickable { newField = "" }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.clip(Sq.full).hairline(Sq.full, P3.borderStrong).clickable { newField = "" }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(Ic.plus, P3.text2, 14.dp); Text(" 字段", fontSize = 14.sp, color = P3.text)
                 }
             }
@@ -327,7 +327,7 @@ fun ModelsPage(back: () -> Unit) {
         item {
             Card(pad = 0.dp) {
                 Providers.text.forEachIndexed { i, p ->
-                    if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
+                    if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = Dp.Hairline, color = P3.border)
                     val has = remember(ver) { s.key(p.id).isNotBlank() }
                     Column {
                         Row(Modifier.fillMaxWidth().clickable { open = if (open == p.id) null else p.id }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -350,7 +350,7 @@ fun ModelsPage(back: () -> Unit) {
         item { GroupLabel("自定义模型（OpenAI 兼容）") }
         customs.forEach { cm -> item(key = cm.id) { CustomModelCard(cm, s, { customs = s.customs; ver++ }) } }
         item {
-            Column(Modifier.fillMaxWidth().clip(Sq.l).hairline(Sq.l, P3.accent.copy(alpha = .6f), 1.dp).clickable {
+            Column(Modifier.fillMaxWidth().clip(Sq.l).hairline(Sq.l, P3.accent.copy(alpha = .6f)).clickable {
                 s.customs = s.customs + CustomModel(System.currentTimeMillis().toString(36), "自定义模型", "", ""); customs = s.customs
             }.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) { SvgIcon(Ic.plus, P3.accent, 18.dp); Text(" 自定义模型（OpenAI 兼容）", fontSize = 16.sp, color = P3.accent, fontWeight = FontWeight.SemiBold) }
@@ -582,7 +582,7 @@ fun PinnedPage(db: AppDb, back: () -> Unit) {
         pinned.forEachIndexed { i, id ->
             val d = ChannelIds.all(channels).firstOrNull { it.id == id } ?: return@forEachIndexed
             item(key = "p$id") {
-                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.accent, 1.dp).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.accent).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${i + 1}", fontFamily = Mono, color = P3.accent, fontSize = 14.sp); Spacer(Modifier.width(10.dp))
                     SvgIcon(d.icon, P3.accent, 20.dp, P3.accent); Spacer(Modifier.width(10.dp))
                     Text(d.name, Modifier.weight(1f), fontSize = 15.sp)
@@ -594,7 +594,7 @@ fun PinnedPage(db: AppDb, back: () -> Unit) {
         item { GroupLabel("全部渠道") }
         ChannelIds.all(channels).filter { it.id != "xhs" && it.id !in pinned }.forEach { d ->
             item(key = "a${d.id}") {
-                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border, 1.dp).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(d.icon, P3.text2, 20.dp); Spacer(Modifier.width(10.dp))
                     Text(d.name, Modifier.weight(1f), fontSize = 15.sp)
                     TextAction(if (pinned.size >= 8) "已满" else "置顶", enabled = pinned.size < 8) { set(pinned + d.id) }
@@ -683,7 +683,7 @@ fun LengthPage(back: () -> Unit) {
 
 @Composable
 private fun NumBox(v: String, on: (String) -> Unit) {
-    androidx.compose.foundation.text.BasicTextField(v, on, Modifier.width(64.dp).clip(Sq.m).background(P3.surface).hairline(Sq.m, P3.borderStrong, 1.dp).padding(horizontal = 8.dp, vertical = 8.dp),
+    androidx.compose.foundation.text.BasicTextField(v, on, Modifier.width(64.dp).clip(Sq.m).background(P3.surface).hairline(Sq.m, P3.borderStrong).padding(horizontal = 8.dp, vertical = 8.dp),
         singleLine = true, textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = P3.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontFamily = Mono),
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
 }
