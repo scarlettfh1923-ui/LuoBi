@@ -1,0 +1,179 @@
+package com.scarlett.copytool
+
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+/** 线条图标：1.5px 描边、圆角端点；selected 时加 22% 不透明度的填充 */
+@Composable
+fun SvgIcon(paths: List<String>, tint: Color, size: Dp = 24.dp, fill: Color? = null, desc: String? = null) {
+    val stroke = remember(paths) {
+        ImageVector.Builder(defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f).apply {
+            paths.forEach { addPath(PathParser().parsePathString(it).toNodes(), stroke = SolidColor(Color.Black), strokeLineWidth = 1.5f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) }
+        }.build()
+    }
+    val filled = remember(paths, fill != null) {
+        if (fill == null) null else ImageVector.Builder(defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f).apply {
+            paths.forEach { addPath(PathParser().parsePathString(it).toNodes(), fill = SolidColor(Color.Black)) }
+        }.build()
+    }
+    Box(Modifier.size(size)) {
+        if (filled != null && fill != null) Icon(rememberVectorPainter(filled), null, Modifier.fillMaxSize(), tint = fill.copy(alpha = .22f))
+        Icon(rememberVectorPainter(stroke), desc, Modifier.fillMaxSize(), tint = tint)
+    }
+}
+
+@Composable
+fun Card(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, pad: Dp = 16.dp, color: Color = P3.surface, content: @Composable ColumnScope.() -> Unit) {
+    val m = modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(color).border(1.dp, P3.border, RoundedCornerShape(20.dp))
+        .let { if (onClick != null) it.clickable(onClick = onClick) else it }.padding(pad)
+    Column(m, content = content)
+}
+
+/** 底部导航：写作 / 文案库 / 设置 */
+@Composable
+fun BottomNav(sel: Int, onSel: (Int) -> Unit) {
+    Column(Modifier.fillMaxWidth().background(P3.surface)) {
+        HorizontalDivider(color = P3.border)
+        Row(Modifier.fillMaxWidth().navigationBarsPadding().height(64.dp)) {
+            listOf(Triple("写作", Ic.write, 0), Triple("文案库", Ic.library, 1), Triple("设置", Ic.settings, 2)).forEach { (l, ic, i) ->
+                val on = sel == i
+                Column(Modifier.weight(1f).fillMaxHeight().clickable { onSel(i) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    SvgIcon(ic, if (on) P3.accent else P3.text3, 24.dp, if (on) P3.accent else null)
+                    Text(l, Modifier.padding(top = 3.dp), color = if (on) P3.accent else P3.text2, fontSize = 12.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BigTitle(title: String, sub: String = "") {
+    Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 12.dp)) {
+        Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = P3.text, lineHeight = 36.sp)
+        if (sub.isNotEmpty()) Text(sub, Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text2)
+    }
+}
+
+/** 子页面顶栏：‹ 标题 [动作] */
+@Composable
+fun SubBar(title: String, back: () -> Unit, action: (@Composable RowScope.() -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = back) { SvgIcon(Ic.back, P3.text, desc = "返回") }
+        Text(title, Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = P3.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (action != null) Row(verticalAlignment = Alignment.CenterVertically, content = action)
+    }
+}
+
+/** 分组小标题（等宽字体点缀） */
+@Composable
+fun GroupLabel(t: String, modifier: Modifier = Modifier) {
+    Text(t, modifier.padding(start = 4.dp, top = 14.dp, bottom = 8.dp), fontSize = 12.sp, fontFamily = Mono, color = P3.text2, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+}
+
+@Composable
+fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, busy: Boolean = false, onClick: () -> Unit) {
+    Button(onClick, modifier.fillMaxWidth().height(52.dp), enabled = enabled && !busy, shape = RoundedCornerShape(50),
+        colors = ButtonDefaults.buttonColors(containerColor = P3.accent, contentColor = Color.White, disabledContainerColor = P3.surface2, disabledContentColor = P3.text3)) {
+        if (busy) { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = P3.accent); Spacer(Modifier.width(8.dp)) }
+        Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/** 胶囊选择 */
+@Composable
+fun Pill(text: String, sel: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Text(text, modifier.clip(RoundedCornerShape(50)).background(if (sel) P3.accentSoft else P3.surface)
+        .border(1.dp, if (sel) P3.accent else P3.borderStrong, RoundedCornerShape(50)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+        color = if (sel) P3.onAccentSoft else P3.text, fontSize = 14.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+}
+
+/** 输入框：次级表面底 + 描边 */
+@Composable
+fun InputBox(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, minHeight: Dp = 0.dp, singleLine: Boolean = false,
+             secret: Boolean = false, mono: Boolean = false, fontSize: Int = 15) {
+    var show by remember { mutableStateOf(false) }
+    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(P3.surface2).border(1.dp, P3.border, RoundedCornerShape(12.dp))
+        .padding(horizontal = 12.dp, vertical = 10.dp).heightIn(min = minHeight), verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top) {
+        Box(Modifier.weight(1f)) {
+            BasicTextField(value, onChange, Modifier.fillMaxWidth(), singleLine = singleLine,
+                textStyle = TextStyle(fontSize = fontSize.sp, lineHeight = (fontSize * 1.6).sp, color = P3.text, fontFamily = if (mono) Mono else null),
+                visualTransformation = if (secret && !show) PasswordVisualTransformation() else VisualTransformation.None, cursorBrush = SolidColor(P3.accent))
+            if (value.isEmpty()) Text(placeholder, fontSize = fontSize.sp, lineHeight = (fontSize * 1.6).sp, color = P3.text3)
+        }
+        if (secret && value.isNotEmpty()) Text(if (show) "隐藏" else "显示", Modifier.padding(start = 8.dp).clickable { show = !show }, fontSize = 12.sp, color = P3.accent)
+    }
+}
+
+@Composable
+fun FieldLabel(t: String, sub: String = "") {
+    Row(Modifier.padding(top = 12.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(t, fontSize = 13.sp, color = P3.text2, fontWeight = FontWeight.SemiBold)
+        if (sub.isNotEmpty()) Text("  ·  $sub", fontSize = 12.sp, color = P3.text3)
+    }
+}
+
+/** 黄色警告条 */
+@Composable
+fun WarnBox(t: String, modifier: Modifier = Modifier) {
+    Text(t, modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(P3.warnBg).border(1.dp, P3.warnBorder, RoundedCornerShape(12.dp)).padding(12.dp),
+        color = P3.warnText, fontSize = 13.sp, lineHeight = 19.sp)
+}
+
+/** 设置列表行：图标底 + 标题 + 说明 + › */
+@Composable
+fun SettingRow(icon: List<String>, title: String, sub: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(P3.surface2), contentAlignment = Alignment.Center) { SvgIcon(icon, P3.text2, 22.dp) }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
+            if (sub.isNotEmpty()) Text(sub, Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 18.sp)
+        }
+        SvgIcon(Ic.chevron, P3.text3, 18.dp)
+    }
+}
+
+/** 变量块 {疑问} */
+@Composable
+fun VarChip(name: String, onClick: (() -> Unit)? = null) {
+    Text("{$name}", Modifier.clip(RoundedCornerShape(8.dp)).background(P3.accentSoft).let { if (onClick != null) it.clickable(onClick = onClick) else it }.padding(horizontal = 10.dp, vertical = 6.dp),
+        color = P3.onAccentSoft, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+}
+
+@Composable
+fun TextAction(t: String, color: Color = P3.accent, enabled: Boolean = true, onClick: () -> Unit) {
+    Text(t, Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp), color = if (enabled) color else P3.text3, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+}
+
+@Composable
+fun ConfirmDialog(title: String, text: String, ok: String, danger: Boolean = false, onOk: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, containerColor = P3.surface, title = { Text(title, fontSize = 18.sp) }, text = { Text(text, color = P3.text2) },
+        confirmButton = { TextButton(onClick = { onDismiss(); onOk() }) { Text(ok, color = if (danger) P3.danger else P3.accent) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = P3.text2) } })
+}
+
+@Composable
+fun Dot(color: Color, size: Dp = 7.dp) = Box(Modifier.size(size).clip(CircleShape).background(color))
