@@ -150,8 +150,8 @@ fun App() {
             else fadeIn(tween(220)) togetherWith fadeOut(tween(160))
         }, label = "nav") { r ->
             when (r) {
-                is Route.Tab -> Scaffold(containerColor = P3.bg, bottomBar = { if (!(r.i == 1 && libManaging)) BottomNav(r.i) { libManaging = false; tab(it) } }) { pad ->
-                    Box(Modifier.padding(top = pad.calculateTopPadding()).statusBarsPadding()) {
+                is Route.Tab -> { val bd = rememberBackdrop(); CompositionLocalProvider(LocalBackdrop provides bd) { Scaffold(containerColor = P3.bg, bottomBar = { if (!(r.i == 1 && libManaging)) FloatingNav(r.i) { libManaging = false; tab(it) } }) { pad ->
+                    Box(Modifier.fillMaxSize().backdropSource(bd).padding(top = pad.calculateTopPadding()).statusBarsPadding()) {
                         val bottom = pad.calculateBottomPadding()
                         when (r.i) {
                             0 -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) }, { go(Route.Sub("templates")) }, startGen, { go(Route.Sub("length")) }, { go(Route.Sub("template:$it")) })
@@ -159,7 +159,7 @@ fun App() {
                             else -> SettingsHome(db, bottom) { go(Route.Sub(it)) }
                         }
                     }
-                }
+                } } }
                 is Route.Read -> ReaderScreen(db, r.id, running, ::back, { route = Route.Read(it) }, { go(Route.Sub(it)) }, startGen)
                 is Route.Sub -> SubPage(db, r, ::back) { go(it) }
             }
@@ -167,13 +167,13 @@ fun App() {
         SnackbarHost(host, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = 96.dp)) { SoftSnackbar(it) }
         AnimatedVisibility(running, enter = fadeIn(), exit = fadeOut()) {
             Box(Modifier.fillMaxSize().background(Color(0x55000000)).clickable(enabled = false) {}, contentAlignment = Alignment.Center) {
-                Column(Modifier.padding(32.dp).clip(RoundedCornerShape(20.dp)).background(P3.surface).padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = 12.dp).widthIn(max = 280.dp),
+                Column(Modifier.padding(32.dp).clip(Sq.xl).background(P3.surface).padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = 12.dp).widthIn(max = 280.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(strokeWidth = 3.dp, color = P3.accent)
                     Spacer(Modifier.height(18.dp))
                     Text(if (GenJob.parse(genPrefs.getString("job", "{}") ?: "{}").kind == "rewrite") "正在改写…" else "正在写文章…", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
                     Text("通常 15–60 秒。可以切出去，写好会通知你", Modifier.padding(top = 6.dp), fontSize = 12.sp, color = P3.text3, textAlign = TextAlign.Center)
-                    TextButton(onClick = { CopyWorker.cancel(ctx) }, Modifier.padding(top = 4.dp)) { Text("取消", color = P3.text2) }
+                    TextButton(onClick = { CopyWorker.cancel(ctx) }, Modifier.padding(top = 4.dp), shape = Sq.full) { Text("取消", color = P3.text2) }
                 }
             }
         }
@@ -185,7 +185,7 @@ fun App() {
 private fun StepHead(n: Int, title: String, state: Int, right: (@Composable () -> Unit)? = null) {
     // state: 0 未轮到 1 进行中 2 完成
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(28.dp).clip(CircleShape).background(when (state) { 0 -> P3.surface2; else -> P3.accent }), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(28.dp).clip(Sq.full).background(when (state) { 0 -> P3.surface2; else -> P3.accent }), contentAlignment = Alignment.Center) {
             if (state == 2) SvgIcon(Ic.check, Color.White, 18.dp) else Text("$n", color = if (state == 0) P3.text3 else Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
         }
         Spacer(Modifier.width(12.dp))
@@ -197,9 +197,9 @@ private fun StepHead(n: Int, title: String, state: Int, right: (@Composable () -
 /** 已完成的步骤收成一行：✓ 标题 · 摘要  修改 */
 @Composable
 private fun DoneRow(title: String, summary: String, edit: () -> Unit) {
-    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(14.dp))
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l)
         .clickable(onClick = edit).padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(20.dp).clip(CircleShape).background(P3.accent), contentAlignment = Alignment.Center) { SvgIcon(Ic.check, Color.White, 13.dp) }
+        Box(Modifier.size(20.dp).clip(Sq.full).background(P3.accent), contentAlignment = Alignment.Center) { SvgIcon(Ic.check, Color.White, 13.dp) }
         Text(title, Modifier.padding(start = 10.dp), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = P3.text, maxLines = 1)
         Text("  " + summary, Modifier.weight(1f), fontSize = 13.sp, color = P3.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
         TextAction("修改") { edit() }
@@ -257,23 +257,27 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
     val finalPrompt = if (tpl != null) Ai.finalPrompt(tpl.prompt, vals, ws.cleaned, attachRaw, length, lenRange, ws.fields.toSet()) else ""
     val known = ws.fields.toSet() + Vars.RAW
 
-    LazyColumnFill(bottom) {
-        item { BigTitle("落笔", "三步：理清 → 选模板 → 生成") }
+    Box(Modifier.fillMaxSize()) {
+    LazyColumnFill(bottom + 64.dp) {
+        item { BigTitle("落笔", "口播 → 文章") }
+        item { InlineStepper(ws.step) { if (it < ws.step) ws.step = it } }
         // ① 清洗与意图
         item {
             if (ws.step > 1) DoneRow("清洗与意图", ws.values.filter { it.second.isNotBlank() }.joinToString(" · ") { it.first }.ifBlank { "未识别到意图" }) { ws.step = 1 }
             else Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 if (!ws.cleanedReady) {
-                    StepHead(1, "内容清洗与意图识别", 1) { Text("DeepSeek", Modifier.clip(RoundedCornerShape(50)).background(P3.surface2).padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, color = P3.text2, fontFamily = Mono) }
+                    StepHead(1, "内容清洗与意图识别", 1) { Text("DeepSeek", Modifier.clip(Sq.full).background(P3.surface2).padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, color = P3.text2, fontFamily = Mono) }
                     Spacer(Modifier.height(12.dp))
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(P3.surface2).border(1.dp, P3.border, RoundedCornerShape(14.dp)).padding(14.dp)) {
+                    // 1.5：不再卡片套卡片——步骤卡本身就是输入区
+                    Column(Modifier.fillMaxWidth()) {
                         Text("粘贴你的口播 / 想说的话 / 疑问", fontSize = 13.sp, color = P3.text3)
                         Spacer(Modifier.height(6.dp))
                         Box(Modifier.fillMaxWidth().heightIn(min = 150.dp)) {
                             androidx.compose.foundation.text.BasicTextField(ws.raw, { ws.raw = it }, Modifier.fillMaxWidth(),
                                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, lineHeight = 27.sp, color = P3.text), cursorBrush = androidx.compose.ui.graphics.SolidColor(P3.accent))
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        HorizontalDivider(Modifier.padding(top = 8.dp), thickness = 0.5.dp, color = P3.border)
+                        Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("${ws.raw.length} 字", Modifier.weight(1f), fontSize = 12.sp, color = P3.text3, fontFamily = Mono)
                             TextAction("粘贴") {
                                 val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -286,32 +290,30 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                     }
                     Text("去掉口头禅、重复和错字，把句子理顺，再判断你想写哪类文章。", Modifier.padding(vertical = 10.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp)
                     if (!hasDeepseek) WarnBox("清洗固定用 DeepSeek，请先到「设置 → 模型与密钥」填写 DeepSeek Key。", Modifier.padding(bottom = 10.dp).clickable { goModels() })
-                    PrimaryButton(if (ws.cleanBusy) "正在清洗…" else "清洗并识别意图", busy = ws.cleanBusy, enabled = ws.raw.isNotBlank()) { clean() }
                 } else {
                     StepHead(1, "内容清洗与意图识别", 1) { TextAction(if (ws.cleanBusy) "识别中…" else "重新识别", enabled = !ws.cleanBusy) { clean() } }
                     FieldLabel("清洗后文字", "可编辑")
                     InputBox(ws.cleaned, { ws.cleaned = it }, "清洗后的文字", minHeight = 80.dp)
                     FieldLabel("识别到的意图", "可编辑")
                     ws.values.toList().forEachIndexed { i, (k, v) ->
-                        Column(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(P3.surface2).border(1.dp, P3.border, RoundedCornerShape(12.dp)).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 10.dp)) {
+                        Column(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.m).background(P3.surface2).border(1.dp, P3.border, Sq.m).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 10.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("{$k}", fontSize = 13.sp, color = P3.accent, fontWeight = FontWeight.SemiBold)
                                 Text(fieldHint(k), Modifier.weight(1f).padding(start = 8.dp), fontSize = 12.sp, color = P3.text3, textAlign = TextAlign.End, maxLines = 1)
-                                Box(Modifier.size(30.dp).clip(CircleShape).clickable { ws.values.removeAt(i) }, contentAlignment = Alignment.Center) { SvgIcon(Ic.close, P3.text3, 16.dp, desc = "删除") }
+                                Box(Modifier.size(30.dp).clip(Sq.full).clickable { ws.values.removeAt(i) }, contentAlignment = Alignment.Center) { SvgIcon(Ic.close, P3.text3, 16.dp, desc = "删除") }
                             }
                             androidx.compose.foundation.text.BasicTextField(v, { nv -> ws.values[i] = k to nv }, Modifier.fillMaxWidth().padding(end = 8.dp),
                                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, lineHeight = 23.sp, color = P3.text), cursorBrush = androidx.compose.ui.graphics.SolidColor(P3.accent))
                         }
                     }
                     ws.fields.filter { f -> ws.values.none { it.first == f } }.forEach { f ->
-                        Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, P3.borderStrong, RoundedCornerShape(12.dp)).clickable { ws.values.add(f to "") }
+                        Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.m).border(1.dp, P3.borderStrong, Sq.m).clickable { ws.values.add(f to "") }
                             .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             SvgIcon(Ic.plus, P3.accent, 16.dp); Text(" 添加 {$f}", fontSize = 14.sp, color = P3.accent)
                             Text("  ${fieldHint(f)}（没识别到）", fontSize = 12.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     Spacer(Modifier.height(6.dp))
-                    PrimaryButton("确认，下一步", enabled = ws.cleaned.isNotBlank()) { ws.step = 2 }
                     TextAction("返回修改原文", P3.text2) { ws.cleanedReady = false }
                 }
                 ws.err?.let { e -> Spacer(Modifier.height(10.dp)); ErrorCard(e, { clean() }, if (e.settings) goModels else null) { ws.err = null } }
@@ -329,12 +331,12 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                     val sorted = templates.sortedByDescending { it.id == ws.recommendId }
                     (if (all) sorted else sorted.take(4)).forEach { t ->
                         val sel = t.id == ws.templateId
-                        Column(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (sel) P3.accentSoft else P3.surface2)
-                            .border(if (sel) 1.5.dp else 1.dp, if (sel) P3.accent else P3.border, RoundedCornerShape(14.dp)).clickable { ws.templateId = t.id }.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        Column(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(if (sel) P3.accentSoft else P3.surface2)
+                            .border(if (sel) 1.5.dp else 1.dp, if (sel) P3.accent else P3.border, Sq.l).clickable { ws.templateId = t.id }.padding(horizontal = 14.dp, vertical = 12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(t.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
-                                if (t.id == ws.recommendId) Text("推荐", Modifier.padding(start = 8.dp).clip(RoundedCornerShape(50)).background(P3.accent).padding(horizontal = 8.dp, vertical = 2.dp), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                if (!t.builtIn) Text("我的", Modifier.padding(start = 8.dp).clip(RoundedCornerShape(50)).background(P3.surface).border(1.dp, P3.borderStrong, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp), color = P3.text2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                if (t.id == ws.recommendId) Text("推荐", Modifier.padding(start = 8.dp).clip(Sq.full).background(P3.accent).padding(horizontal = 8.dp, vertical = 2.dp), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                if (!t.builtIn) Text("我的", Modifier.padding(start = 8.dp).clip(Sq.full).background(P3.surface).border(1.dp, P3.borderStrong, Sq.full).padding(horizontal = 8.dp, vertical = 1.dp), color = P3.text2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                             Text(t.desc, Modifier.padding(top = 3.dp), fontSize = 13.sp, color = P3.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
@@ -344,7 +346,6 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                         TextAction("管理模板", P3.text2) { goTemplates() }
                     }
                     Spacer(Modifier.height(6.dp))
-                    PrimaryButton("下一步", enabled = tpl != null) { ws.step = 3 }
                 }
             }
         }
@@ -398,17 +399,25 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                 }
                 Row(Modifier.padding(top = 10.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("模板「${tpl.name}」" + (if (tpl.updatedAt > 0) "最后修改 " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA).format(java.util.Date(tpl.updatedAt)) else "未修改过"), Modifier.weight(1f), fontSize = 12.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("编辑", Modifier.clip(RoundedCornerShape(6.dp)).clickable { goTemplate(tpl.id) }.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 12.sp, color = P3.accent)
+                    Text("编辑", Modifier.clip(Sq.s).clickable { goTemplate(tpl.id) }.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 12.sp, color = P3.accent)
                 }
             }
         }
         if (genErr != null && ws.step == 3) item { ErrorCard(genErr.f, { clearGenErr(); genErr.retry() }, if (genErr.f.settings) goModels else null) { clearGenErr() } }
-        if (ws.step == 3) item {
-            PrimaryButton("生成文章", Modifier.padding(horizontal = 16.dp, vertical = 10.dp), enabled = tpl != null && ws.model.isNotBlank()) {
+    }
+    // 1.5：主按钮固定在浮动导航之上，永远不会被挡
+    Box(Modifier.fillMaxSize().padding(bottom = bottom + 4.dp), contentAlignment = Alignment.BottomCenter) {
+        val m = Modifier.padding(horizontal = 16.dp)
+        when {
+            ws.step == 1 && !ws.cleanedReady -> PrimaryButton(if (ws.cleanBusy) "正在清洗…" else "清洗并识别意图", m, busy = ws.cleanBusy, enabled = ws.raw.isNotBlank()) { clean() }
+            ws.step == 1 -> PrimaryButton("确认，下一步", m, enabled = ws.cleaned.isNotBlank()) { ws.step = 2 }
+            ws.step == 2 -> PrimaryButton("下一步", m, enabled = tpl != null) { ws.step = 3 }
+            else -> PrimaryButton("生成文章", m, enabled = tpl != null && ws.model.isNotBlank()) {
                 val t = tpl ?: return@PrimaryButton
                 start(GenJob("write", ws.raw, ws.cleaned, vals, t.id, t.name, ws.model, finalPrompt))
             }
         }
+    }
     }
 }
 
@@ -417,4 +426,17 @@ fun fieldHint(k: String) = when (k) { "疑问" -> "我的疑问是什么"; "观�
 @Composable
 fun LazyColumnFill(bottom: androidx.compose.ui.unit.Dp, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
     androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize().imePadding(), contentPadding = PaddingValues(bottom = bottom + 20.dp), content = content)
+}
+
+/** 1.5：紧凑的行内步骤条  1 理清 — 2 选模板 — 3 生成 */
+@Composable
+fun InlineStepper(step: Int, go: (Int) -> Unit) {
+    Row(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        listOf("理清", "选模板", "生成").forEachIndexed { i, t ->
+            val n = i + 1; val cur = n == step; val done = n < step
+            Text("$n $t", Modifier.clip(Sq.full).clickable(enabled = done) { go(n) }.padding(horizontal = 4.dp, vertical = 2.dp), fontSize = 13.sp,
+                color = if (cur) P3.accent else if (done) P3.text else P3.text3, fontWeight = if (cur) FontWeight.SemiBold else FontWeight.Normal)
+            if (n < 3) Box(Modifier.padding(horizontal = 6.dp).width(16.dp).height(1.dp).background(P3.border))
+        }
+    }
 }

@@ -41,7 +41,7 @@ fun ImgSrcPage(back: () -> Unit, go: (String) -> Unit) {
                     key(src.id) {
                         val ready = remember(tick, src) { ImgSources.ready(ctx, src) }
                         Column(Modifier.fillMaxWidth().zIndexIf(drag == i).graphicsLayer { translationY = if (drag == i) dy else 0f; shadowElevation = if (drag == i) 12f else 0f }
-                            .clip(RoundedCornerShape(14.dp)).background(P3.surface).border(1.dp, if (drag == i) P3.accent else P3.border, RoundedCornerShape(14.dp))) {
+                            .clip(Sq.l).background(P3.surface).border(1.dp, if (drag == i) P3.accent else P3.border, Sq.l)) {
                             Row(Modifier.fillMaxWidth().height(rowH).pointerInput(list) {
                                 detectDragGesturesAfterLongPress(onDragStart = { drag = i; dy = 0f }, onDragEnd = { drag = -1; dy = 0f }, onDragCancel = { drag = -1; dy = 0f }) { ch, d ->
                                     ch.consume(); dy += d.y
@@ -54,12 +54,12 @@ fun ImgSrcPage(back: () -> Unit, go: (String) -> Unit) {
                                 Column(Modifier.weight(1f).padding(start = 10.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(src.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
-                                        if (i == 0) Text(" 优先", Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background(P3.accentSoft).padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp, color = P3.accent)
+                                        if (i == 0) Text(" 优先", Modifier.padding(start = 6.dp).clip(Sq.full).background(P3.accentSoft).padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp, color = P3.accent)
                                     }
                                     Text(when (src.type) { "pexafy" -> "x-api-key · 免费图库"; "pexels" -> "Authorization: Key · 免费图库"; "ai" -> "使用「模型与密钥」里的配图模型生成"; else -> "自定义 · " + src.url.substringAfter("//").substringBefore("/") },
                                         fontSize = 12.sp, color = P3.text3, maxLines = 1)
                                 }
-                                Text(if (ready) "已配置" else "未配置", Modifier.clip(RoundedCornerShape(50)).background(if (ready) P3.accentSoft else P3.surface2).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = if (ready) P3.accent else P3.text3)
+                                Text(if (ready) "已配置" else "未配置", Modifier.clip(Sq.full).background(if (ready) P3.accentSoft else P3.surface2).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = if (ready) P3.accent else P3.text3)
                                 Switch(src.on, { v -> save(list.map { if (it.id == src.id) it.copy(on = v) else it }) }, Modifier.padding(start = 6.dp).scale(.8f), colors = SwitchDefaults.colors(checkedTrackColor = P3.accent))
                             }
                             if (open == src.id) Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp)) {
@@ -105,9 +105,9 @@ private fun Modifier.scale(f: Float) = this.graphicsLayer { scaleX = f; scaleY =
 private fun Stepper(label: String, v: Int, r: IntRange, on: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), fontSize = 15.sp, color = P3.text)
-        Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(P3.surface2).clickable(enabled = v > r.first) { on(v - 1) }, contentAlignment = Alignment.Center) { Text("−", fontSize = 18.sp, color = P3.text) }
+        Box(Modifier.size(34.dp).clip(Sq.m).background(P3.surface2).clickable(enabled = v > r.first) { on(v - 1) }, contentAlignment = Alignment.Center) { Text("−", fontSize = 18.sp, color = P3.text) }
         Text("$v 张", Modifier.width(56.dp), fontSize = 15.sp, color = P3.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontFamily = Mono)
-        Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(P3.surface2).clickable(enabled = v < r.last) { on(v + 1) }, contentAlignment = Alignment.Center) { Text("+", fontSize = 18.sp, color = P3.accent) }
+        Box(Modifier.size(34.dp).clip(Sq.m).background(P3.surface2).clickable(enabled = v < r.last) { on(v + 1) }, contentAlignment = Alignment.Center) { Text("+", fontSize = 18.sp, color = P3.accent) }
     }
 }
 
@@ -155,7 +155,7 @@ fun ImgSrcEdit(id: String, back: () -> Unit) {
                 Secure.set(ctx, "imgkey_$nid", key)
                 val l = ImgSources.list(ctx); ImgSources.save(ctx, if (l.any { it.id == nid }) l.map { if (it.id == nid) cur() else it } else l + cur()); snack("已保存「${cur().name}」"); back()
             }
-            if (!isNew) TextButton({ del = true }, Modifier.fillMaxWidth()) { Text("删除这个接口", color = P3.danger) }
+            if (!isNew) TextButton({ del = true }, Modifier.fillMaxWidth(), shape = Sq.full) { Text("删除这个接口", color = P3.danger) }
         }
     }
     if (del) ConfirmDialog("删除「$name」？", "Key 也会一起清除。", "删除", true, onOk = { Secure.set(ctx, "imgkey_$nid", ""); ImgSources.save(ctx, ImgSources.list(ctx).filter { it.id != nid }); back() }) { del = false }
@@ -174,7 +174,7 @@ fun ShareBarPage(db: AppDb, back: () -> Unit) {
     var drag by remember { mutableIntStateOf(-1) }; var dy by remember { mutableFloatStateOf(0f) }
     Page("分享栏", back, action = { TextAction("恢复默认") { set(ShareBar.DEFAULT) } }) {
         item {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(16.dp)).padding(vertical = 12.dp, horizontal = 4.dp)) {
+            Row(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l).padding(vertical = 12.dp, horizontal = 4.dp)) {
                 (bar.mapNotNull { ChannelIds.def(it, channels) } + ChannelIds.more).forEach { d ->
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         SvgIcon(d.icon, if (d.id == ShareBar.MORE) P3.text3 else P3.accent, 20.dp)
@@ -185,7 +185,7 @@ fun ShareBarPage(db: AppDb, back: () -> Unit) {
         }
         item { Text("显示在栏中 · 最多 ${ShareBar.MAX} 个 + 更多（固定）· 长按拖动排序", Modifier.padding(top = 14.dp, bottom = 6.dp), fontSize = 12.sp, color = P3.text2) }
         item {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp)) {
+            Column(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l).padding(horizontal = 14.dp)) {
                 bar.forEachIndexed { i, id ->
                     val d = ChannelIds.def(id, channels) ?: return@forEachIndexed
                     key(id) {
@@ -201,7 +201,7 @@ fun ShareBarPage(db: AppDb, back: () -> Unit) {
                             SvgIcon(Ic.drag, P3.text3, 20.dp, desc = "拖动")
                             Spacer(Modifier.width(10.dp)); SvgIcon(d.icon, P3.text2, 20.dp)
                             Text(d.name, Modifier.weight(1f).padding(start = 10.dp), fontSize = 15.sp, color = P3.text)
-                            Box(Modifier.size(36.dp).clip(RoundedCornerShape(18.dp)).clickable { set(ShareBar.remove(bar, id)) }, contentAlignment = Alignment.Center) { SvgIcon(Ic.minusCircle, androidx.compose.ui.graphics.Color(0xFFC2410C), 20.dp, desc = "移出") }
+                            Box(Modifier.size(36.dp).clip(Sq.xl).clickable { set(ShareBar.remove(bar, id)) }, contentAlignment = Alignment.Center) { SvgIcon(Ic.minusCircle, androidx.compose.ui.graphics.Color(0xFFC2410C), 20.dp, desc = "移出") }
                         }
                         HorizontalDivider(color = P3.border)
                     }
@@ -216,7 +216,7 @@ fun ShareBarPage(db: AppDb, back: () -> Unit) {
         item { Text(if (bar.size >= ShareBar.MAX) "可添加 · 已满 ${ShareBar.MAX} 个，先移出一个" else "可添加", Modifier.padding(top = 14.dp, bottom = 6.dp), fontSize = 12.sp, color = P3.text2) }
         item {
             val avail = ShareBar.others(ChannelIds.all(channels).map { it.id }, bar).mapNotNull { ChannelIds.def(it, channels) }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp)) {
+            Column(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l).padding(horizontal = 14.dp)) {
                 (if (showAll) avail else avail.take(4)).forEach { d ->
                     Row(Modifier.fillMaxWidth().height(rowH).clickable(enabled = bar.size < ShareBar.MAX) { set(ShareBar.add(bar, d.id)) }, verticalAlignment = Alignment.CenterVertically) {
                         SvgIcon(d.icon, P3.text2, 20.dp)
@@ -230,7 +230,7 @@ fun ShareBarPage(db: AppDb, back: () -> Unit) {
             }
         }
         item {
-            Row(Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = 14.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("显示图片来源小字", fontSize = 15.sp, color = P3.text)
                     Text("图片下方显示「图片来自 Pexafy」；关掉后阅读页和所有导出都不显示", fontSize = 12.sp, color = P3.text3, lineHeight = 16.sp)

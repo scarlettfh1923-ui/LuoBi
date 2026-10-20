@@ -120,11 +120,11 @@ fun PicView(ctx: Context, pic: Pic, pal: ReadPalette, showCredit: Boolean, onRep
     val bmp = rememberBitmap(pic.local + pic.url) { PicCache.load(ctx, pic, 1080) }
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         Box {
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(pal.soft).combinedClickable(onClick = {}, onLongClick = { menu = true }).then(if (bmp == null) Modifier.height(180.dp) else Modifier), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().clip(Sq.m).background(pal.soft).combinedClickable(onClick = {}, onLongClick = { menu = true }).then(if (bmp == null) Modifier.height(180.dp) else Modifier), contentAlignment = Alignment.Center) {
                 if (bmp != null) androidx.compose.foundation.Image(bmp, pic.caption, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
                 else Text("图片加载中…", fontSize = 12.sp, color = pal.sub)
             }
-            DropdownMenu(menu, { menu = false }, containerColor = P3.surface) {
+            DropdownMenu(menu, { menu = false }, shape = Sq.m, containerColor = P3.surface) {
                 DropdownMenuItem({ Text("换图") }, { menu = false; onReplace() }, leadingIcon = { SvgIcon(Ic.refresh, P3.text2, 18.dp) })
                 DropdownMenuItem({ Text("编辑图注") }, { menu = false; onCaption() }, leadingIcon = { SvgIcon(Ic.write, P3.text2, 18.dp) })
                 DropdownMenuItem({ Text("删除", color = P3.danger) }, { menu = false; onDelete() }, leadingIcon = { SvgIcon(Ic.trash, P3.danger, 18.dp) })
@@ -138,7 +138,7 @@ fun PicView(ctx: Context, pic: Pic, pal: ReadPalette, showCredit: Boolean, onRep
 /** 段落之间的候选卡片：横滑候选、换一批、跳过、插入 */
 @Composable
 fun ProposalCard(ctx: Context, p: Proposal, heading: String, idx: Int, total: Int, il: Illustrator, pal: ReadPalette) {
-    Column(Modifier.fillMaxWidth().padding(bottom = 16.dp).clip(RoundedCornerShape(16.dp)).background(P3.surface).border(1.5.dp, P3.accent.copy(alpha = .45f), RoundedCornerShape(16.dp)).padding(12.dp)) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 16.dp).clip(Sq.l).background(P3.surface).border(1.5.dp, P3.accent.copy(alpha = .45f), Sq.l).padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(if (p.replace != null) "换图" else "为「${heading.take(14)}」配图", Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
             Text("$idx / $total", fontSize = 12.sp, color = P3.text3, fontFamily = Mono)
@@ -151,19 +151,19 @@ fun ProposalCard(ctx: Context, p: Proposal, heading: String, idx: Int, total: In
             else -> LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 itemsIndexed(p.cands) { i, c ->
                     val b = rememberBitmap(c.thumb) { PicCache.thumb(ctx, c.thumb) }
-                    Box(Modifier.size(120.dp, 90.dp).clip(RoundedCornerShape(10.dp)).background(P3.surface2).border(if (p.sel == i) 2.dp else 0.dp, if (p.sel == i) P3.accent else P3.surface2, RoundedCornerShape(10.dp)).clickable { p.sel = i }) {
+                    Box(Modifier.size(120.dp, 90.dp).clip(Sq.m).background(P3.surface2).border(if (p.sel == i) 2.dp else 0.dp, if (p.sel == i) P3.accent else P3.surface2, Sq.m).clickable { p.sel = i }) {
                         if (b != null) androidx.compose.foundation.Image(b, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        if (p.sel == i) Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(20.dp).clip(RoundedCornerShape(10.dp)).background(P3.accent), contentAlignment = Alignment.Center) { SvgIcon(Ic.check, androidx.compose.ui.graphics.Color.White, 14.dp) }
+                        if (p.sel == i) Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(20.dp).clip(Sq.m).background(P3.accent), contentAlignment = Alignment.Center) { SvgIcon(Ic.check, androidx.compose.ui.graphics.Color.White, 14.dp) }
                     }
                 }
             }
         }
         if (p.source.isNotBlank() && p.cands.isNotEmpty()) Text("来源：${p.source}", Modifier.padding(top = 6.dp), fontSize = 11.sp, color = P3.text3)
         Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton({ il.next(p) }, enabled = !p.loading, contentPadding = PaddingValues(horizontal = 12.dp)) { SvgIcon(Ic.refresh, P3.text2, 16.dp); Text(" 换一批", fontSize = 13.sp, color = P3.text) }
-            OutlinedButton({ il.skip(p) }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("跳过", fontSize = 13.sp, color = P3.text) }
+            OutlinedButton({ il.next(p) }, enabled = !p.loading, contentPadding = PaddingValues(horizontal = 12.dp), shape = Sq.full) { SvgIcon(Ic.refresh, P3.text2, 16.dp); Text(" 换一批", fontSize = 13.sp, color = P3.text) }
+            OutlinedButton({ il.skip(p) }, contentPadding = PaddingValues(horizontal = 12.dp), shape = Sq.full) { Text("跳过", fontSize = 13.sp, color = P3.text) }
             Spacer(Modifier.weight(1f))
-            Button({ il.insert(p) }, enabled = p.cands.isNotEmpty() && !p.loading, colors = ButtonDefaults.buttonColors(containerColor = P3.accent)) { Text("插入", fontSize = 14.sp) }
+            Button({ il.insert(p) }, enabled = p.cands.isNotEmpty() && !p.loading, colors = ButtonDefaults.buttonColors(containerColor = P3.accent), shape = Sq.full) { Text("插入", fontSize = 14.sp) }
         }
     }
 }
@@ -172,7 +172,7 @@ fun ProposalCard(ctx: Context, p: Proposal, heading: String, idx: Int, total: In
 @Composable
 fun AnalyzingCard(il: Illustrator) {
     if (!il.analyzing) return
-    Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(14.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(Modifier.size(18.dp), color = P3.accent, strokeWidth = 2.dp)
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text("文中插图", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = P3.text)

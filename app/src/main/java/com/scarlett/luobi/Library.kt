@@ -101,46 +101,43 @@ fun LibraryScreen(
             item {
                 if (managing) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { setManaging(false); selected = emptySet() }) { Text("完成", color = t3(), fontSize = 15.sp) }
+                        TextButton(onClick = { setManaging(false); selected = emptySet() }, shape = Sq.full) { Text("完成", color = t3(), fontSize = 15.sp) }
                         Text("已选 ${selected.size} 篇", Modifier.weight(1f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                         Spacer(Modifier.width(64.dp))
                     }
                 } else {
-                    Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.Top) {
-                        Column(Modifier.weight(1f)) {
-                            Text("文案库", fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 36.sp)
-                            Text("共 ${all.size} 篇 · 收藏 ${all.count { it.favorite }}", Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text2)
+                    Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
+                            Text("文案库", fontSize = 24.sp, fontWeight = FontWeight.Bold, lineHeight = 30.sp, color = P3.text)
+                            Text("${all.size} 篇", Modifier.padding(start = 10.dp, bottom = 3.dp), fontSize = 13.sp, color = P3.text2)
                         }
-                        Text("管理", Modifier.padding(top = 8.dp).clip(RoundedCornerShape(8.dp)).clickable {
+                        Text("管理", Modifier.clip(Sq.s).clickable {
                             openSwipeId = null; setManaging(true); selected = emptySet()
                         }.padding(horizontal = 6.dp, vertical = 6.dp), fontSize = 14.sp, color = cs.primary, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
             item {
-                Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(42.dp).clip(RoundedCornerShape(50)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(50)).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(42.dp).clip(Sq.full).background(P3.surface).border(1.dp, P3.border, Sq.full).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(Ic.search, t3(), 18.dp); Spacer(Modifier.width(8.dp))
                     Box(Modifier.weight(1f)) {
                         BasicTextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true, textStyle = TextStyle(fontSize = 15.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary))
                         if (q.isEmpty()) Text("搜索标题、正文、标签", fontSize = 15.sp, color = t3())
                     }
-                    if (q.isNotEmpty()) Box(Modifier.size(28.dp).clip(CircleShape).clickable { q = "" }, contentAlignment = Alignment.Center) { SvgIcon(Ic.close, t3(), 16.dp, desc = "清空") }
+                    if (q.isNotEmpty()) Box(Modifier.size(28.dp).clip(Sq.full).clickable { q = "" }, contentAlignment = Alignment.Center) { SvgIcon(Ic.close, t3(), 16.dp, desc = "清空") }
                 }
                 Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 10.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        listOf("全部", "收藏").forEachIndexed { i, l ->
-                            Column(Modifier.clickable { filter = i }, horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("$l ${counts[i]}", fontSize = 14.sp, color = if (filter == i) cs.onSurface else t3(), fontWeight = if (filter == i) FontWeight.Bold else FontWeight.Normal)
-                                Box(Modifier.padding(top = 4.dp).width(16.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(if (filter == i) cs.primary else Color.Transparent))
-                            }
-                        }
+                    // 1.5：筛选统一为分段胶囊，选中实心
+                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("全部", "收藏").forEachIndexed { i, l -> SegChip("$l ${counts[i]}", filter == i) { filter = i } }
+                        all.map { it.templateName }.filter { it.isNotBlank() }.distinct().let { names -> if (names.size > 1) names.forEach { nm -> SegChip(nm, tplFilter == nm) { tplFilter = if (tplFilter == nm) "" else nm } } }
                     }
                     Box {
-                        Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { sortMenu = true }.padding(horizontal = 6.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.clip(Sq.s).clickable { sortMenu = true }.padding(horizontal = 6.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             SvgIcon(Ic.swap, t3(), 14.dp); Spacer(Modifier.width(2.dp))
                             Text(SortLabels[sort], fontSize = 12.sp, color = t3())
                         }
-                        DropdownMenu(sortMenu, { sortMenu = false }) {
+                        DropdownMenu(sortMenu, { sortMenu = false }, shape = Sq.m) {
                             SortLabels.forEachIndexed { i, l ->
                                 DropdownMenuItem(
                                     text = { Text(l, fontWeight = if (i == sort) FontWeight.Bold else FontWeight.Normal, color = if (i == sort) cs.primary else cs.onSurface) },
@@ -151,7 +148,7 @@ fun LibraryScreen(
                 }
             }
             item {
-                val names = all.map { it.templateName }.filter { it.isNotBlank() }.distinct()
+                val names = emptyList<String>()
                 if (names.size > 1) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Pill("全部模板", tplFilter.isBlank()) { tplFilter = "" }
                     names.forEach { nm -> Pill(nm, tplFilter == nm) { tplFilter = if (tplFilter == nm) "" else nm } }
@@ -194,15 +191,15 @@ fun LibraryScreen(
                 androidx.compose.ui.graphics.Brush.verticalGradient(listOf(cs.background.copy(alpha = 0f), cs.background, cs.background))
             )) {
                 Surface(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 12.dp).height(60.dp),
-                    shape = RoundedCornerShape(50), color = P3.text, shadowElevation = 8.dp) {
+                    shape = Sq.full, color = P3.text, shadowElevation = 8.dp) {
                     Row(Modifier.fillMaxSize().padding(start = 18.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("全选", Modifier.clip(RoundedCornerShape(8.dp)).clickable {
+                        Text("全选", Modifier.clip(Sq.s).clickable {
                             selected = if (selected.size == shown.size) emptySet() else shown.map { it.id }.toSet()
                         }.padding(vertical = 8.dp, horizontal = 4.dp), color = Color.White, fontSize = 14.sp)
                         Spacer(Modifier.weight(1f))
                         Text("已选 ${selected.size}", color = P3.text3, fontSize = 13.sp)
                         Spacer(Modifier.width(12.dp))
-                        Row(Modifier.height(44.dp).clip(RoundedCornerShape(50)).background(if (selected.isEmpty()) Color(0xFF4B5563) else P3.danger)
+                        Row(Modifier.height(44.dp).clip(Sq.full).background(if (selected.isEmpty()) Color(0xFF4B5563) else P3.danger)
                             .clickable(enabled = selected.isNotEmpty()) { confirmBatch = true }.padding(horizontal = 18.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             SvgIcon(Ic.trash, Color.White, 18.dp); Spacer(Modifier.width(6.dp))
@@ -215,35 +212,35 @@ fun LibraryScreen(
     }
 
     if (confirmBatch) {
-        AlertDialog(onDismissRequest = { confirmBatch = false },
+        AlertDialog(shape = Sq.xl, onDismissRequest = { confirmBatch = false },
             title = { Text("删除 ${selected.size} 篇文章？") },
             text = { Text("包括所有版本，删除后无法恢复。") },
             confirmButton = {
                 TextButton(onClick = {
                     val ids = selected.toList(); confirmBatch = false
                     deleteNotes(ids); setManaging(false)
-                }) { Text("删除", color = P3.danger) }
+                }, shape = Sq.full) { Text("删除", color = P3.danger) }
             },
-            dismissButton = { TextButton(onClick = { confirmBatch = false }) { Text("取消") } })
+            dismissButton = { TextButton(onClick = { confirmBatch = false }, shape = Sq.full) { Text("取消") } })
     }
     confirmOne?.let { n ->
-        AlertDialog(onDismissRequest = { confirmOne = null; openSwipeId = null },
+        AlertDialog(shape = Sq.xl, onDismissRequest = { confirmOne = null; openSwipeId = null },
             title = { Text("删除这篇文章？") },
             text = { Text("「${n.title}」删除后无法恢复。") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmOne = null
                     deleteNotes(listOf(n.id), undo = n)
-                }) { Text("删除", color = P3.danger) }
+                }, shape = Sq.full) { Text("删除", color = P3.danger) }
             },
-            dismissButton = { TextButton(onClick = { confirmOne = null; openSwipeId = null }) { Text("取消") } })
+            dismissButton = { TextButton(onClick = { confirmOne = null; openSwipeId = null }, shape = Sq.full) { Text("取消") } })
     }
 }
 
 @Composable
 private fun ElevCard(modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(14.dp)
+    val shape = Sq.xl
     Surface(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().border(1.dp, P3.border, shape).then(
@@ -255,20 +252,20 @@ private fun ElevCard(modifier: Modifier = Modifier, selected: Boolean = false, o
         tonalElevation = 0.dp,
         border = null,
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), content = content)
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), content = content)
     }
 }
 
 @Composable
 private fun NoteTitleBlock(n: Note, showHeart: Boolean, onToggleFav: () -> Unit = {}) {
     val cs = MaterialTheme.colorScheme
-    Text(n.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = P3.text)
-    Row(Modifier.padding(top = 8.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        if (n.templateName.isNotBlank()) Text(n.templateName, fontSize = 11.sp, color = P3.onAccentSoft,
-            modifier = Modifier.padding(end = 8.dp).clip(RoundedCornerShape(50)).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp))
-        Text(shortDate(n.createdAt) + " · " + "%,d".format(n.body.length) + " 字" + if (n.version > 1) " · v${n.version}" else "", fontSize = 12.sp, color = t3(), fontFamily = Mono)
+    // 1.5：标题一行 + 摘要一行 + 一行弱化信息
+    Text(n.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 23.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = P3.text)
+    Text(Md.plainBody(n.body).replace("\n", " ").take(80), Modifier.padding(top = 4.dp), fontSize = 13.sp, color = P3.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Row(Modifier.padding(top = 6.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(listOf(n.templateName, shortDate(n.createdAt), "%,d".format(n.body.length) + " 字", if (n.version > 1) "v${n.version}" else "").filter { it.isNotBlank() }.joinToString(" · "), Modifier.weight(1f, fill = false), fontSize = 12.sp, color = t3(), maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.weight(1f))
-        if (showHeart) Box(Modifier.size(32.dp).clip(CircleShape).clickable { onToggleFav() }, contentAlignment = Alignment.Center) {
+        if (showHeart) Box(Modifier.size(32.dp).clip(Sq.full).clickable { onToggleFav() }, contentAlignment = Alignment.Center) {
             SvgIcon(Ic.heart, if (n.favorite) P3.accent else t3(), 18.dp, if (n.favorite) P3.accent else null, "收藏")
         }
     }
@@ -293,16 +290,16 @@ private fun LibraryRow(
     if (managing) {
         ElevCard(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), selected = selected, onClick = onOpen) {
             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.padding(top = 2.dp).size(22.dp).clip(CircleShape)
+                Box(Modifier.padding(top = 2.dp).size(22.dp).clip(Sq.full)
                     .background(if (selected) cs.primary else Color.Transparent)
-                    .border(1.5.dp, if (selected) cs.primary else cs.outline, CircleShape), contentAlignment = Alignment.Center) {
+                    .border(1.5.dp, if (selected) cs.primary else cs.outline, Sq.full), contentAlignment = Alignment.Center) {
                     if (selected) SvgIcon(Ic.check, Color.White, 12.dp)
                 }
                 Column(Modifier.weight(1f)) { NoteTitleBlock(n, showHeart = false) }
             }
         }
     } else {
-        Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(14.dp))) {
+        Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().heightIn(min = 48.dp).clip(Sq.l)) {
             // Left reveal: red delete — TAP required
             Box(Modifier.matchParentSize().background(P3.danger), contentAlignment = Alignment.CenterStart) {
                 Column(

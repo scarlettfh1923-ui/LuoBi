@@ -36,29 +36,19 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
     val channels by db.channels().all().collectAsState(initial = emptyList())
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottom + 20.dp)) {
         item { BigTitle("设置") }
+        item { RowGroup("写作", listOf(
+            { SettingRow(Ic.key, "模型与密钥", "已配置 ${s.configured().size} 个") { go("models") } },
+            { SettingRow(Ic.text, "模板管理", "内置 ${templates.count { it.builtIn }} · 我的 ${templates.count { !it.builtIn }}") { go("templates") } },
+            { SettingRow(Ic.wand, "清洗模板", active?.name ?: "未选择") { go("cleans") } },
+            { SettingRow(Ic.text, "篇幅", Lengths.label(s.length, s.lengthRange())) { go("length") } })) }
+        item { RowGroup("分享与图片", listOf(
+            { SettingRow(Ic.share, "分享栏", (s.shareBar.map { ChannelIds.short(it, channels) } + "更多").joinToString(" · ")) { go("sharebar") } },
+            { SettingRow(Ic.send, "发布渠道", (listOf("Notion", "语雀", "Telegraph") + channels.map { it.name }).joinToString(" · ")) { go("channels") } },
+            { SettingRow(Ic.image, "图片来源", ImgSources.list(ctx).filter { it.on }.joinToString(" · ") { it.name.substringBefore("（") }) { go("imgsrc") } },
+            { SettingRow(Ic.image, "出图与默认", "卡片 · 长图 · 默认模型") { go("style") } })) }
+        item { RowGroup("其他", listOf({ SettingRow(Ic.info, "关于落笔", "v${BuildConfig.VERSION_NAME}") { go("about") } })) }
         item {
-            Card(Modifier.padding(horizontal = 16.dp), pad = 0.dp) {
-                SettingRow(Ic.text, "模板管理", "内置 ${templates.count { it.builtIn }} 个 · 我的 ${templates.count { !it.builtIn }} 个") { go("templates") }
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
-                SettingRow(Ic.wand, "清洗模板", "当前：${active?.name ?: "未选择"} · 第 ① 步的提示词") { go("cleans") }
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
-                SettingRow(Ic.key, "模型与密钥", "已配置 ${s.configured().size} 个 · 清洗固定用 DeepSeek，需要 DeepSeek Key") { go("models") }
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
-                SettingRow(Ic.send, "发布渠道", (listOf("Notion", "语雀", "Telegraph") + channels.map { it.name }).joinToString("、")) { go("channels") }
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
-                SettingRow(Ic.share, "分享栏", (s.shareBar.map { ChannelIds.short(it, channels) } + "更多").joinToString(" · ")) { go("sharebar") }
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
-                SettingRow(Ic.image, "图片来源", ImgSources.list(LocalContext.current).filter { it.on }.joinToString(" → ") { it.name.substringBefore("（") } + " · 文中插图") { go("imgsrc") }
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
-                SettingRow(Ic.text, "篇幅设置", "默认 " + Lengths.label(s.length, s.lengthRange())) { go("length") }
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
-                SettingRow(Ic.image, "出图与默认", "卡片比例、配色、长图配色、默认模型") { go("style") }
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
-                SettingRow(Ic.info, "关于", "落笔 v${BuildConfig.VERSION_NAME} · 名字暂定") { go("about") }
-            }
-        }
-        item {
-            Text("所有 Key 只加密存在这台手机上，不经过任何服务器。", Modifier.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(P3.surface2).padding(14.dp), fontSize = 13.sp, color = P3.text2)
+            Text("所有 Key 只加密存在这台手机上，不经过任何服务器。", Modifier.padding(horizontal = 28.dp, vertical = 14.dp).fillMaxWidth(), fontSize = 12.sp, color = P3.text3)
         }
     }
 }
@@ -97,7 +87,7 @@ fun Page(title: String, back: () -> Unit, action: (@Composable RowScope.() -> Un
 
 @Composable
 private fun NewButton(onClick: () -> Unit) {
-    Row(Modifier.padding(end = 12.dp).clip(RoundedCornerShape(50)).background(P3.accentSoft).border(1.dp, P3.accent, RoundedCornerShape(50)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(end = 12.dp).clip(Sq.full).background(P3.accentSoft).border(1.dp, P3.accent, Sq.full).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
         SvgIcon(Ic.plus, P3.onAccentSoft, 16.dp); Text(" 新建", color = P3.onAccentSoft, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }
@@ -121,12 +111,12 @@ fun TemplatesPage(db: AppDb, back: () -> Unit, go: (String) -> Unit) {
                     Card(Modifier.padding(bottom = 8.dp), onClick = { go("template:${t.id}") }) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(t.name, Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
-                            if (t.builtIn) Text("内置", Modifier.clip(RoundedCornerShape(50)).background(P3.surface2).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.text2)
-                            else Text("我的", Modifier.clip(RoundedCornerShape(50)).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.onAccentSoft)
+                            if (t.builtIn) Text("内置", Modifier.clip(Sq.full).background(P3.surface2).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.text2)
+                            else Text("我的", Modifier.clip(Sq.full).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.onAccentSoft)
                         }
                         Text(t.desc.ifBlank { "（无说明）" }, Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Vars.referenced(t.prompt).forEach { v -> Text("{$v}", Modifier.clip(RoundedCornerShape(6.dp)).background(if (v in miss) P3.warnBg else P3.accentSoft).padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 12.sp, color = if (v in miss) P3.warnText else P3.onAccentSoft) }
+                            Vars.referenced(t.prompt).forEach { v -> Text("{$v}", Modifier.clip(Sq.s).background(if (v in miss) P3.warnBg else P3.accentSoft).padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 12.sp, color = if (v in miss) P3.warnText else P3.onAccentSoft) }
                         }
                         Row(Modifier.padding(top = 6.dp)) {
                             Spacer(Modifier.weight(1f))
@@ -217,7 +207,7 @@ fun TemplateEdit(db: AppDb, id: Long, back: () -> Unit) {
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 (fields + Vars.RAW).forEach { v ->
-                    Row(Modifier.clip(RoundedCornerShape(50)).background(P3.surface).border(1.dp, P3.borderStrong, RoundedCornerShape(50)).clickable {
+                    Row(Modifier.clip(Sq.full).background(P3.surface).border(1.dp, P3.borderStrong, Sq.full).clickable {
                         val ins = "{$v}"; val sel = prompt.selection
                         val txt = prompt.text.replaceRange(sel.min, sel.max, ins)
                         prompt = TextFieldValue(txt, TextRange(sel.min + ins.length))
@@ -260,7 +250,7 @@ fun CleansPage(db: AppDb, back: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(c.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
-                                if (c.builtIn) Text("内置", Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background(P3.surface2).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.text2)
+                                if (c.builtIn) Text("内置", Modifier.padding(start = 6.dp).clip(Sq.full).background(P3.surface2).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.text2)
                             }
                             Text("字段：" + c.fieldList().joinToString(" / "), fontSize = 12.sp, color = P3.text2)
                         }
@@ -274,15 +264,15 @@ fun CleansPage(db: AppDb, back: () -> Unit) {
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 c.fieldList().forEach { f ->
-                    Row(Modifier.clip(RoundedCornerShape(50)).background(P3.surface).border(1.dp, P3.accent, RoundedCornerShape(50)).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.clip(Sq.full).background(P3.surface).border(1.dp, P3.accent, Sq.full).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(f, fontSize = 14.sp, color = P3.onAccentSoft)
-                        Box(Modifier.size(28.dp).clip(CircleShape).clickable {
+                        Box(Modifier.size(28.dp).clip(Sq.full).clickable {
                             val nf = c.fieldList() - f
                             scope.launch { db.cleans().update(c.copy(fields = nf.joinToString("\n"))); if (c.active) affected = impact(nf) }
                         }, contentAlignment = Alignment.Center) { SvgIcon(Ic.close, P3.accent, 14.dp, desc = "删除字段") }
                     }
                 }
-                Row(Modifier.clip(RoundedCornerShape(50)).border(1.dp, P3.borderStrong, RoundedCornerShape(50)).clickable { newField = "" }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.clip(Sq.full).border(1.dp, P3.borderStrong, Sq.full).clickable { newField = "" }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(Ic.plus, P3.text2, 14.dp); Text(" 字段", fontSize = 14.sp, color = P3.text)
                 }
             }
@@ -311,15 +301,15 @@ fun CleansPage(db: AppDb, back: () -> Unit) {
             }
         }
     }
-    if (newField != null) AlertDialog(onDismissRequest = { newField = null }, containerColor = P3.surface, title = { Text("添加输出字段") },
+    if (newField != null) AlertDialog(shape = Sq.xl, onDismissRequest = { newField = null }, containerColor = P3.surface, title = { Text("添加输出字段") },
         text = { Column { InputBox(newField!!, { newField = it.replace(Regex("[^\\p{IsHan}\\w]"), "") }, "比如：读者", singleLine = true); Text("只能用汉字、字母、数字，写作模板里用 {字段名} 引用。", Modifier.padding(top = 8.dp), fontSize = 12.sp, color = P3.text3) } },
         confirmButton = { TextButton(onClick = {
             val f = newField!!.trim(); newField = null
             val c = cur ?: return@TextButton
             if (f.isNotBlank() && f !in c.fieldList() && f != Vars.RAW) scope.launch { db.cleans().update(c.copy(fields = (c.fieldList() + f).joinToString("\n"))) }
-        }) { Text("添加", color = P3.accent) } }, dismissButton = { TextButton(onClick = { newField = null }) { Text("取消", color = P3.text2) } })
-    affected?.let { a -> AlertDialog(onDismissRequest = { affected = null }, containerColor = P3.surface, title = { Text("有写作模板会受影响") }, text = { Text(a, color = P3.warnText) },
-        confirmButton = { TextButton(onClick = { affected = null }) { Text("知道了", color = P3.accent) } }) }
+        }, shape = Sq.full) { Text("添加", color = P3.accent) } }, dismissButton = { TextButton(onClick = { newField = null }, shape = Sq.full) { Text("取消", color = P3.text2) } })
+    affected?.let { a -> AlertDialog(shape = Sq.xl, onDismissRequest = { affected = null }, containerColor = P3.surface, title = { Text("有写作模板会受影响") }, text = { Text(a, color = P3.warnText) },
+        confirmButton = { TextButton(onClick = { affected = null }, shape = Sq.full) { Text("知道了", color = P3.accent) } }) }
     del?.let { c -> ConfirmDialog("删除「${c.name}」？", if (c.active) "它是当前使用的清洗模板，删除后会改用「${Defaults.CLEAN_NAME}」。" else "删除后无法恢复。", "删除", true, onOk = {
         scope.launch { db.cleans().delete(c); if (c.active) list.firstOrNull { it.builtIn }?.let { db.cleans().activate(it.id) }; editId = 0 }
     }) { del = null } }
@@ -333,7 +323,7 @@ fun ModelsPage(back: () -> Unit) {
     var ver by remember { mutableIntStateOf(0) }
     var customs by remember { mutableStateOf(s.customs) }
     Page("模型与密钥", back) {
-        item { Text("清洗固定用 DeepSeek，必须先配置 DeepSeek Key。Key 只加密存在这台手机上。", Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(P3.surface2).padding(14.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
+        item { Text("清洗固定用 DeepSeek，必须先配置 DeepSeek Key。Key 只加密存在这台手机上。", Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(Sq.l).background(P3.surface2).padding(14.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
         item {
             Card(pad = 0.dp) {
                 Providers.text.forEachIndexed { i, p ->
@@ -345,7 +335,7 @@ fun ModelsPage(back: () -> Unit) {
                             Column(Modifier.weight(1f).padding(start = 10.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(p.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
-                                    if (p.overseas) Text("需海外网络", Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background(P3.surface2).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.text2)
+                                    if (p.overseas) Text("需海外网络", Modifier.padding(start = 6.dp).clip(Sq.full).background(P3.surface2).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.text2)
                                 }
                                 Text(if (has) s.model(p.id) + " · " + p.note else p.note, fontSize = 13.sp, color = P3.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
@@ -360,7 +350,7 @@ fun ModelsPage(back: () -> Unit) {
         item { GroupLabel("自定义模型（OpenAI 兼容）") }
         customs.forEach { cm -> item(key = cm.id) { CustomModelCard(cm, s, { customs = s.customs; ver++ }) } }
         item {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).border(1.dp, P3.accent.copy(alpha = .6f), RoundedCornerShape(16.dp)).clickable {
+            Column(Modifier.fillMaxWidth().clip(Sq.l).border(1.dp, P3.accent.copy(alpha = .6f), Sq.l).clickable {
                 s.customs = s.customs + CustomModel(System.currentTimeMillis().toString(36), "自定义模型", "", ""); customs = s.customs
             }.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) { SvgIcon(Ic.plus, P3.accent, 18.dp); Text(" 自定义模型（OpenAI 兼容）", fontSize = 16.sp, color = P3.accent, fontWeight = FontWeight.SemiBold) }
@@ -381,7 +371,7 @@ fun TestRow(test: suspend () -> String) {
         OutlinedButton(onClick = {
             busy = true; res = null
             scope.launch { res = try { true to test() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: ConfigError) { false to (e.message ?: "") } catch (e: PublishError) { false to (e.message ?: "") } catch (e: Throwable) { false to Errors.explain(e).text }; busy = false }
-        }, enabled = !busy, shape = RoundedCornerShape(50), border = BorderStroke(1.dp, P3.borderStrong)) {
+        }, enabled = !busy, shape = Sq.full, border = BorderStroke(1.dp, P3.borderStrong)) {
             if (busy) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = P3.accent) else SvgIcon(Ic.refresh, P3.accent, 16.dp)
             Text(if (busy) "  测试中…" else "  测试连接", color = P3.text, fontSize = 14.sp)
         }
@@ -592,7 +582,7 @@ fun PinnedPage(db: AppDb, back: () -> Unit) {
         pinned.forEachIndexed { i, id ->
             val d = ChannelIds.all(channels).firstOrNull { it.id == id } ?: return@forEachIndexed
             item(key = "p$id") {
-                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(P3.surface).border(1.dp, P3.accent, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.accent, Sq.l).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${i + 1}", fontFamily = Mono, color = P3.accent, fontSize = 14.sp); Spacer(Modifier.width(10.dp))
                     SvgIcon(d.icon, P3.accent, 20.dp, P3.accent); Spacer(Modifier.width(10.dp))
                     Text(d.name, Modifier.weight(1f), fontSize = 15.sp)
@@ -604,7 +594,7 @@ fun PinnedPage(db: AppDb, back: () -> Unit) {
         item { GroupLabel("全部渠道") }
         ChannelIds.all(channels).filter { it.id != "xhs" && it.id !in pinned }.forEach { d ->
             item(key = "a${d.id}") {
-                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(Sq.l).background(P3.surface).border(1.dp, P3.border, Sq.l).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(d.icon, P3.text2, 20.dp); Spacer(Modifier.width(10.dp))
                     Text(d.name, Modifier.weight(1f), fontSize = 15.sp)
                     TextAction(if (pinned.size >= 8) "已满" else "置顶", enabled = pinned.size < 8) { set(pinned + d.id) }
@@ -666,10 +656,10 @@ fun LengthPage(back: () -> Unit) {
         (0..2).forEach { i ->
             item {
                 val err = Lengths.validate(mins[i], maxs[i])
-                Card(Modifier.padding(bottom = 10.dp).then(if (def == i) Modifier.border(1.5.dp, P3.accent, RoundedCornerShape(18.dp)) else Modifier)) {
+                Card(Modifier.padding(bottom = 10.dp).then(if (def == i) Modifier.border(1.5.dp, P3.accent, Sq.xl) else Modifier)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(Lengths.NAMES[i] + "篇", Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
-                        if (def == i) Text("默认", Modifier.clip(RoundedCornerShape(50)).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.accent)
+                        if (def == i) Text("默认", Modifier.clip(Sq.full).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.accent)
                     }
                     Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("最少 ", fontSize = 14.sp, color = P3.text)
@@ -686,14 +676,14 @@ fun LengthPage(back: () -> Unit) {
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Lengths.NAMES.forEachIndexed { i, l -> Pill(l, def == i) { def = i; s.length = i } } } }
         item {
             Text("篇幅如何影响生成：第 ③ 步不再单独选篇幅，生成时一律使用这里的默认篇幅，并在最终提示词末尾追加一行「篇幅：中篇，正文字数控制在 400–800 字之间。」模型据此控制长度；数字只是约束提示，实际字数可能有少量偏差。",
-                Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(P3.surface2).padding(14.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 20.sp)
+                Modifier.padding(top = 14.dp).fillMaxWidth().clip(Sq.l).background(P3.surface2).padding(14.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 20.sp)
         }
     }
 }
 
 @Composable
 private fun NumBox(v: String, on: (String) -> Unit) {
-    androidx.compose.foundation.text.BasicTextField(v, on, Modifier.width(64.dp).clip(RoundedCornerShape(10.dp)).background(P3.surface).border(1.dp, P3.borderStrong, RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 8.dp),
+    androidx.compose.foundation.text.BasicTextField(v, on, Modifier.width(64.dp).clip(Sq.m).background(P3.surface).border(1.dp, P3.borderStrong, Sq.m).padding(horizontal = 8.dp, vertical = 8.dp),
         singleLine = true, textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = P3.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontFamily = Mono),
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
 }

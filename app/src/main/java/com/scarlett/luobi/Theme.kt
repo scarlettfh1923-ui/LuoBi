@@ -54,7 +54,7 @@ fun AppTheme(content: @Composable () -> Unit) {
             titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold, lineHeight = 24.sp),
             bodyMedium = base.bodyMedium.copy(lineHeight = 22.sp),
         ),
-        shapes = Shapes(medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(20.dp)),
+        shapes = Shapes(extraSmall = RoundedCornerShape(Corner.xs), small = RoundedCornerShape(Corner.s), medium = RoundedCornerShape(Corner.l), large = RoundedCornerShape(Corner.xl), extraLarge = RoundedCornerShape(Corner.xl)),  // 仅作兜底；所有组件都显式传 Squircle
         content = content,
     )
 }

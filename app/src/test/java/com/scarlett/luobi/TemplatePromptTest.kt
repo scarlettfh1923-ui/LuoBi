@@ -82,3 +82,24 @@ class TemplatePromptTest {
         assertEquals(12, Md.sectionNo("十二")); assertNull(Md.sectionNo("1 土地财政")); assertNull(Md.sectionNo("限跌令"))
     }
 }
+
+class GoldenSentenceTest {
+    private val g = "卖地是收租，炒股是博弈。收租的躺赢，博弈的未必。"
+    @Test fun boldParagraphIsBodyNotHeading() {
+        val ml = Md.line("**$g**", 20)
+        assertEquals(MdKind.P, ml.kind); assertEquals(listOf(g to true), Md.spans(ml.text))
+    }
+    @Test fun hashSentenceDemoted() {
+        assertEquals(MdKind.P, Md.line("## $g", 20).kind)
+        assertEquals(MdKind.P, Md.line("### $g", 20).kind)
+        assertEquals(MdKind.H2, Md.line("## 合肥的运气，不是谁都有", 20).kind)
+        assertEquals(MdKind.H2, Md.line("## 土地财政的终局", 20).kind)
+    }
+    @Test fun shortBoldStillHeading() { assertEquals(MdKind.H2, Md.line("**土地财政的终局**", 20).kind) }
+    @Test fun exportsKeepBodySize() {
+        val body = "第一段。\n\n**$g**\n\n第三段。"
+        val html = Export.htmlBody(body, emptyList())
+        assertFalse(html.contains("<h2")); assertTrue(html.contains("<strong>$g</strong>"))
+        assertTrue(Export.markdown("t", body, emptyList()).contains("**$g**"))
+    }
+}

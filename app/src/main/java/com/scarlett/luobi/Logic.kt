@@ -278,16 +278,26 @@ object Md {
         if (x.length == 2 && x[0] == '十' && x[1] in zh) return 10 + zh.indexOf(x[1])
         return null
     }
+    const val HEAD_MAX = 14
+    const val PUNCT = "。！？，；,;!?…"
+    /** 像句子：有句读，且不只是末尾一个冒号；或超过 24 字 */
+    fun sentenceLike(t: String): Boolean { val x = t.replace("**", "").trim(); return x.length > 24 || x.dropLast(1).any { it in "。！？；;!?" } || (x.length > HEAD_MAX && x.any { it in PUNCT }) }
     private val numRe = Regex("^(\\d{1,3})[.、．)]\\s*(.+)$")
     fun line(raw: String, total: Int): MdLine {
         val p = raw.trim()
         if (Regex("^([-*_])(\\s*\\1){2,}$").matches(p)) return MdLine(MdKind.HR, "")
+        // 1.5：句子样的「标题」（带句读、较长）其实是金句 → 正文字号加粗，不放大
+        if (p.startsWith("#")) { val t = p.trimStart('#').trim(); if (sentenceLike(t)) return MdLine(MdKind.P, "**" + t.replace("**", "") + "**") }
         if (p.startsWith("###")) return MdLine(MdKind.H3, p.trimStart('#').trim())
         if (p.startsWith("#")) return MdLine(MdKind.H2, p.trimStart('#').trim())
         if (p.startsWith(">")) return MdLine(MdKind.QUOTE, p.trimStart('>', ' ', '　').trim())
         if (p.startsWith("- ") || p.startsWith("* ") || p.startsWith("• ") || p.startsWith("· ")) return MdLine(MdKind.BULLET, p.substring(2).trim())
         numRe.find(p)?.let { m -> if (p.length > 24 || p.contains('。') || total <= 3) return MdLine(MdKind.NUM, m.groupValues[2].trim(), m.groupValues[1]) }
-        if (p.startsWith("**") && p.endsWith("**") && p.length in 5..42 && !p.substring(2, p.length - 2).contains("**")) return MdLine(MdKind.H2, p.substring(2, p.length - 2).trim())
+        // 整段加粗：只有很短、没有句读的才当小标题（1.0 旧格式）；其余是金句，保持正文字号加粗
+        if (p.startsWith("**") && p.endsWith("**") && p.length >= 5 && !p.substring(2, p.length - 2).contains("**")) {
+            val t = p.substring(2, p.length - 2).trim()
+            return if (t.length <= HEAD_MAX && t.none { it in PUNCT }) MdLine(MdKind.H2, t) else MdLine(MdKind.P, p)
+        }
         if (Export.isHeadLine(p, total)) return MdLine(MdKind.H2, p)
         return MdLine(MdKind.P, p)
     }

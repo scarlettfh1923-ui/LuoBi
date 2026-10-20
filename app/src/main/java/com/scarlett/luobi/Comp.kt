@@ -47,7 +47,7 @@ fun SvgIcon(paths: List<String>, tint: Color, size: Dp = 24.dp, fill: Color? = n
 
 @Composable
 fun Card(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, pad: Dp = 16.dp, color: Color = P3.surface, content: @Composable ColumnScope.() -> Unit) {
-    val m = modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(color).border(1.dp, P3.border, RoundedCornerShape(20.dp))
+    val m = modifier.fillMaxWidth().clip(Sq.xl).background(color).border(1.dp, P3.border, Sq.xl)
         .let { if (onClick != null) it.clickable(onClick = onClick) else it }.padding(pad)
     Column(m, content = content)
 }
@@ -71,9 +71,10 @@ fun BottomNav(sel: Int, onSel: (Int) -> Unit) {
 
 @Composable
 fun BigTitle(title: String, sub: String = "") {
-    Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 12.dp)) {
-        Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = P3.text, lineHeight = 36.sp)
-        if (sub.isNotEmpty()) Text(sub, Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text2)
+    // 1.5：紧凑标题，一行
+    Row(Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
+        Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = P3.text, lineHeight = 30.sp)
+        if (sub.isNotEmpty()) Text(sub, Modifier.padding(start = 10.dp, bottom = 3.dp), fontSize = 13.sp, color = P3.text2)
     }
 }
 
@@ -95,7 +96,7 @@ fun GroupLabel(t: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, busy: Boolean = false, onClick: () -> Unit) {
-    Button(onClick, modifier.fillMaxWidth().height(52.dp), enabled = enabled && !busy, shape = RoundedCornerShape(50),
+    Button(onClick, modifier.fillMaxWidth().height(52.dp), enabled = enabled && !busy, shape = Sq.full,
         colors = ButtonDefaults.buttonColors(containerColor = P3.accent, contentColor = Color.White, disabledContainerColor = P3.surface2, disabledContentColor = P3.text3)) {
         if (busy) { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = P3.accent); Spacer(Modifier.width(8.dp)) }
         Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
@@ -105,8 +106,8 @@ fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean 
 /** 胶囊选择 */
 @Composable
 fun Pill(text: String, sel: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Text(text, modifier.clip(RoundedCornerShape(50)).background(if (sel) P3.accentSoft else P3.surface)
-        .border(1.dp, if (sel) P3.accent else P3.borderStrong, RoundedCornerShape(50)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+    Text(text, modifier.clip(Sq.full).background(if (sel) P3.accentSoft else P3.surface)
+        .border(1.dp, if (sel) P3.accent else P3.borderStrong, Sq.full).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
         color = if (sel) P3.onAccentSoft else P3.text, fontSize = 14.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
 }
 
@@ -115,7 +116,7 @@ fun Pill(text: String, sel: Boolean, modifier: Modifier = Modifier, onClick: () 
 fun InputBox(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, minHeight: Dp = 0.dp, singleLine: Boolean = false,
              secret: Boolean = false, mono: Boolean = false, fontSize: Int = 15) {
     var show by remember { mutableStateOf(false) }
-    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(P3.surface2).border(1.dp, P3.border, RoundedCornerShape(12.dp))
+    Row(modifier.fillMaxWidth().clip(Sq.m).background(P3.surface2).border(1.dp, P3.border, Sq.m)
         .padding(horizontal = 12.dp, vertical = 10.dp).heightIn(min = minHeight), verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top) {
         Box(Modifier.weight(1f)) {
             BasicTextField(value, onChange, Modifier.fillMaxWidth(), singleLine = singleLine,
@@ -138,58 +139,76 @@ fun FieldLabel(t: String, sub: String = "") {
 /** 黄色警告条 */
 @Composable
 fun WarnBox(t: String, modifier: Modifier = Modifier) {
-    Text(t, modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(P3.warnBg).border(1.dp, P3.warnBorder, RoundedCornerShape(12.dp)).padding(12.dp),
+    Text(t, modifier.fillMaxWidth().clip(Sq.m).background(P3.warnBg).border(1.dp, P3.warnBorder, Sq.m).padding(12.dp),
         color = P3.warnText, fontSize = 13.sp, lineHeight = 19.sp)
 }
 
 /** 设置列表行：图标底 + 标题 + 说明 + › */
 @Composable
 fun SettingRow(icon: List<String>, title: String, sub: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(P3.surface2), contentAlignment = Alignment.Center) { SvgIcon(icon, P3.text2, 22.dp) }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
-            if (sub.isNotEmpty()) Text(sub, Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 18.sp)
-        }
-        SvgIcon(Ic.chevron, P3.text3, 18.dp)
+    // 1.5 统一行网格：18dp 线性图标列（16+18+16）| 标题 | 右侧弱化值（单行）| ›
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onClick).padding(start = 16.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { SvgIcon(icon, P3.text, 18.dp) }
+        Spacer(Modifier.width(16.dp))
+        Text(title, fontSize = 15.sp, color = P3.text, maxLines = 1)
+        Text(sub, Modifier.weight(1f).padding(start = 12.dp), fontSize = 13.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+        Spacer(Modifier.width(6.dp))
+        SvgIcon(Ic.chevron, P3.text3, 14.dp)
     }
 }
+
+/** 分组：小标题 + 一张卡；行之间细线从文字起点开始（缩进 50dp） */
+@Composable
+fun RowGroup(label: String?, rows: List<@Composable () -> Unit>) {
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        if (label != null) Text(label, Modifier.padding(start = 12.dp, top = 14.dp, bottom = 6.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = P3.text3)
+        Card(pad = 0.dp) { rows.forEachIndexed { i, r -> if (i > 0) RowDivider(); r() } }
+    }
+}
+@Composable fun RowDivider() = HorizontalDivider(Modifier.padding(start = 50.dp), thickness = 0.5.dp, color = P3.border)
 
 /** 变量块 {疑问} */
 @Composable
 fun VarChip(name: String, onClick: (() -> Unit)? = null) {
-    Text("{$name}", Modifier.clip(RoundedCornerShape(8.dp)).background(P3.accentSoft).let { if (onClick != null) it.clickable(onClick = onClick) else it }.padding(horizontal = 10.dp, vertical = 6.dp),
+    Text("{$name}", Modifier.clip(Sq.s).background(P3.accentSoft).let { if (onClick != null) it.clickable(onClick = onClick) else it }.padding(horizontal = 10.dp, vertical = 6.dp),
         color = P3.onAccentSoft, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
 }
 
 @Composable
 fun TextAction(t: String, color: Color = P3.accent, enabled: Boolean = true, onClick: () -> Unit) {
-    Text(t, Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp), color = if (enabled) color else P3.text3, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    Text(t, Modifier.clip(Sq.s).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp), color = if (enabled) color else P3.text3, fontSize = 14.sp, fontWeight = FontWeight.Medium)
 }
 
 @Composable
 fun ConfirmDialog(title: String, text: String, ok: String, danger: Boolean = false, onOk: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, containerColor = P3.surface, title = { Text(title, fontSize = 18.sp) }, text = { Text(text, color = P3.text2) },
-        confirmButton = { TextButton(onClick = { onDismiss(); onOk() }) { Text(ok, color = if (danger) P3.danger else P3.accent) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = P3.text2) } })
+    AlertDialog(shape = Sq.xl, onDismissRequest = onDismiss, containerColor = P3.surface, title = { Text(title, fontSize = 18.sp) }, text = { Text(text, color = P3.text2) },
+        confirmButton = { TextButton(onClick = { onDismiss(); onOk() }, shape = Sq.full) { Text(ok, color = if (danger) P3.danger else P3.accent) } },
+        dismissButton = { TextButton(onClick = onDismiss, shape = Sq.full) { Text("取消", color = P3.text2) } })
 }
 
 @Composable
-fun Dot(color: Color, size: Dp = 7.dp) = Box(Modifier.size(size).clip(CircleShape).background(color))
+fun Dot(color: Color, size: Dp = 7.dp) = Box(Modifier.size(size).clip(Sq.full).background(color))
 
 /** 单选列表：一行一个，右侧勾选圆 */
 @Composable
 fun ChoiceList(items: List<Triple<String, String, Boolean>>, pick: (Int) -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, P3.border, RoundedCornerShape(12.dp))) {
+    Column(Modifier.fillMaxWidth().clip(Sq.m).border(1.dp, P3.border, Sq.m)) {
         items.forEachIndexed { i, (a, b, sel) ->
             if (i > 0) HorizontalDivider(Modifier.padding(start = 14.dp), color = P3.border)
             Row(Modifier.fillMaxWidth().clickable { pick(i) }.padding(start = 14.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(a, fontSize = 15.sp, color = P3.text, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
                 Text("  $b", Modifier.weight(1f), fontSize = 13.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (sel) Box(Modifier.size(20.dp).clip(CircleShape).background(P3.accent), contentAlignment = Alignment.Center) { SvgIcon(Ic.check, Color.White, 13.dp) }
-                else Box(Modifier.size(20.dp).border(1.5.dp, P3.borderStrong, CircleShape))
+                if (sel) Box(Modifier.size(20.dp).clip(Sq.full).background(P3.accent), contentAlignment = Alignment.Center) { SvgIcon(Ic.check, Color.White, 13.dp) }
+                else Box(Modifier.size(20.dp).border(1.5.dp, P3.borderStrong, Sq.full))
             }
         }
     }
+}
+
+/** 分段胶囊：选中 = 实心深色 + 白字 */
+@Composable
+fun SegChip(text: String, sel: Boolean, onClick: () -> Unit) {
+    Text(text, Modifier.height(32.dp).clip(Sq.full).background(if (sel) P3.text else P3.surface).border(if (sel) 0.dp else 1.dp, if (sel) P3.text else P3.border, Sq.full)
+        .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 6.dp), fontSize = 13.sp, color = if (sel) P3.surface else P3.text,
+        fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
 }
