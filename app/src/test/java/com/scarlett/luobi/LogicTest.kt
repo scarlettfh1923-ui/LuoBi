@@ -1,4 +1,4 @@
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import org.junit.Assert.*
 import org.junit.Test

@@ -1,4 +1,4 @@
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*

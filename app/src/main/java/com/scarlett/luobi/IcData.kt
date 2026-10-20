@@ -1,4 +1,4 @@
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 /** 自绘线条图标（来自 mockups/icons.py）：24px 网格、1.5px 描边、圆角端点。 */
 object Ic {

@@ -1,5 +1,5 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import android.Manifest
 import android.content.ClipboardManager
@@ -245,7 +245,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
     val finalPrompt = if (tpl != null) Ai.finalPrompt(tpl.prompt, vals, ws.cleaned, attachRaw, length) else ""
 
     LazyColumnFill(bottom) {
-        item { BigTitle("文案台", "三步：理清 → 选模板 → 生成") }
+        item { BigTitle("落笔", "三步：理清 → 选模板 → 生成") }
         // ① 清洗与意图
         item {
             if (ws.step > 1) Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {

@@ -1,4 +1,4 @@
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import android.graphics.*
 import android.text.Layout
@@ -321,7 +321,7 @@ object Render {
                          eyebrow: TextPaint, metaP: TextPaint, blocks: List<Triple<StaticLayout, Float, Float>>) {
         val w = W
         var y = 100f
-        c.drawText("文案台", m.toFloat(), y, eyebrow); y += 48f
+        c.drawText("落笔", m.toFloat(), y, eyebrow); y += 48f
         c.save(); c.translate(m.toFloat(), y); titleL.draw(c); c.restore(); y += titleL.height + 28f
         val words = paras.joinToString("").length
         c.drawText("约 ${(words / 300).coerceAtLeast(1)} 分钟读完", m.toFloat(), y + 28f, metaP); y += 40 + 36f

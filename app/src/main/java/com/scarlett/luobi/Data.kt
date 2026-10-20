@@ -1,4 +1,4 @@
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -103,7 +103,7 @@ abstract class AppDb : RoomDatabase() {
     companion object {
         @Volatile private var inst: AppDb? = null
         fun get(c: Context): AppDb = inst ?: synchronized(this) {
-            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "copytool.db").build().also { inst = it }
+            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").build().also { inst = it }
         }
     }
 }
@@ -260,7 +260,7 @@ class Settings(val c: Context) {
     var notionLabel get() = s("notionLabel", ""); set(v) = put("notionLabel", v)
     var yuqueNs get() = s("yuqueNs", ""); set(v) = put("yuqueNs", v)
     var yuquePublic get() = p.getBoolean("yuquePublic", false); set(v) = put("yuquePublic", v)
-    var telegraphName get() = s("telegraphName", "文案台"); set(v) = put("telegraphName", v)
+    var telegraphName get() = s("telegraphName", "落笔"); set(v) = put("telegraphName", v)
 
     /** 常用渠道（最多 4 个）：渠道 id 列表 */
     var pinned: List<String>

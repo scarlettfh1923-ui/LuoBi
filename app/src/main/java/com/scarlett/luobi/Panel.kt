@@ -1,5 +1,5 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -39,7 +39,7 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
         "yuque" -> if (s.yuqueNs.isBlank()) "未配置 · 点「上传」去设置" else "知识库 ${s.yuqueNs}"
         "telegraph" -> "发布成网页，返回链接"
         "long" -> "存到相册 · 太长自动拆开"
-        "htmlfile" -> "下载/文案台"
+        "htmlfile" -> "下载/落笔"
         else -> "自定义"
     }
     fun verb(id: String) = when (id) { "xhs" -> "发送"; "social" -> "选择"; "html", "text" -> "复制"; "notion", "yuque" -> "上传"; "telegraph" -> "发布"; "long" -> "保存"; "htmlfile" -> "导出"; else -> "发布" }
@@ -65,7 +65,7 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
             "social", "text" -> choice = id
             "long" -> choice = "save"
             "html" -> { Out.copyHtml(ctx, title, n.body, tags); snack("已复制 HTML 富文本，可以粘贴进公众号后台、知乎、语雀") }
-            "htmlfile" -> bg(".html 导出") { "已保存到「下载/文案台/" + withContext(Dispatchers.IO) { Out.saveHtml(ctx, title, n.body, tags) } + "」" }
+            "htmlfile" -> bg(".html 导出") { "已保存到「下载/落笔/" + withContext(Dispatchers.IO) { Out.saveHtml(ctx, title, n.body, tags) } + "」" }
             "notion" -> bg("Notion") { val u = Notion.upload(ctx, title, n.body, tags); Share.copy(ctx, "Notion", u); "已上传到 Notion，链接已复制" }
             "yuque" -> bg("语雀") { val u = Yuque.upload(ctx, title, n.body, tags); Share.copy(ctx, "语雀", u); "已上传到语雀，链接已复制" }
             "telegraph" -> bg("Telegraph") { val u = Telegraph.upload(ctx, title, n.body, tags); Share.copy(ctx, "Telegraph", u); "已发布：$u（链接已复制）" }
@@ -88,8 +88,8 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
         }
         return uris
     }
-    fun saveLong() = bg("长图") { val u = withContext(Dispatchers.Default) { makeLong() }; if (u.size > 1) "文章较长，已拆成 ${u.size} 张长图存进相册「文案台」" else "长图已存进相册「文案台」" }
-    fun saveCards() = bg("配图") { val l = imgs(); if (l.isEmpty()) "配图还在生成，请稍候" else "已保存 ${withContext(Dispatchers.IO) { Share.save(ctx, l) }} 张配图到相册「文案台」" }
+    fun saveLong() = bg("长图") { val u = withContext(Dispatchers.Default) { makeLong() }; if (u.size > 1) "文章较长，已拆成 ${u.size} 张长图存进相册「落笔」" else "长图已存进相册「落笔」" }
+    fun saveCards() = bg("配图") { val l = imgs(); if (l.isEmpty()) "配图还在生成，请稍候" else "已保存 ${withContext(Dispatchers.IO) { Share.save(ctx, l) }} 张配图到相册「落笔」" }
     fun social(pkg: String?, long: Boolean) = bg("分享") {
         val uris = if (long) withContext(Dispatchers.Default) { makeLong() } else {
             val l = imgs(); if (l.isEmpty()) return@bg "配图还在生成，请稍候"

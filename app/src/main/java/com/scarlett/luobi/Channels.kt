@@ -1,4 +1,4 @@
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -45,7 +45,7 @@ private object Http {
         val c = URL(url).openConnection() as HttpURLConnection
         c.requestMethod = method; c.connectTimeout = 20000; c.readTimeout = 60000
         if (body != null) c.setRequestProperty("Content-Type", contentType)
-        c.setRequestProperty("User-Agent", "CopyTool-Android/1.0")
+        c.setRequestProperty("User-Agent", "LuoBi-Android/1.0")
         headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
         if (body != null) { c.doOutput = true; c.outputStream.use { it.write(body.toByteArray()) } }
         val code = c.responseCode
@@ -157,7 +157,7 @@ object Telegraph {
         val s = Settings(ctx)
         var token = Secure.get(ctx, "telegraph_token")
         if (token.isBlank()) {
-            val (c, t) = Http.call("POST", "$API/createAccount", emptyMap(), JSONObject().put("short_name", "copytool").put("author_name", s.telegraphName).toString())
+            val (c, t) = Http.call("POST", "$API/createAccount", emptyMap(), JSONObject().put("short_name", "luobi").put("author_name", s.telegraphName).toString())
             val j = JSONObject(t.ifBlank { "{}" })
             if (c !in 200..299 || !j.optBoolean("ok")) throw PublishError("创建 Telegraph 账号失败：" + j.optString("error").ifBlank { Http.msg(c, t) })
             token = j.getJSONObject("result").getString("access_token"); Secure.set(ctx, "telegraph_token", token)
@@ -211,12 +211,12 @@ object Out {
         val html = "<h1>${Export.esc(title)}</h1>\n" + Export.htmlBody(body, tags)
         cm.setPrimaryClip(ClipData.newHtmlText(title, Export.plain(title, body.lines().joinToString("\n") { if (it.startsWith("#")) headText(it) else it }, tags), html))
     }
-    /** 存到「下载/文案台」，返回文件名 */
+    /** 存到「下载/落笔」，返回文件名 */
     fun saveHtml(ctx: Context, title: String, body: String, tags: List<String>): String {
         val name = title.replace(Regex("[\\\\/:*?\"<>|\\n]"), "").take(40).ifBlank { "文章" } + "_" + System.currentTimeMillis() % 100000 + ".html"
         val v = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name); put(MediaStore.Downloads.MIME_TYPE, "text/html")
-            put(MediaStore.Downloads.RELATIVE_PATH, "Download/文案台")
+            put(MediaStore.Downloads.RELATIVE_PATH, "Download/落笔")
         }
         val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v) ?: throw PublishError("无法在「下载」里创建文件")
         ctx.contentResolver.openOutputStream(uri)?.use { it.write(Export.htmlDoc(title, body, tags).toByteArray()) } ?: throw PublishError("无法写入文件")

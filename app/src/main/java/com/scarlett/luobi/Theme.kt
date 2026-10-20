@@ -1,4 +1,4 @@
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*

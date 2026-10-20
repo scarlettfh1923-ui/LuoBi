@@ -1,5 +1,5 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable

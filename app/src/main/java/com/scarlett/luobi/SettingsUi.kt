@@ -1,5 +1,5 @@
 @file:OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -50,7 +50,7 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
                 SettingRow(Ic.image, "出图与默认", "卡片比例、配色、长图配色、默认模型和篇幅") { go("style") }
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
-                SettingRow(Ic.info, "关于", "文案台 v${BuildConfig.VERSION_NAME} · 名字暂定") { go("about") }
+                SettingRow(Ic.info, "关于", "落笔 v${BuildConfig.VERSION_NAME} · 名字暂定") { go("about") }
             }
         }
         item {
@@ -495,7 +495,7 @@ fun ChannelsPage(db: AppDb, back: () -> Unit, go: (String) -> Unit) {
             Card {
                 var name by remember { mutableStateOf(s.telegraphName) }
                 Text("不用注册：首次发布时自动创建匿名账号，令牌加密存在本机。发布后返回链接并自动复制。", fontSize = 12.sp, color = P3.text3, lineHeight = 17.sp)
-                FieldLabel("作者名"); InputBox(name, { name = it; s.telegraphName = it }, "文案台", singleLine = true)
+                FieldLabel("作者名"); InputBox(name, { name = it; s.telegraphName = it }, "落笔", singleLine = true)
             }
         }
         item {
@@ -622,7 +622,7 @@ fun AboutPage(back: () -> Unit) {
     Page("关于", back) {
         item {
             Card {
-                Text("文案台", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("落笔", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 Text("v${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}） · 名字暂定", Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text2, fontFamily = Mono)
                 Text("把一段话（口播、想表达的意思、疑问）变成一篇完整文章，再一键变成小红书图、长图、HTML，或者同步到 Notion、语雀、Telegraph、你的博客。", Modifier.padding(top = 12.dp), fontSize = 14.sp, lineHeight = 22.sp)
                 Text("· 所有 Key / Token 用 EncryptedSharedPreferences 加密存在本机，不经过任何服务器。\n· 小红书、知乎、抖音、微博、公众号都不自动发布，最后一步由你自己点，避免账号被限流。\n· 文章和模板只存在本机数据库里。", Modifier.padding(top = 12.dp), fontSize = 13.sp, lineHeight = 21.sp, color = P3.text2)

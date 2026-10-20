@@ -1,5 +1,5 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import android.graphics.Bitmap
 import androidx.compose.animation.*
@@ -144,7 +144,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 if (t == 0) ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding(), { verMenu = true }, { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } })
                 else Gallery(imgs, style, { style = it; s.style = it }, spacing, { spacing = it; s.cardSpacing = it }, ratio, { ratio = it; s.cardRatio = it }, s.imgOn, bgBusy, aiBg != null, pal, pad.calculateBottomPadding(),
                     cardBusy = cardBusy, cardErr = cardErr, onAiBg = { genBg() }, clearBg = { aiBg = null },
-                    save = { scope.launch { val c = withContext(Dispatchers.IO) { Share.save(ctx, imgs) }; snack("已保存 $c 张图片到相册「文案台」") } })
+                    save = { scope.launch { val c = withContext(Dispatchers.IO) { Share.save(ctx, imgs) }; snack("已保存 $c 张图片到相册「落笔」") } })
             }
         }
     }

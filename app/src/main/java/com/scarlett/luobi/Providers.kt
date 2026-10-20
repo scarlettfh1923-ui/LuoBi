@@ -1,4 +1,4 @@
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 /** overseas：需要海外网络才能连；note：选择列表里的一句话说明 */
 data class Provider(val id: String, val name: String, val url: String, val models: List<Pair<String, String>>, val hint: String = "",

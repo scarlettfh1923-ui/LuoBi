@@ -11,10 +11,10 @@ val signProps = Properties().apply {
   if (f.exists()) f.inputStream().use { load(it) }
 }
 android {
-  namespace = "com.scarlett.copytool"
+  namespace = "com.scarlett.luobi"
   compileSdk = 35
   defaultConfig {
-    applicationId = "com.scarlett.copytool"
+    applicationId = "com.scarlett.luobi"
     minSdk = 29; targetSdk = 35; versionCode = 1; versionName = "1.0.0"
   }
   signingConfigs {

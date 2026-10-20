@@ -1,4 +1,4 @@
-package com.scarlett.copytool
+package com.scarlett.luobi
 
 import android.content.*
 import android.graphics.Bitmap
@@ -20,7 +20,7 @@ object Share {
         val dir = File(ctx.cacheDir, "share").apply { mkdirs() }
         val f = File(dir, name)
         f.outputStream().use { b.compress(Bitmap.CompressFormat.JPEG, 92, it) }
-        return FileProvider.getUriForFile(ctx, "com.scarlett.copytool.files", f)
+        return FileProvider.getUriForFile(ctx, "com.scarlett.luobi.files", f)
     }
 
     fun sendImages(ctx: Context, n: Note, imgs: List<Bitmap>) {
@@ -29,7 +29,7 @@ object Share {
         imgs.forEachIndexed { i, b ->
             val f = File(dir, "xhs_${System.currentTimeMillis()}_$i.jpg")
             f.outputStream().use { b.compress(Bitmap.CompressFormat.JPEG, 95, it) }
-            uris += FileProvider.getUriForFile(ctx, "com.scarlett.copytool.files", f)
+            uris += FileProvider.getUriForFile(ctx, "com.scarlett.luobi.files", f)
         }
         val it = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
             type = "image/*"; putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
@@ -81,7 +81,7 @@ object Share {
             val v = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, "xhs_${System.currentTimeMillis()}_$i.jpg")
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/文案台")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/落笔")
             }
             ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v)?.let { u ->
                 ctx.contentResolver.openOutputStream(u)?.use { b.compress(Bitmap.CompressFormat.JPEG, 95, it); n++ }
@@ -94,7 +94,7 @@ object Share {
         val v = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/文案台")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/落笔")
         }
         val uri = ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v) ?: return false
         val out = ctx.contentResolver.openOutputStream(uri) ?: run {
