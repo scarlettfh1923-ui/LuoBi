@@ -39,6 +39,21 @@ object Ai {
         if (j.opt("error") != null && j.opt("error") != JSONObject.NULL && !j.has("choices") && !j.has("data") && !j.has("output") && !j.has("images") && !j.has("candidates")) throw ApiError(code, txt, host)
         return j
     }
+    private fun chatBody(pid: String, model: String, msgs: JSONArray, json: Boolean, maxTokens: Int?, plain: Boolean = false): JSONObject {
+        val b = JSONObject().put("model", model).put("messages", msgs)
+        if (plain) { if (maxTokens != null) b.put(if (pid == "openai") "max_completion_tokens" else "max_tokens", maxTokens); return b }
+        if (json) b.put("response_format", JSONObject().put("type", "json_object"))
+        when (pid) {
+            "deepseek" -> b.put("thinking", JSONObject().put("type", "disabled"))
+            "qwen" -> b.put("enable_thinking", false)
+            "glm" -> b.put("thinking", JSONObject().put("type", "disabled"))
+            "doubao" -> b.put("thinking", JSONObject().put("type", "disabled"))
+            "silicon" -> b.put("enable_thinking", false)
+        }
+        if (pid in setOf("deepseek", "qwen", "glm", "silicon", "doubao")) b.put("temperature", 1.0)
+        if (maxTokens != null) b.put(if (pid == "openai") "max_completion_tokens" else "max_tokens", maxTokens)
+        return b
+    }
     /** 一个具体的调用目标 */
     data class Target(val pid: String, val name: String, val url: String, val key: String, val model: String)
 

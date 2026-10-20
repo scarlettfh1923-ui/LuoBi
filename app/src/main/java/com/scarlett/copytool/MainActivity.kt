@@ -81,7 +81,7 @@ class WriteState(ctx: Context) {
     var cleanedReady by mutableStateOf(false)
     var err by mutableStateOf<Friendly?>(null)
     fun saveRaw() = p.edit().putString("raw", raw).apply()
-    fun map() = LinkedHashMap<String, String>().apply { values.forEach { (k, v) -> if (v.isNotBlank()) put(k, v.trim()) } }
+    fun map() = LinkedHashMap<String, String>().also { out -> this.values.forEach { (k, v) -> if (v.isNotBlank()) out[k] = v.trim() } }
     fun reset() { step = 1; cleanedReady = false; cleaned = ""; values.clear(); recommendId = 0; templateId = 0; err = null }
 }
 

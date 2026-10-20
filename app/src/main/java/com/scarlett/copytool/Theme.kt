@@ -4,6 +4,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -64,7 +65,6 @@ fun AppTheme(content: @Composable () -> Unit) {
 data class ReadPalette(val name: String, val bg: Color, val text: Color, val sub: Color, val accent: Color, val surface: Color, val border: Color, val dark: Boolean, val soft: Color) {
     fun long() = LongPalette(bg.toArgb(), text.toArgb(), sub.toArgb(), accent.toArgb(), soft.toArgb(), if (dark) text.toArgb() else 0xFF1A3FA0.toInt())
 }
-private fun Color.toArgb(): Int = androidx.compose.ui.graphics.toArgb(this)
 val readPalettes = listOf(
     ReadPalette("冷白", P3.bg, P3.text, P3.text3, P3.accent, P3.surface, P3.border, false, P3.accentSoft),
     ReadPalette("白底", Color.White, P3.text, P3.text3, P3.accent, P3.bg, P3.border, false, P3.accentSoft),

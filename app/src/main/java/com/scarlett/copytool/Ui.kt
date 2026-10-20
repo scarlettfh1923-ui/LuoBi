@@ -173,7 +173,7 @@ fun TagEditor(tags: List<String>, onTags: (List<String>) -> Unit, accent: Color,
 fun SkeletonCard(widths: Pair<Float, Float>) {
     val a by rememberInfiniteTransition(label = "sk").animateFloat(.45f, 1f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "a")
     val c = MaterialTheme.colorScheme
-    SoftCard(Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) {
+    Card(Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) {
         Box(Modifier.alpha(a).fillMaxWidth(widths.first).height(14.dp).clip(RoundedCornerShape(7.dp)).background(c.surfaceContainerHigh))
         Spacer(Modifier.height(10.dp))
         Box(Modifier.alpha(a).fillMaxWidth(widths.second).height(11.dp).clip(RoundedCornerShape(6.dp)).background(c.surfaceContainer))
