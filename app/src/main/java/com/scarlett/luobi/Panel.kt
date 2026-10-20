@@ -26,13 +26,20 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
     /** 当前弹出的二级选择：social / text / save */
     var choice by mutableStateOf<String?>(null)
     var busy by mutableStateOf<String?>(null)
+    var socialPkg: String? = null
+    /** 微信 / QQ：只发正文全文纯文字，不带图 */
+    fun sendText(id: String) {
+        val pkg = if (id == "wechat") "com.tencent.mm" else "com.tencent.mobileqq"
+        Out.sendTextTo(ctx, pkg, Export.plain(title, plainBody(), tags))
+    }
     private val title get() = n.title
     private val tags get() = n.tagList()
     private val ui = kotlinx.coroutines.CoroutineScope(Dispatchers.Main)
 
     fun sub(id: String, s: Settings): String = when (id) {
         "xhs" -> "配图 + 文案已复制 · 交给小红书"
-        "social" -> "长图或配图 · 系统分享"
+        "wechat", "qq" -> "发送正文文字"
+        "weibo", "douyin" -> "长图或配图"
         "html" -> "粘贴进公众号后台、知乎、语雀"
         "text" -> "标题 + 正文 + 标签"
         "notion" -> if (Secure.get(ctx, "notion_token").isBlank()) "未配置 · 点「上传」去设置" else (if (s.notionType == "database") "数据库" else "页面") + "「${s.notionLabel.ifBlank { Notion.idOf(s.notionTarget).take(8) }}」"
@@ -42,7 +49,7 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
         "htmlfile" -> "下载/落笔"
         else -> "自定义"
     }
-    fun verb(id: String) = when (id) { "xhs" -> "发送"; "social" -> "选择"; "html", "text" -> "复制"; "notion", "yuque" -> "上传"; "telegraph" -> "发布"; "long" -> "保存"; "htmlfile" -> "导出"; else -> "发布" }
+    fun verb(id: String) = when (id) { "xhs" -> "发送"; "wechat", "qq" -> "发送"; "weibo", "douyin" -> "选择"; "html", "text" -> "复制"; "notion", "yuque" -> "上传"; "telegraph" -> "发布"; "long" -> "保存"; "htmlfile" -> "导出"; else -> "发布" }
 
     private fun bg(label: String, block: suspend () -> String) {
         if (busy != null) { snack("正在处理「$busy」，请稍候"); return }
@@ -62,7 +69,9 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
     fun run(id: String, custom: List<Channel>) {
         when (id) {
             "xhs" -> openXhs()
-            "social", "text" -> choice = id
+            "wechat", "qq" -> sendText(id)
+            "weibo", "douyin" -> { socialPkg = Out.socialApps.first { it.first == (if (id == "weibo") "微博" else "抖音") }.second; choice = "social" }
+            "text" -> choice = id
             "long" -> choice = "save"
             "html" -> { Out.copyHtml(ctx, title, n.body, tags); snack("已复制 HTML 富文本，可以粘贴进公众号后台、知乎、语雀") }
             "htmlfile" -> bg(".html 导出") { "已保存到「下载/落笔/" + withContext(Dispatchers.IO) { Out.saveHtml(ctx, title, n.body, tags) } + "」" }
@@ -117,19 +126,19 @@ fun SharePanel(custom: List<Channel>, act: ChannelActions, addCustom: () -> Unit
             Text("小红书、微博、抖音不自动发布，最后一步由你点", Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text2)
             val all = ChannelIds.all(custom)
             ChannelIds.groups.forEachIndexed { gi, g ->
+                val items = all.filter { it.group == gi }
+                if (items.isEmpty()) return@forEachIndexed
                 GroupLabel(g)
-                all.filter { it.group == gi }.forEach { d ->
-                    val sel = d.id == "xhs" || d.id == "notion"
-                    Row(Modifier.padding(bottom = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(16.dp))
-                        .clickable { if (d.id == "xhs") dismiss(); act.run(d.id, custom) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(if (sel) P3.accentSoft else P3.surface2), contentAlignment = Alignment.Center) { SvgIcon(d.icon, if (sel) P3.accent else P3.text2, 22.dp) }
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(d.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
-                            Text(if (d.id.startsWith("c") && d.id !in listOf("c")) custom.firstOrNull { "c${it.id}" == d.id }?.let { "自定义 · " + it.note.ifBlank { it.url.substringAfter("//").substringBefore("/") } } ?: "" else act.sub(d.id, s),
-                                fontSize = 13.sp, color = P3.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (gi == 0) Text("微信 / QQ：发送正文文字（不带图）· 微博 / 抖音：发长图或配图", Modifier.padding(bottom = 6.dp), fontSize = 12.sp, color = P3.text3)
+                items.chunked(4).forEach { row ->
+                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+                        row.forEach { d ->
+                            Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable { if (d.id == "xhs") dismiss(); act.run(d.id, custom) }.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) { SvgIcon(d.icon, P3.text2, 22.dp) }
+                                Text(if (act.busy == d.name) "处理中…" else d.name, Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp), fontSize = 12.sp, color = P3.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 15.sp)
+                            }
                         }
-                        Text(if (act.busy != null && act.busy == d.name) "处理中…" else act.verb(d.id), fontSize = 15.sp, color = P3.accent, fontWeight = FontWeight.SemiBold)
+                        repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
@@ -147,17 +156,17 @@ fun ChoiceDialogs(act: ChannelActions) {
     val c = act.choice ?: return
     var long by remember { mutableStateOf(true) }
     AlertDialog(onDismissRequest = { act.choice = null }, containerColor = P3.surface,
-        title = { Text(when (c) { "social" -> "分享到微信 / QQ / 微博 / 抖音"; "text" -> "复制格式"; else -> "存到相册" }, fontSize = 18.sp) },
+        title = { Text(when (c) { "social" -> if (act.socialPkg == "com.sina.weibo") "分享到微博" else "分享到抖音"; "text" -> "复制格式"; else -> "存到相册" }, fontSize = 18.sp) },
         text = {
             Column {
                 when (c) {
                     "social" -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Pill("长图", long) { long = true }; Pill("配图卡片", !long) { long = false } }
                         Spacer(Modifier.height(12.dp))
-                        (Out.socialApps.map { it.first to it.second as String? } + ("其他（系统菜单）" to null)).forEach { (name, pkg) ->
+                        (listOf("发送" to act.socialPkg) + ("其他（系统菜单）" to null)).forEach { (name, pkg) ->
                             Text(name, Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { act.choice = null; act.social(pkg, long) }.padding(vertical = 12.dp, horizontal = 4.dp), fontSize = 16.sp, color = P3.text)
                         }
-                        Text("抖音、朋友圈是否能直接接收图片取决于对方 APP 版本，需要真机测试。", fontSize = 12.sp, color = P3.text3)
+                        Text("抖音能否直接接收图片取决于对方 APP 版本，需要真机测试。", fontSize = 12.sp, color = P3.text3)
                     }
                     "text" -> listOf("纯文本" to false, "Markdown" to true).forEach { (l, md) ->
                         Text(l, Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { act.choice = null; act.copyText(md) }.padding(vertical = 12.dp, horizontal = 4.dp), fontSize = 16.sp, color = P3.text)

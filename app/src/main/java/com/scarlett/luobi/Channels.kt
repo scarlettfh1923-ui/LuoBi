@@ -24,7 +24,10 @@ object ChannelIds {
     /** 内置渠道；自定义渠道 id 为 "c<id>" */
     val builtIn = listOf(
         ChannelDef("xhs", "小红书", Ic.send, 0),
-        ChannelDef("social", "微信 / QQ / 微博 / 抖音", Ic.chat, 0),
+        ChannelDef("wechat", "微信", Ic.chat, 0),
+        ChannelDef("qq", "QQ", Ic.chat, 0),
+        ChannelDef("weibo", "微博", Ic.globe, 0),
+        ChannelDef("douyin", "抖音", Ic.image, 0),
         ChannelDef("html", "HTML 富文本", Ic.code, 1),
         ChannelDef("text", "纯文本 / Markdown", Ic.text, 1),
         ChannelDef("notion", "Notion", Ic.notion, 2),
@@ -35,7 +38,7 @@ object ChannelIds {
     )
     fun all(custom: List<Channel>) = builtIn + custom.map { ChannelDef("c${it.id}", it.name, Ic.globe, 2) }
     fun short(id: String, custom: List<Channel>) = when (id) {
-        "long" -> "长图"; "html" -> "HTML"; "text" -> "文本"; "htmlfile" -> ".html"; "social" -> "微信等"
+        "long" -> "长图"; "html" -> "HTML"; "text" -> "文本"; "htmlfile" -> ".html"; "xhs" -> "小红书"
         else -> all(custom).firstOrNull { it.id == id }?.name ?: id
     }
 }
@@ -222,14 +225,25 @@ object Out {
         ctx.contentResolver.openOutputStream(uri)?.use { it.write(Export.htmlDoc(title, body, tags).toByteArray()) } ?: throw PublishError("无法写入文件")
         return name
     }
+    /** 每个 Uri 恰好一项（去重），用于授予读权限 */
+    fun clipOf(uris: List<android.net.Uri>): ClipData { val u = uris.distinct(); return ClipData.newRawUri("", u[0]).apply { u.drop(1).forEach { addItem(ClipData.Item(it)) } } }
     val socialApps = listOf("微信" to "com.tencent.mm", "QQ" to "com.tencent.mobileqq", "微博" to "com.sina.weibo", "抖音" to "com.ss.android.ugc.aweme")
-    /** 指定包名分享图片；失败时弹系统菜单 */
+    /** 指定包名发送纯文字（ACTION_SEND text/plain）；没装或失败时弹系统菜单 */
+    fun sendTextTo(ctx: Context, pkg: String?, text: String) {
+        val it = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
+        val x = if (pkg != null) Intent(it).setPackage(pkg) else null
+        val ok = x != null && ctx.packageManager.queryIntentActivities(x, 0).isNotEmpty()
+        if (pkg != null && !ok) toast(ctx, "未检测到该 APP，请选择分享方式")
+        try { ctx.startActivity((if (ok) x!! else Intent.createChooser(it, "分享到")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        catch (_: Exception) { ctx.startActivity(Intent.createChooser(it, "分享到").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+    /** 指定包名分享图片；失败时弹系统菜单。单图只放 EXTRA_STREAM + 同一 ClipData 项，不重复 */
     fun sendImagesTo(ctx: Context, pkg: String?, uris: ArrayList<android.net.Uri>, text: String) {
         if (uris.isEmpty()) return
         val it = (if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0]) else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)).apply {
             type = "image/*"; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            clipData = ClipData.newRawUri("", uris[0]).apply { uris.drop(1).forEach { u -> addItem(ClipData.Item(u)) } }
-            putExtra(Intent.EXTRA_TEXT, text)
+            clipData = Out.clipOf(uris)
+            if (text.isNotBlank()) putExtra(Intent.EXTRA_TEXT, text)
         }
         val x = if (pkg != null) Intent(it).setPackage(pkg) else null
         val ok = x != null && ctx.packageManager.queryIntentActivities(x, 0).isNotEmpty()

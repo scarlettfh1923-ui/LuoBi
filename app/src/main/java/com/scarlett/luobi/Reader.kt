@@ -112,29 +112,17 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     }, bottomBar = {
         Column(Modifier.fillMaxWidth().background(pal.surface)) {
             HorizontalDivider(color = pal.border)
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("更口语", "缩短一半", "加小标题").forEach { l ->
-                    Text(l, Modifier.clip(RoundedCornerShape(50)).border(1.dp, pal.border, RoundedCornerShape(50)).clickable(enabled = !running) { rewrite(l) }.padding(horizontal = 14.dp, vertical = 7.dp), fontSize = 14.sp, color = pal.text)
-                }
-                Row(Modifier.clip(RoundedCornerShape(50)).border(1.dp, pal.border, RoundedCornerShape(50)).clickable(enabled = !running) { custom = true }.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SvgIcon(Ic.write, pal.text, 14.dp); Text(" 自定义…", fontSize = 14.sp, color = pal.text)
-                }
-            }
-            Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 6.dp, end = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                s.pinned.forEach { pid ->
-                    val def = ChannelIds.all(channels).firstOrNull { it.id == pid } ?: return@forEach
-                    Column(Modifier.width(54.dp).clip(RoundedCornerShape(10.dp)).clickable { act.run(pid, channels) }.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        SvgIcon(def.icon, pal.text, 22.dp); Text(ChannelIds.short(pid, channels), fontSize = 11.sp, color = pal.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(Modifier.fillMaxWidth().navigationBarsPadding().horizontalScroll(rememberScrollState()).padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                @Composable fun cell(icon: List<String>, label: String, click: () -> Unit) =
+                    Column(Modifier.widthIn(min = 58.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = click).padding(horizontal = 6.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        SvgIcon(icon, pal.text, 22.dp); Text(label, fontSize = 11.sp, color = pal.sub, maxLines = 1, softWrap = false)
                     }
+                cell(Ic.send, "小红书") { if (imgs.isNotEmpty()) xhsSheet = true else snack("配图还在生成，请稍候") }
+                s.pinned.filter { it != "xhs" }.forEach { pid ->
+                    val def = ChannelIds.all(channels).firstOrNull { it.id == pid } ?: return@forEach
+                    cell(def.icon, ChannelIds.short(pid, channels)) { act.run(pid, channels) }
                 }
-                Column(Modifier.width(54.dp).clip(RoundedCornerShape(10.dp)).clickable { panel = true }.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    SvgIcon(Ic.more, pal.text, 22.dp); Text("更多", fontSize = 11.sp, color = pal.sub)
-                }
-                Spacer(Modifier.weight(1f))
-                Row(Modifier.height(48.dp).clip(RoundedCornerShape(50)).background(pal.accent).clickable { if (imgs.isNotEmpty()) xhsSheet = true else snack("配图还在生成，请稍候") }
-                    .padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SvgIcon(Ic.share, Color.White, 18.dp); Spacer(Modifier.width(6.dp)); Text("分享到小红书", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
-                }
+                cell(Ic.more, "更多") { panel = true }
             }
         }
     }) { pad ->
