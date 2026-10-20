@@ -23,6 +23,8 @@ import kotlinx.coroutines.withContext
 /** 渠道动作：常用渠道图标和分享面板共用 */
 class ChannelActions(private val ctx: Context, private val n: Note, private val imgs: () -> List<Bitmap>, private val pal: ReadPalette, private val fontId: String, private val goSub: (String) -> Unit) {
     var openXhs: () -> Unit = {}
+    /** 打开独立配图页（卡片预览 + 比例 / 配色 + 分享到小红书） */
+    var openCards: () -> Unit = {}
     /** 当前弹出的二级选择：social / text / save */
     var choice by mutableStateOf<String?>(null)
     var busy by mutableStateOf<String?>(null)
@@ -68,31 +70,31 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
 
     fun run(id: String, custom: List<Channel>) {
         when (id) {
-            "xhs" -> openXhs()
+            "xhs" -> openCards()
             "wechat", "qq" -> sendText(id)
             "weibo", "douyin" -> { socialPkg = Out.socialApps.first { it.first == (if (id == "weibo") "微博" else "抖音") }.second; choice = "social" }
             "text" -> choice = id
             "long" -> choice = "save"
-            "html" -> { Out.copyHtml(ctx, title, n.body, tags); snack("已复制 HTML 富文本，可以粘贴进公众号后台、知乎、语雀") }
-            "htmlfile" -> bg(".html 导出") { "已保存到「下载/落笔/" + withContext(Dispatchers.IO) { Out.saveHtml(ctx, title, n.body, tags) } + "」" }
-            "notion" -> bg("Notion") { val u = Notion.upload(ctx, title, n.body, tags); Share.copy(ctx, "Notion", u); "已上传到 Notion，链接已复制" }
-            "yuque" -> bg("语雀") { val u = Yuque.upload(ctx, title, n.body, tags); Share.copy(ctx, "语雀", u); "已上传到语雀，链接已复制" }
-            "telegraph" -> bg("Telegraph") { val u = Telegraph.upload(ctx, title, n.body, tags); Share.copy(ctx, "Telegraph", u); "已发布：$u（链接已复制）" }
+            "html" -> { Out.copyHtml(ctx, title, n.body, tags, n.pics()); snack("已复制 HTML 富文本，可以粘贴进公众号后台、知乎、语雀") }
+            "htmlfile" -> bg(".html 导出") { "已保存到「下载/落笔/" + withContext(Dispatchers.IO) { Out.saveHtml(ctx, title, n.body, tags, n.pics()) } + "」" }
+            "notion" -> bg("Notion") { val u = Notion.upload(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "Notion", u); "已上传到 Notion，链接已复制" }
+            "yuque" -> bg("语雀") { val u = Yuque.upload(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "语雀", u); "已上传到语雀，链接已复制" }
+            "telegraph" -> bg("Telegraph") { val u = Telegraph.upload(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "Telegraph", u); "已发布：$u（链接已复制）" }
             else -> if (id.startsWith("c")) {
                 val ch = custom.firstOrNull { "c${it.id}" == id } ?: return
-                bg(ch.name) { val r = Custom.publish(ctx, ch, title, n.body, tags); if (r.startsWith("http")) { Share.copy(ctx, ch.name, r); "已发布到「${ch.name}」，链接已复制" } else "「${ch.name}」$r" }
+                bg(ch.name) { val r = Custom.publish(ctx, ch, title, n.body, tags, n.pics()); if (r.startsWith("http")) { Share.copy(ctx, ch.name, r); "已发布到「${ch.name}」，链接已复制" } else "「${ch.name}」$r" }
             }
         }
     }
     fun copyText(md: Boolean) {
-        Share.copy(ctx, if (md) "Markdown" else "文案", if (md) Export.markdown(title, n.body, tags) else Export.plain(title, plainBody(), tags))
+        Share.copy(ctx, if (md) "Markdown" else "文案", if (md) Export.markdown(title, n.body, tags, n.pics()) else Export.plain(title, plainBody(), tags))
         snack(if (md) "已复制 Markdown" else "已复制纯文本")
     }
     private fun makeLong(): ArrayList<Uri> {
         val fid = if (Fonts.ready(ctx, fontId)) fontId else "sans"
         val reg = Fonts.typeface(ctx, fid, false); val bold = Fonts.typeface(ctx, fid, true)
         val uris = ArrayList<Uri>(); val stamp = System.currentTimeMillis()
-        Render.longImage(title, n.body, tags, reg, bold, pal.long()) { bmp, i, _ ->
+        Render.longImage(title, n.body, tags, reg, bold, pal.long(), PicCache.bitmaps(ctx, n.pics(), Export.paras(n.body).size)) { bmp, i, _ ->
             try { Share.saveOne(ctx, bmp, "long_${stamp}_${i + 1}.jpg"); uris += Share.cacheJpeg(ctx, bmp, "long_${stamp}_${i + 1}.jpg") } finally { bmp.recycle() }
         }
         return uris
@@ -173,7 +175,7 @@ fun ChoiceDialogs(act: ChannelActions) {
                     }
                     else -> {
                         Text("保存长图（太长自动拆成几张）", Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { act.choice = null; act.saveLong() }.padding(vertical = 12.dp, horizontal = 4.dp), fontSize = 16.sp, color = P3.text)
-                        Text("保存小红书配图卡片", Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { act.choice = null; act.saveCards() }.padding(vertical = 12.dp, horizontal = 4.dp), fontSize = 16.sp, color = P3.text)
+                        Text("小红书配图卡片（进配图页预览、保存）", Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { act.choice = null; act.openCards() }.padding(vertical = 12.dp, horizontal = 4.dp), fontSize = 16.sp, color = P3.text)
                     }
                 }
             }

@@ -243,7 +243,7 @@ object Render {
      * 返回总张数。
      */
     fun longImage(title: String, body: String, tags: List<String>, tf: Typeface = Typeface.DEFAULT, boldTf: Typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD),
-                  pal: LongPalette = LongPalette(), sink: (Bitmap, Int, Int) -> Unit): Int {
+                  pal: LongPalette = LongPalette(), pics: Map<Int, List<Pair<Bitmap, String>>> = emptyMap(), sink: (Bitmap, Int, Int) -> Unit): Int {
         val w = W
         val m = 88
         val cream = pal.bg
@@ -264,15 +264,20 @@ object Render {
         val eyebrow = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 26f; color = accent; typeface = boldTf; letterSpacing = 0.12f }
         val titleL = layout(title, titleP, w - 2 * m, 1.25f)
         val paras = body.replace("\r", "").split(Regex("\n+")).map { it.trim() }.filter { it.isNotEmpty() }
-        data class Block(val layout: StaticLayout, val head: Boolean, val padTop: Float, val padBottom: Float) {
-            val height get() = padTop + layout.height + padBottom
-        }
-        val blocks = paras.mapIndexed { i, p ->
+        val capP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 26f; color = sub }
+        val iw = w - 2 * m
+        val blocks = mutableListOf<LBlock>()
+        paras.forEachIndexed { i, p ->
             val head = isHead(p, paras.size)
             val lay = layout(if (head) p.trimStart('#', ' ') else p, if (head) headP else bodyP, w - 2 * m, lineMult)
             val padTop = if (head && i > 0) beforeHead else 0f
             val padBottom = if (head) afterHead else bodyGap
-            Block(lay, head, padTop, padBottom)
+            blocks += LBlock(lay, padTop, padTop + lay.height + padBottom)
+            pics[i]?.forEach { (bmp, cap) ->
+                val ih = bmp.height * iw.toFloat() / bmp.width
+                val capL = if (cap.isNotBlank()) layout(cap, capP, iw, 1.2f) else null
+                blocks += LBlock(null, 10f, 10f + ih + (capL?.let { 14f + it.height } ?: 0f) + bodyGap + 16f, bmp, ih, capL)
+            }
         }
         var tagH = 0f; var tx = 0f; val tagGap = 16f; val tagRowH = 56f
         val tagWs = tags.take(8).map { tagP.measureText("#$it") + 36f }
@@ -290,7 +295,7 @@ object Render {
             var by = bodyTop
             for (blk in blocks) {
                 cuts += by.toInt()
-                for (li in 0 until blk.layout.lineCount) cuts += (by + blk.padTop + blk.layout.getLineBottom(li)).toInt()
+                blk.layout?.let { l -> for (li in 0 until l.lineCount) cuts += (by + blk.padTop + l.getLineBottom(li)).toInt() }
                 by += blk.height
             }
         }
@@ -310,7 +315,7 @@ object Render {
             c.drawColor(cream)
             if (padB > 0) c.drawText("（${k + 1}/${segs.size}）接下一张 ↓", w / 2f, (b.height - 36).toFloat(), more)
             c.save(); c.translate(0f, (padT - a).toFloat()); c.clipRect(0, a, w, e)
-            drawLong(c, m, titleL, paras, tags, tagP, tagRowH, tagGap, tagBg, accent, eyebrow, metaP, blocks.map { Triple(it.layout, it.padTop, it.height) })
+            drawLong(c, m, titleL, paras, tags, tagP, tagRowH, tagGap, tagBg, accent, eyebrow, metaP, blocks)
             c.restore()
             sink(b, k, segs.size)
         }
@@ -318,7 +323,7 @@ object Render {
     }
 
     private fun drawLong(c: Canvas, m: Int, titleL: StaticLayout, paras: List<String>, tags: List<String>, tagP: TextPaint, tagRowH: Float, tagGap: Float, tagBg: Int, accent: Int,
-                         eyebrow: TextPaint, metaP: TextPaint, blocks: List<Triple<StaticLayout, Float, Float>>) {
+                         eyebrow: TextPaint, metaP: TextPaint, blocks: List<LBlock>) {
         val w = W
         var y = 100f
         c.drawText("落笔", m.toFloat(), y, eyebrow); y += 48f
@@ -337,11 +342,21 @@ object Render {
         y = cy + (if (tags.isNotEmpty()) tagRowH else 0f) + 40f
         c.drawRoundRect(m.toFloat(), y, m + 56f, y + 6f, 3f, 3f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = accent })
         y += 14f + 48f
-        for ((lay, padTop, height) in blocks) {
-            c.save(); c.translate(m.toFloat(), y + padTop); lay.draw(c); c.restore()
-            y += height
+        for (b in blocks) {
+            if (b.layout != null) { c.save(); c.translate(m.toFloat(), y + b.padTop); b.layout.draw(c); c.restore() }
+            if (b.bmp != null) {
+                val top = y + b.padTop
+                c.save(); val rr = android.graphics.RectF(m.toFloat(), top, (w - m).toFloat(), top + b.bmpH)
+                c.clipPath(android.graphics.Path().apply { addRoundRect(rr, 16f, 16f, android.graphics.Path.Direction.CW) })
+                c.drawBitmap(b.bmp, null, rr, Paint(Paint.FILTER_BITMAP_FLAG)); c.restore()
+                b.cap?.let { c.save(); c.translate(m.toFloat(), top + b.bmpH + 14f); it.draw(c); c.restore() }
+            }
+            y += b.height
         }
     }
 
     private fun TextUtilsEllipsize(s: String, p: TextPaint, w: Float) = android.text.TextUtils.ellipsize(s, p, w, android.text.TextUtils.TruncateAt.END).toString()
 }
+
+/** 长图里的一块：一段文字，或一张插图（含图注） */
+class LBlock(val layout: StaticLayout?, val padTop: Float, val height: Float, val bmp: Bitmap? = null, val bmpH: Float = 0f, val cap: StaticLayout? = null)

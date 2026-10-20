@@ -48,6 +48,8 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
                 SettingRow(Ic.pin, "常用渠道排序", (listOf("小红书") + s.pinned.map { ChannelIds.short(it, channels) }).joinToString(" · ")) { go("pinned") }
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
+                SettingRow(Ic.image, "图片来源", ImgSources.list(LocalContext.current).filter { it.on }.joinToString(" → ") { it.name.substringBefore("（") } + " · 文中插图") { go("imgsrc") }
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
                 SettingRow(Ic.text, "篇幅设置", "默认 " + Lengths.label(s.length, s.lengthRange())) { go("length") }
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
                 SettingRow(Ic.image, "出图与默认", "卡片比例、配色、长图配色、默认模型") { go("style") }
@@ -78,6 +80,7 @@ fun SubPage(db: AppDb, r: Route.Sub, back: () -> Unit, go: (Route) -> Unit) {
                 "pinned" -> PinnedPage(db, back)
                 "style" -> StylePage(back)
                 "length" -> LengthPage(back)
+                "imgsrc" -> if (r.page.contains(":")) ImgSrcEdit(r.page.substringAfter(":"), back) else ImgSrcPage(back, sub)
                 else -> AboutPage(back)
             }
         }
@@ -85,7 +88,7 @@ fun SubPage(db: AppDb, r: Route.Sub, back: () -> Unit, go: (Route) -> Unit) {
 }
 
 @Composable
-private fun Page(title: String, back: () -> Unit, action: (@Composable RowScope.() -> Unit)? = null, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+fun Page(title: String, back: () -> Unit, action: (@Composable RowScope.() -> Unit)? = null, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
     Column(Modifier.fillMaxSize().imePadding()) {
         SubBar(title, back, action)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), content = content)
@@ -356,7 +359,7 @@ fun ModelsPage(back: () -> Unit) {
 }
 
 @Composable
-private fun TestRow(test: suspend () -> String) {
+fun TestRow(test: suspend () -> String) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var res by remember { mutableStateOf<Pair<Boolean, String>?>(null) }

@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 package com.scarlett.luobi
 
 import android.graphics.Bitmap
@@ -95,29 +95,48 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
         }
     }
     fun rewrite(ins: String) { if (!running) start(GenJob(kind = "rewrite", noteId = n.id, instruction = ins, model = s.defaultModel)) }
+    val il = remember { Illustrator(ctx, db, scope, goSub) }; il.note = n
+    var capEdit by remember { mutableStateOf<Pic?>(null) }
     val act = remember(n, pal, fontId) { ChannelActions(ctx, n, { imgs }, pal, fontId, goSub) }
+    act.openCards = { panel = false; tab = 1 }
+    androidx.activity.compose.BackHandler(enabled = tab == 1) { tab = 0 }
     act.openXhs = { if (imgs.isNotEmpty()) xhsSheet = true else snack("配图还在生成，请稍候") }
 
     Scaffold(containerColor = pal.bg, topBar = {
         Row(Modifier.fillMaxWidth().background(pal.bg).statusBarsPadding().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = back) { SvgIcon(Ic.back, pal.text, desc = "返回") }
+            IconButton(onClick = { if (tab == 1) tab = 0 else back() }) { SvgIcon(Ic.back, pal.text, desc = "返回") }
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Segmented(listOf("阅读", "配图"), tab, { tab = it }, pal.surface, pal.soft, pal.accent, pal.sub)
+                Text(if (tab == 1) "配图" else "", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = pal.text)
             }
-            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                if (tab == 0) IconButton(onClick = { showFont = !showFont }) { SvgIcon(Ic.text, if (showFont) pal.accent else pal.text, desc = "阅读设置") }
-            }
-            IconButton(onClick = { editing = true }) { SvgIcon(Ic.write, pal.text, desc = "编辑") }
+            if (tab == 0) {
+                IconButton(onClick = { il.start() }) { SvgIcon(Ic.image, if (il.analyzing || il.props.isNotEmpty()) pal.accent else pal.text, desc = "文中插图") }
+                IconButton(onClick = { showFont = !showFont }) { SvgIcon(Ic.text, if (showFont) pal.accent else pal.text, desc = "阅读设置") }
+                IconButton(onClick = { editing = true }) { SvgIcon(Ic.write, pal.text, desc = "编辑") }
+            } else Spacer(Modifier.width(48.dp))
         }
     }, bottomBar = {
         Column(Modifier.fillMaxWidth().background(pal.surface)) {
             HorizontalDivider(color = pal.border)
+            if (tab == 0 && il.props.isNotEmpty()) Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("已插 ${il.inserted} · 待选 ${il.props.size}", Modifier.weight(1f), fontSize = 13.sp, color = pal.sub, maxLines = 1, softWrap = false)
+                OutlinedButton({ il.insertAll() }) { Text("全部插入", fontSize = 14.sp, color = P3.text) }
+                Spacer(Modifier.width(8.dp))
+                Button({ il.done() }, colors = ButtonDefaults.buttonColors(containerColor = P3.accent)) { Text("完成", fontSize = 14.sp) }
+            } else if (tab == 1) Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.widthIn(min = 58.dp).clip(RoundedCornerShape(10.dp)).clickable { scope.launch { if (imgs.isEmpty()) snack("配图还在生成，请稍候") else { val c = withContext(Dispatchers.IO) { Share.save(ctx, imgs) }; snack("已保存 $c 张图片到相册「落笔」") } } }.padding(horizontal = 6.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    SvgIcon(Ic.download, pal.text, 22.dp); Text("存相册", fontSize = 11.sp, color = pal.sub, maxLines = 1, softWrap = false)
+                }
+                Spacer(Modifier.width(10.dp))
+                Row(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(50)).background(pal.accent).clickable { act.openXhs() }, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    SvgIcon(Ic.share, Color.White, 18.dp); Spacer(Modifier.width(6.dp)); Text("分享到小红书", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                }
+            } else
             Row(Modifier.fillMaxWidth().navigationBarsPadding().horizontalScroll(rememberScrollState()).padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 @Composable fun cell(icon: List<String>, label: String, click: () -> Unit) =
                     Column(Modifier.widthIn(min = 58.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = click).padding(horizontal = 6.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         SvgIcon(icon, pal.text, 22.dp); Text(label, fontSize = 11.sp, color = pal.sub, maxLines = 1, softWrap = false)
                     }
-                cell(Ic.send, "小红书") { if (imgs.isNotEmpty()) xhsSheet = true else snack("配图还在生成，请稍候") }
+                cell(Ic.send, "小红书") { tab = 1 }
                 s.pinned.filter { it != "xhs" }.forEach { pid ->
                     val def = ChannelIds.all(channels).firstOrNull { it.id == pid } ?: return@forEach
                     cell(def.icon, ChannelIds.short(pid, channels)) { act.run(pid, channels) }
@@ -127,9 +146,10 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
         }
     }) { pad ->
         Column(Modifier.padding(top = pad.calculateTopPadding())) {
+            if (tab == 0) AnalyzingCard(il)
             AnimatedVisibility(showFont && tab == 0) { AaPanel(font, { font = it; s.fontSize = it }, fontId, { fontId = it; s.readFont = it }, mode, { mode = it; s.readMode = it }, pal) }
             Crossfade(tab, label = "tab") { t ->
-                if (t == 0) ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding(), { verMenu = true }, { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } })
+                if (t == 0) ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding(), { verMenu = true }, { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } }, il) { capEdit = it }
                 else Gallery(imgs, style, { style = it; s.style = it }, spacing, { spacing = it; s.cardSpacing = it }, ratio, { ratio = it; s.cardRatio = it }, s.imgOn, bgBusy, aiBg != null, pal, pad.calculateBottomPadding(),
                     cardBusy = cardBusy, cardErr = cardErr, onAiBg = { genBg() }, clearBg = { aiBg = null },
                     save = { scope.launch { val c = withContext(Dispatchers.IO) { Share.save(ctx, imgs) }; snack("已保存 $c 张图片到相册「落笔」") } })
@@ -161,6 +181,13 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
             confirmButton = { TextButton(onClick = { custom = false; if (ins.isNotBlank()) rewrite(ins.trim()) }) { Text("改写", color = P3.accent) } },
             dismissButton = { TextButton(onClick = { custom = false }) { Text("取消", color = P3.text2) } })
     }
+    capEdit?.let { pic ->
+        var c by remember(pic) { mutableStateOf(pic.caption) }
+        AlertDialog(onDismissRequest = { capEdit = null }, containerColor = P3.surface, title = { Text("编辑图注") },
+            text = { InputBox(c, { c = it }, "一句话说明这张图（可留空）", minHeight = 60.dp) },
+            confirmButton = { TextButton(onClick = { il.caption(pic, c.trim()); capEdit = null }) { Text("保存", color = P3.accent) } },
+            dismissButton = { TextButton(onClick = { capEdit = null }) { Text("取消", color = P3.text2) } })
+    }
     if (!panel) ChoiceDialogs(act)
     if (xhsSheet) XhsSheet(n, imgs, pal) { xhsSheet = false }
     if (panel) SharePanel(channels, act, { panel = false; goSub("channel:0") }) { panel = false }
@@ -168,8 +195,27 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
 }
 
 @Composable
-fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, family: FontFamily, bottom: Dp, openVersions: () -> Unit, onTags: (List<String>) -> Unit) {
+fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, family: FontFamily, bottom: Dp, openVersions: () -> Unit, onTags: (List<String>) -> Unit,
+                il: Illustrator? = null, editCaption: (Pic) -> Unit = {}) {
     val paras = Export.paras(n.body)
+    val ctx = LocalContext.current
+    val byPara = Pics.byPara(n.pics(), paras.size)
+    var paraMenu by remember { mutableStateOf(-1) }
+    @Composable fun after(i: Int) {
+        byPara[i]?.forEach { pic -> PicView(ctx, pic, pal, { il?.here(pic.after, paras.getOrElse(pic.after) { "" }, pic) }, { editCaption(pic) }, { il?.remove(pic) }) }
+        val ps = il?.props ?: return
+        ps.filter { it.after == i }.forEach { p ->
+            val head = (i downTo 0).firstOrNull { isHead(paras[it], paras.size) }?.let { headText(paras[it]).replace("**", "") } ?: paras[i].take(14)
+            ProposalCard(ctx, p, head, ps.indexOf(p) + 1, ps.size, il, pal)
+        }
+    }
+    @Composable fun menu(i: Int, p: String) {
+        val cm = androidx.compose.ui.platform.LocalClipboardManager.current
+        DropdownMenu(paraMenu == i, { paraMenu = -1 }, containerColor = P3.surface) {
+            DropdownMenuItem({ Text("在此插图") }, { paraMenu = -1; il?.here(i, p) }, leadingIcon = { SvgIcon(Ic.image, P3.accent, 18.dp) })
+            DropdownMenuItem({ Text("复制段落") }, { paraMenu = -1; cm.setText(androidx.compose.ui.text.AnnotatedString(headText(p).replace("**", ""))); snack("已复制段落") }, leadingIcon = { SvgIcon(Ic.copy, P3.text2, 18.dp) })
+        }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { openVersions() }) {
@@ -186,7 +232,9 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
         Spacer(Modifier.height(16.dp))
         Box(Modifier.width(36.dp).height(4.dp).background(pal.accent, RoundedCornerShape(2.dp)))
         Spacer(Modifier.height(18.dp))
-        paras.forEach { p ->
+        paras.forEachIndexed { i, p ->
+          Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(if (paraMenu == i) pal.soft else androidx.compose.ui.graphics.Color.Transparent).combinedClickable(onClick = {}, onLongClick = { paraMenu = i })) {
+           Column {
             if (isHead(p, paras.size)) {
                 Spacer(Modifier.height(10.dp))
                 val hs = font * 1.2f
@@ -200,6 +248,10 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
                 Text(p.replace("**", ""), color = pal.text, fontSize = font.sp, lineHeight = (font * 1.75f).sp, letterSpacing = 0.3.sp, fontFamily = family)
                 Spacer(Modifier.height((font * 0.9f).dp))
             }
+           }
+           menu(i, p)
+          }
+          after(i)
         }
         Spacer(Modifier.height(16.dp))
         Text("— 完 —", Modifier.fillMaxWidth(), color = pal.sub, textAlign = TextAlign.Center, fontSize = 13.sp)

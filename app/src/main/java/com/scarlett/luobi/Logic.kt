@@ -145,34 +145,43 @@ object Export {
         return if (isHeadLine(t, total)) t else null
     }
     fun paras(body: String) = body.replace("\r", "").split(Regex("\n+")).map { it.trim() }.filter { it.isNotEmpty() }
-    fun markdown(title: String, body: String, tags: List<String>): String {
-        val ps = paras(body)
+    fun markdown(title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String {
+        val ps = paras(body); val bp = Pics.byPara(pics.filter { it.isWeb }, ps.size)
         val sb = StringBuilder("# ").append(title).append("\n\n")
-        ps.forEach { p -> val h = heading(p, ps.size); sb.append(if (h != null) "## $h" else p).append("\n\n") }
+        ps.forEachIndexed { i, p -> val h = heading(p, ps.size); sb.append(if (h != null) "## $h" else p).append("\n\n")
+            bp[i]?.forEach { pic -> sb.append("![").append(pic.caption.replace("]", "")).append("](").append(pic.url).append(")\n")
+                val cap = listOf(pic.caption, pic.creditLine()).filter { it.isNotBlank() }.joinToString(" · "); if (cap.isNotBlank()) sb.append("*").append(cap).append("*\n"); sb.append("\n") } }
         if (tags.isNotEmpty()) sb.append(tags.joinToString(" ") { "#$it" }).append("\n")
         return sb.toString().trimEnd() + "\n"
     }
     fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
     private fun inline(s: String) = esc(s).replace(Regex("\\*\\*(.+?)\\*\\*"), "<strong>$1</strong>")
     /** 正文片段（用于富文本复制 / 发布接口） */
-    fun htmlBody(body: String, tags: List<String>, accent: String = "#2F6BFF"): String {
-        val ps = paras(body)
+    fun htmlBody(body: String, tags: List<String>, accent: String = "#2F6BFF", pics: List<Pic> = emptyList()): String {
+        val ps = paras(body); val bp = Pics.byPara(pics.filter { it.isWeb }, ps.size)
         val sb = StringBuilder()
-        ps.forEach { p ->
+        ps.forEachIndexed { i, p ->
             val h = heading(p, ps.size)
             if (h != null) sb.append("<h2 style=\"font-size:19px;margin:26px 0 10px;padding-left:10px;border-left:3px solid $accent;\">").append(inline(h)).append("</h2>\n")
             else sb.append("<p style=\"font-size:16px;line-height:1.8;margin:0 0 14px;color:#111827;\">").append(inline(p)).append("</p>\n")
+            bp[i]?.forEach { pic -> sb.append(figure(pic)) }
         }
         if (tags.isNotEmpty()) sb.append("<p style=\"color:$accent;font-size:14px;\">").append(tags.joinToString(" ") { "#" + esc(it) }).append("</p>\n")
         return sb.toString()
     }
-    fun htmlDoc(title: String, body: String, tags: List<String>): String = """<!DOCTYPE html>
+    fun figure(pic: Pic): String {
+        val sb = StringBuilder("<figure style=\"margin:16px 0 18px;\"><img src=\"").append(esc(pic.url)).append("\" alt=\"").append(esc(pic.caption)).append("\" style=\"width:100%;border-radius:10px;display:block;\">")
+        val cap = listOf(pic.caption, pic.creditLine()).filter { it.isNotBlank() }
+        if (cap.isNotEmpty()) sb.append("<figcaption style=\"font-size:12px;color:#8A94A6;text-align:center;margin-top:6px;\">").append(esc(cap.joinToString(" · "))).append("</figcaption>")
+        return sb.append("</figure>\n").toString()
+    }
+    fun htmlDoc(title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String = """<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
 <style>body{margin:0;background:#F5F7FA;font-family:-apple-system,"Noto Sans SC","Source Han Sans SC","PingFang SC",sans-serif;color:#111827}
 article{max-width:680px;margin:0 auto;padding:40px 22px 60px;background:#fff}h1{font-size:26px;line-height:1.4;margin:0 0 18px}</style></head>
 <body><article><h1>${esc(title)}</h1>
-${htmlBody(body, tags)}</article></body></html>
+${htmlBody(body, tags, pics = pics)}</article></body></html>
 """
     fun plain(title: String, body: String, tags: List<String>) = title + "\n\n" + body + if (tags.isEmpty()) "" else "\n\n" + tags.joinToString(" ") { "#$it" }
 

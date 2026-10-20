@@ -22,7 +22,9 @@ data class Note(
     val raw: String = "", val cleaned: String = "", val intent: String = "{}",
     val templateId: Long = 0, val templateName: String = "", val model: String = "",
     val finalPrompt: String = "", val rootId: Long = 0, val version: Int = 1, val instruction: String = "",
+    @ColumnInfo(defaultValue = "[]") val images: String = "[]",
 ) {
+    fun pics() = Pics.decode(images)
     fun tagList() = tags.split(" ", ",", "，").map { it.trim().trimStart('#') }.filter { it.isNotEmpty() }
     fun intentMap(): Map<String, String> = try { val j = JSONObject(intent); j.keys().asSequence().associateWith { j.optString(it) } } catch (_: Exception) { emptyMap() }
     val root get() = if (rootId == 0L) id else rootId
@@ -94,7 +96,7 @@ data class Channel(
     @Delete suspend fun delete(c: Channel)
 }
 
-@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class], version = 1, exportSchema = false)
+@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class], version = 2, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun notes(): NoteDao
     abstract fun templates(): TemplateDao
@@ -103,7 +105,7 @@ abstract class AppDb : RoomDatabase() {
     companion object {
         @Volatile private var inst: AppDb? = null
         fun get(c: Context): AppDb = inst ?: synchronized(this) {
-            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").build().also { inst = it }
+            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").addMigrations(MIGRATION_1_2).build().also { inst = it }
         }
     }
 }
@@ -235,6 +237,13 @@ class Settings(val c: Context) {
     var length get() = p.getInt("length", 1); set(v) = put("length", v)
     var lengths get() = Lengths.decode(s("lengths", Lengths.encode(Lengths.DEFAULT))); set(v) = put("lengths", Lengths.encode(v))
     fun lengthRange() = lengths[length.coerceIn(0, 2)]
+    var imgSources: List<ImgSource>
+        get() = try { val a = JSONArray(s("imgSources", "")); (0 until a.length()).map { ImgSource.from(a.getJSONObject(it)) }.ifEmpty { ImgSource.DEFAULT } } catch (_: Exception) { ImgSource.DEFAULT }
+        set(v) = put("imgSources", JSONArray().apply { v.forEach { put(it.json()) } }.toString())
+    var picMin get() = p.getInt("picMin", 2); set(v) = put("picMin", v)
+    var picMax get() = p.getInt("picMax", 3); set(v) = put("picMax", v)
+    /** any / landscape / portrait */
+    var picOrient get() = s("picOrient", "any"); set(v) = put("picOrient", v)
     var attachRaw get() = p.getBoolean("attachRaw", true); set(v) = put("attachRaw", v)
 
     // ----- 阅读 / 出图 -----
@@ -268,4 +277,9 @@ class Settings(val c: Context) {
     var pinned: List<String>
         get() = s("pinned", "long,html,notion").split(",").filter { it.isNotBlank() }.take(4)
         set(v) = put("pinned", v.take(4).joinToString(","))
+}
+
+/** 1.0 → 1.2：notes 增加 images 列（插图 JSON），旧数据保留 */
+val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) { db.execSQL("ALTER TABLE notes ADD COLUMN images TEXT NOT NULL DEFAULT '[]'") }
 }
