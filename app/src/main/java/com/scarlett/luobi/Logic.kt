@@ -145,43 +145,50 @@ object Export {
         return if (isHeadLine(t, total)) t else null
     }
     fun paras(body: String) = body.replace("\r", "").split(Regex("\n+")).map { it.trim() }.filter { it.isNotEmpty() }
-    fun markdown(title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String {
+    fun markdown(title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList(), showCredit: Boolean = true): String {
         val ps = paras(body); val bp = Pics.byPara(pics.filter { it.isWeb }, ps.size)
         val sb = StringBuilder("# ").append(title).append("\n\n")
-        ps.forEachIndexed { i, p -> val h = heading(p, ps.size); sb.append(if (h != null) "## $h" else p).append("\n\n")
+        ps.forEachIndexed { i, p -> sb.append(Md.mdLine(Md.line(p, ps.size))).append("\n\n")
             bp[i]?.forEach { pic -> sb.append("![").append(pic.caption.replace("]", "")).append("](").append(pic.url).append(")\n")
-                val cap = listOf(pic.caption, pic.creditLine()).filter { it.isNotBlank() }.joinToString(" · "); if (cap.isNotBlank()) sb.append("*").append(cap).append("*\n"); sb.append("\n") } }
+                val cap = pic.captionLine(showCredit); if (cap.isNotBlank()) sb.append("*").append(cap).append("*\n"); sb.append("\n") } }
         if (tags.isNotEmpty()) sb.append(tags.joinToString(" ") { "#$it" }).append("\n")
         return sb.toString().trimEnd() + "\n"
     }
     fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
-    private fun inline(s: String) = esc(s).replace(Regex("\\*\\*(.+?)\\*\\*"), "<strong>$1</strong>")
-    /** 正文片段（用于富文本复制 / 发布接口） */
-    fun htmlBody(body: String, tags: List<String>, accent: String = "#2F6BFF", pics: List<Pic> = emptyList()): String {
+    fun inline(s: String) = Md.spans(s).joinToString("") { (t, b) -> if (b) "<strong>" + esc(t) + "</strong>" else esc(t) }
+    /** 阅读排版 A 的 HTML（富文本复制 / .html / 发布接口共用） */
+    fun htmlLine(l: MdLine, accent: String = "#2F6BFF"): String = when (l.kind) {
+        MdKind.H2 -> "<h2 style=\"font-size:20px;font-weight:700;line-height:1.45;margin:28px 0 10px;color:#111827;\">${inline(l.text)}</h2>"
+        MdKind.H3 -> "<h3 style=\"font-size:17px;font-weight:700;margin:20px 0 8px;color:#1F2937;\">${inline(l.text)}</h3>"
+        MdKind.QUOTE -> "<blockquote style=\"border-left:3px solid #CBD5E1;background:#F1F4F8;padding:10px 14px;color:#5B6576;margin:16px 0;border-radius:0 6px 6px 0;\">${inline(l.text)}</blockquote>"
+        MdKind.BULLET -> "<p style=\"font-size:16px;line-height:1.8;margin:0 0 8px;padding-left:1.2em;text-indent:-1.2em;color:#1F2937;\">•&nbsp;&nbsp;${inline(l.text)}</p>"
+        MdKind.NUM -> "<p style=\"font-size:16px;line-height:1.8;margin:0 0 8px;padding-left:1.4em;text-indent:-1.4em;color:#1F2937;\">${esc(l.num)}.&nbsp;${inline(l.text)}</p>"
+        MdKind.HR -> "<hr style=\"border:0;border-top:1px solid #E3E8EF;margin:24px 0;\">"
+        MdKind.P -> "<p style=\"font-size:16px;line-height:1.8;margin:0 0 18px;color:#1F2937;\">${inline(l.text)}</p>"
+    }
+    fun htmlBody(body: String, tags: List<String>, accent: String = "#2F6BFF", pics: List<Pic> = emptyList(), showCredit: Boolean = true): String {
         val ps = paras(body); val bp = Pics.byPara(pics.filter { it.isWeb }, ps.size)
         val sb = StringBuilder()
         ps.forEachIndexed { i, p ->
-            val h = heading(p, ps.size)
-            if (h != null) sb.append("<h2 style=\"font-size:19px;margin:26px 0 10px;padding-left:10px;border-left:3px solid $accent;\">").append(inline(h)).append("</h2>\n")
-            else sb.append("<p style=\"font-size:16px;line-height:1.8;margin:0 0 14px;color:#111827;\">").append(inline(p)).append("</p>\n")
-            bp[i]?.forEach { pic -> sb.append(figure(pic)) }
+            sb.append(htmlLine(Md.line(p, ps.size), accent)).append("\n")
+            bp[i]?.forEach { pic -> sb.append(figure(pic, showCredit)) }
         }
         if (tags.isNotEmpty()) sb.append("<p style=\"color:$accent;font-size:14px;\">").append(tags.joinToString(" ") { "#" + esc(it) }).append("</p>\n")
         return sb.toString()
     }
-    fun figure(pic: Pic): String {
+    fun figure(pic: Pic, showCredit: Boolean = true): String {
         val sb = StringBuilder("<figure style=\"margin:16px 0 18px;\"><img src=\"").append(esc(pic.url)).append("\" alt=\"").append(esc(pic.caption)).append("\" style=\"width:100%;border-radius:10px;display:block;\">")
-        val cap = listOf(pic.caption, pic.creditLine()).filter { it.isNotBlank() }
-        if (cap.isNotEmpty()) sb.append("<figcaption style=\"font-size:12px;color:#8A94A6;text-align:center;margin-top:6px;\">").append(esc(cap.joinToString(" · "))).append("</figcaption>")
+        val cap = pic.captionLine(showCredit)
+        if (cap.isNotEmpty()) sb.append("<figcaption style=\"font-size:11px;color:#A0A8B6;text-align:center;margin-top:6px;\">").append(esc(cap)).append("</figcaption>")
         return sb.append("</figure>\n").toString()
     }
-    fun htmlDoc(title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String = """<!DOCTYPE html>
+    fun htmlDoc(title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList(), showCredit: Boolean = true): String = """<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
 <style>body{margin:0;background:#F5F7FA;font-family:-apple-system,"Noto Sans SC","Source Han Sans SC","PingFang SC",sans-serif;color:#111827}
-article{max-width:680px;margin:0 auto;padding:40px 22px 60px;background:#fff}h1{font-size:26px;line-height:1.4;margin:0 0 18px}</style></head>
+article{max-width:680px;margin:0 auto;padding:40px 22px 60px;background:#fff;font-family:"Source Han Serif SC","Noto Serif CJK SC","Songti SC",serif}h1{font-size:26px;line-height:1.4;margin:0 0 18px}</style></head>
 <body><article><h1>${esc(title)}</h1>
-${htmlBody(body, tags, pics = pics)}</article></body></html>
+${htmlBody(body, tags, pics = pics, showCredit = showCredit)}</article></body></html>
 """
     fun plain(title: String, body: String, tags: List<String>) = title + "\n\n" + body + if (tags.isEmpty()) "" else "\n\n" + tags.joinToString(" ") { "#$it" }
 
@@ -219,4 +226,69 @@ object Lengths {
     }
     fun hint(i: Int, r: Pair<Int, Int>) = "篇幅：${NAMES[i.coerceIn(0, 2)]}篇，正文字数控制在 ${r.first}–${r.second} 字之间。"
     fun label(i: Int, r: Pair<Int, Int>) = "${NAMES[i.coerceIn(0, 2)]}（${r.first}–${r.second} 字）"
+}
+
+/** 正文的轻量 Markdown：一行（Export.paras 的一项）= 一个块，插图按同样的序号定位 */
+enum class MdKind { H2, H3, P, QUOTE, BULLET, NUM, HR }
+data class MdLine(val kind: MdKind, val text: String, val num: String = "")
+
+object Md {
+    private val numRe = Regex("^(\\d{1,3})[.、．)]\\s*(.+)$")
+    fun line(raw: String, total: Int): MdLine {
+        val p = raw.trim()
+        if (Regex("^([-*_])(\\s*\\1){2,}$").matches(p)) return MdLine(MdKind.HR, "")
+        if (p.startsWith("###")) return MdLine(MdKind.H3, p.trimStart('#').trim())
+        if (p.startsWith("#")) return MdLine(MdKind.H2, p.trimStart('#').trim())
+        if (p.startsWith(">")) return MdLine(MdKind.QUOTE, p.trimStart('>', ' ', '　').trim())
+        if (p.startsWith("- ") || p.startsWith("* ") || p.startsWith("• ") || p.startsWith("· ")) return MdLine(MdKind.BULLET, p.substring(2).trim())
+        numRe.find(p)?.let { m -> if (p.length > 24 || p.contains('。') || total <= 3) return MdLine(MdKind.NUM, m.groupValues[2].trim(), m.groupValues[1]) }
+        if (p.startsWith("**") && p.endsWith("**") && p.length in 5..42 && !p.substring(2, p.length - 2).contains("**")) return MdLine(MdKind.H2, p.substring(2, p.length - 2).trim())
+        if (Export.isHeadLine(p, total)) return MdLine(MdKind.H2, p)
+        return MdLine(MdKind.P, p)
+    }
+    /** 行内：**粗体**；返回 (文字, 是否加粗) 片段，未闭合的 ** 原样保留 */
+    fun spans(t: String): List<Pair<String, Boolean>> {
+        val out = mutableListOf<Pair<String, Boolean>>(); var i = 0
+        while (i < t.length) {
+            val a = t.indexOf("**", i)
+            if (a < 0) { out += t.substring(i) to false; break }
+            val b = t.indexOf("**", a + 2)
+            if (b < 0 || b == a + 2) { out += t.substring(i) to false; break }
+            if (a > i) out += t.substring(i, a) to false
+            out += t.substring(a + 2, b) to true; i = b + 2
+        }
+        return out.filter { it.first.isNotEmpty() }
+    }
+    fun strip(t: String) = spans(t).joinToString("") { it.first }
+    /** 纯文本（复制全文 / 抖音）：去掉标记，列表用 •，引用用「」 */
+    fun plainLine(l: MdLine) = when (l.kind) {
+        MdKind.HR -> "——"; MdKind.BULLET -> "• " + strip(l.text); MdKind.NUM -> l.num + ". " + strip(l.text)
+        MdKind.QUOTE -> "「" + strip(l.text) + "」"; else -> strip(l.text)
+    }
+    fun plainBody(body: String): String { val ps = Export.paras(body); return ps.joinToString("\n\n") { plainLine(line(it, ps.size)) } }
+    fun mdLine(l: MdLine) = when (l.kind) {
+        MdKind.H2 -> "## " + l.text; MdKind.H3 -> "### " + l.text; MdKind.QUOTE -> "> " + l.text; MdKind.BULLET -> "- " + l.text
+        MdKind.NUM -> l.num + ". " + l.text; MdKind.HR -> "---"; MdKind.P -> l.text
+    }
+}
+
+/** 分享栏：最多 5 个渠道 + 固定最右的「更多」 */
+object ShareBar {
+    const val MAX = 5
+    const val MORE = "more"
+    val DEFAULT = listOf("xhs", "wechat", "qq", "douyin", "notion")
+    /** 清洗：去重、去掉 more 和不认识的、截到 5 个；允许少于 5 个，允许空 */
+    fun normalize(l: List<String>, known: Collection<String>): List<String> = l.map { it.trim() }.filter { it.isNotEmpty() && it != MORE && (it in known || Regex("c\\d+").matches(it)) }.distinct().take(MAX)
+    fun encode(l: List<String>) = l.joinToString(",")
+    fun decode(s: String?, known: Collection<String>): List<String> = if (s == null) DEFAULT.filter { it in known } else normalize(s.split(","), known)
+    fun add(l: List<String>, id: String): List<String> = if (id in l || id == MORE || l.size >= MAX) l else l + id
+    fun remove(l: List<String>, id: String) = l - id
+    fun move(l: List<String>, from: Int, to: Int): List<String> {
+        if (from !in l.indices) return l
+        return l.toMutableList().apply { add(to.coerceIn(0, lastIndex), removeAt(from)) }
+    }
+    /** 栏里显示的格子：所选 + 更多 */
+    fun tiles(l: List<String>) = l + MORE
+    /** 「更多」面板：所有不在栏里的渠道，保持原顺序 */
+    fun others(all: List<String>, bar: List<String>) = all.filter { it !in bar && it != MORE }
 }

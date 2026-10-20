@@ -106,7 +106,7 @@ object Ai {
         return CleanParse.parse(txt, ct.fieldList()) to ct
     }
 
-    const val OUT_RULE = "只输出一个 JSON 对象：{\"title\":\"标题\",\"body\":\"正文，段落之间空一行，小标题单独一行并以 ## 开头\",\"tags\":[\"标签1\",\"标签2\"]}，tags 为 3–8 个不带 # 的话题词，不要输出其它内容。"
+    const val OUT_RULE = "只输出一个 JSON 对象：{\"title\":\"标题\",\"body\":\"正文 Markdown：段落之间空一行；小标题单独一行，以 ## 开头（下一级用 ###）；全文挑 1–3 句最有力的金句用 **加粗**；需要时可用 > 引用、- 列表、--- 分隔线；不要表格和代码块\",\"tags\":[\"标签1\",\"标签2\"]}，tags 为 3–8 个不带 # 的话题词，不要输出其它内容。"
 
     /** 最终提示词 = 模板填值（空变量整行删）+ 篇幅 */
     fun finalPrompt(tpl: String, values: Map<String, String>, cleaned: String, attachRaw: Boolean, length: Int, range: Pair<Int, Int> = Lengths.DEFAULT[length.coerceIn(0, 2)]): String {

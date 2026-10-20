@@ -20,26 +20,30 @@ class PublishError(msg: String) : Exception(msg)
 data class ChannelDef(val id: String, val name: String, val icon: List<String>, val group: Int)
 
 object ChannelIds {
-    val groups = listOf("直接发到 APP", "复制排版", "一键上传", "存到本地")
-    /** 内置渠道；自定义渠道 id 为 "c<id>" */
+    /** 内置渠道（顺序即「更多」面板顺序）；自定义渠道 id 为 "c<id>" */
     val builtIn = listOf(
         ChannelDef("xhs", "小红书", Ic.send, 0),
         ChannelDef("wechat", "微信", Ic.chat, 0),
-        ChannelDef("qq", "QQ", Ic.chat, 0),
-        ChannelDef("weibo", "微博", Ic.globe, 0),
-        ChannelDef("douyin", "抖音", Ic.image, 0),
-        ChannelDef("html", "HTML 富文本", Ic.code, 1),
-        ChannelDef("text", "纯文本 / Markdown", Ic.text, 1),
+        ChannelDef("qq", "QQ", Ic.qq, 0),
+        ChannelDef("douyin", "抖音", Ic.music, 0),
         ChannelDef("notion", "Notion", Ic.notion, 2),
-        ChannelDef("yuque", "语雀", Ic.cloud, 2),
+        ChannelDef("long", "长图", Ic.longimg, 3),
+        ChannelDef("weibo", "微博", Ic.weibo, 0),
+        ChannelDef("html", "HTML", Ic.code, 1),
+        ChannelDef("md", "Markdown", Ic.md, 1),
+        ChannelDef("copy", "复制全文", Ic.copy2, 1),
+        ChannelDef("yuque", "语雀", Ic.text, 2),
         ChannelDef("telegraph", "Telegraph", Ic.globe, 2),
-        ChannelDef("long", "长图 / 配图", Ic.longimg, 3),
-        ChannelDef("htmlfile", ".html 文件", Ic.download, 3),
     )
-    fun all(custom: List<Channel>) = builtIn + custom.map { ChannelDef("c${it.id}", it.name, Ic.globe, 2) }
-    fun short(id: String, custom: List<Channel>) = when (id) {
-        "long" -> "长图"; "html" -> "HTML"; "text" -> "文本"; "htmlfile" -> ".html"; "xhs" -> "小红书"
-        else -> all(custom).firstOrNull { it.id == id }?.name ?: id
+    val more = ChannelDef(ShareBar.MORE, "更多", Ic.more, 9)
+    fun allIds(@Suppress("UNUSED_PARAMETER") c: android.content.Context? = null) = builtIn.map { it.id }
+    fun all(custom: List<Channel>) = builtIn + custom.map { ChannelDef("c${it.id}", it.name, Ic.cloud, 2) }
+    fun def(id: String, custom: List<Channel>) = if (id == ShareBar.MORE) more else all(custom).firstOrNull { it.id == id }
+    fun short(id: String, custom: List<Channel>) = def(id, custom)?.name ?: id
+    /** 「更多」面板右侧的用途说明 */
+    fun note(id: String) = when (id) {
+        "xhs" -> "配图卡片"; "wechat", "qq", "weibo" -> "发长图"; "douyin" -> "复制文案并打开"; "long" -> "存相册"; "html" -> "富文本 + .html 文件"
+        "md" -> "剪贴板"; "copy" -> "剪贴板"; "notion", "yuque", "telegraph" -> "发布"; else -> "发布"
     }
 }
 
@@ -72,22 +76,32 @@ object Notion {
         return hex.lowercase()
     }
     private fun rt(text: String) = JSONArray().apply { text.chunked(1900).forEach { put(JSONObject().put("type", "text").put("text", JSONObject().put("content", it))) } }
-    fun blocks(body: String, tags: List<String>, pics: List<Pic> = emptyList()): List<JSONObject> {
+    /** 行内粗体 → rich_text annotations.bold */
+    private fun rtMd(text: String) = JSONArray().apply { Md.spans(text).forEach { (t, b) -> t.chunked(1900).forEach { c -> put(JSONObject().put("type", "text").put("text", JSONObject().put("content", c)).apply { if (b) put("annotations", JSONObject().put("bold", true)) }) } } }
+    private fun blk(type: String, body: JSONObject = JSONObject()) = JSONObject().put("object", "block").put("type", type).put(type, body)
+    fun blocks(body: String, tags: List<String>, pics: List<Pic> = emptyList(), showCredit: Boolean = true): List<JSONObject> {
         val ps = Export.paras(body); val bp = Pics.byPara(pics.filter { it.isWeb }, ps.size)
-        val l = ps.flatMapIndexed { i, p -> listOf(
-            if (isHead(p, ps.size)) JSONObject().put("object", "block").put("type", "heading_2").put("heading_2", JSONObject().put("rich_text", rt(headText(p))))
-            else JSONObject().put("object", "block").put("type", "paragraph").put("paragraph", JSONObject().put("rich_text", rt(p.replace("**", ""))))) +
-            (bp[i] ?: emptyList()).map { pic -> JSONObject().put("object", "block").put("type", "image").put("image", JSONObject().put("type", "external").put("external", JSONObject().put("url", pic.url))
-                .apply { val cap = listOf(pic.caption, pic.creditLine()).filter { it.isNotBlank() }.joinToString(" · "); if (cap.isNotBlank()) put("caption", rt(cap)) }) }
+        val l = ps.flatMapIndexed { i, p ->
+            val m = Md.line(p, ps.size)
+            listOf(when (m.kind) {
+                MdKind.H2 -> blk("heading_2", JSONObject().put("rich_text", rtMd(m.text)))
+                MdKind.H3 -> blk("heading_3", JSONObject().put("rich_text", rtMd(m.text)))
+                MdKind.QUOTE -> blk("quote", JSONObject().put("rich_text", rtMd(m.text)))
+                MdKind.BULLET -> blk("bulleted_list_item", JSONObject().put("rich_text", rtMd(m.text)))
+                MdKind.NUM -> blk("numbered_list_item", JSONObject().put("rich_text", rtMd(m.text)))
+                MdKind.HR -> blk("divider")
+                MdKind.P -> blk("paragraph", JSONObject().put("rich_text", rtMd(m.text)))
+            }) + (bp[i] ?: emptyList()).map { pic -> blk("image", JSONObject().put("type", "external").put("external", JSONObject().put("url", pic.url))
+                .apply { val cap = pic.captionLine(showCredit); if (cap.isNotBlank()) put("caption", rt(cap)) }) }
         }.toMutableList()
-        if (tags.isNotEmpty()) l += JSONObject().put("object", "block").put("type", "paragraph").put("paragraph", JSONObject().put("rich_text", rt(tags.joinToString(" ") { "#$it" })))
+        if (tags.isNotEmpty()) l += blk("paragraph", JSONObject().put("rich_text", rt(tags.joinToString(" ") { "#$it" })))
         return l
     }
     suspend fun upload(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String = withContext(Dispatchers.IO) {
         val s = Settings(ctx); val token = Secure.get(ctx, "notion_token")
         if (token.isBlank() || s.notionTarget.isBlank()) throw ConfigError("还没有配置 Notion。请到「设置 → 发布渠道 → Notion」填集成 Token 和目标页面 / 数据库。")
         val target = idOf(s.notionTarget)
-        val bl = blocks(body, tags, pics)
+        val bl = blocks(body, tags, pics, Settings(ctx).showCredit)
         val req = JSONObject()
         if (s.notionType == "database") {
             var titleProp = s.notionTitleProp
@@ -146,7 +160,7 @@ object Yuque {
     suspend fun upload(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String = withContext(Dispatchers.IO) {
         val s = Settings(ctx); val token = Secure.get(ctx, "yuque_token")
         if (token.isBlank() || s.yuqueNs.isBlank()) throw ConfigError("还没有配置语雀。请到「设置 → 发布渠道 → 语雀」填个人 Token 并选择知识库。")
-        val md = Export.markdown(title, body, tags, pics).substringAfter("\n").trim()
+        val md = Export.markdown(title, body, tags, pics, Settings(ctx).showCredit).substringAfter("\n").trim()
         val req = JSONObject().put("title", title).put("format", "markdown").put("body", md).put("public", if (s.yuquePublic) 1 else 0)
         val (c, t) = Http.call("POST", "$API/repos/${s.yuqueNs.trim('/')}/docs", h(token), req.toString())
         if (c !in 200..299) throw PublishError(Http.msg(c, t) + if (c == 401 || c == 403) "。个人调用语雀 API 可能需要会员，请在语雀账号设置里确认。" else "")
@@ -170,9 +184,21 @@ object Telegraph {
         val ps = Export.paras(body)
         val nodes = JSONArray()
         val bp = Pics.byPara(pics.filter { it.isWeb }, ps.size)
-        ps.forEachIndexed { i, p -> nodes.put(JSONObject().put("tag", if (isHead(p, ps.size)) "h4" else "p").put("children", JSONArray().put(if (isHead(p, ps.size)) headText(p) else p.replace("**", ""))))
+        val show = s.showCredit
+        fun inl(t: String) = JSONArray().apply { Md.spans(t).forEach { (x, b) -> put(if (b) JSONObject().put("tag", "strong").put("children", JSONArray().put(x)) else x) } }
+        ps.forEachIndexed { i, p ->
+            val m = Md.line(p, ps.size)
+            nodes.put(when (m.kind) {
+                MdKind.H2 -> JSONObject().put("tag", "h3").put("children", inl(m.text))
+                MdKind.H3 -> JSONObject().put("tag", "h4").put("children", inl(m.text))
+                MdKind.QUOTE -> JSONObject().put("tag", "blockquote").put("children", inl(m.text))
+                MdKind.BULLET -> JSONObject().put("tag", "ul").put("children", JSONArray().put(JSONObject().put("tag", "li").put("children", inl(m.text))))
+                MdKind.NUM -> JSONObject().put("tag", "p").put("children", inl(m.num + ". " + m.text))
+                MdKind.HR -> JSONObject().put("tag", "hr")
+                MdKind.P -> JSONObject().put("tag", "p").put("children", inl(m.text))
+            })
             bp[i]?.forEach { pic -> nodes.put(JSONObject().put("tag", "figure").put("children", JSONArray().put(JSONObject().put("tag", "img").put("attrs", JSONObject().put("src", pic.url)))
-                .apply { val cap = listOf(pic.caption, pic.creditLine()).filter { it.isNotBlank() }.joinToString(" · "); if (cap.isNotBlank()) put(JSONObject().put("tag", "figcaption").put("children", JSONArray().put(cap))) })) } }
+                .apply { val cap = pic.captionLine(show); if (cap.isNotBlank()) put(JSONObject().put("tag", "figcaption").put("children", JSONArray().put(cap))) })) } }
         if (tags.isNotEmpty()) nodes.put(JSONObject().put("tag", "p").put("children", JSONArray().put(tags.joinToString(" ") { "#$it" })))
         val req = JSONObject().put("access_token", token).put("title", title.take(256)).put("author_name", s.telegraphName).put("content", nodes)
         val (c, t) = Http.call("POST", "$API/createPage", emptyMap(), req.toString())
@@ -184,8 +210,8 @@ object Telegraph {
 
 /** 通用发布接口（WordPress / Halo / Ghost 等） */
 object Custom {
-    fun body(ch: Channel, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String {
-        val content = when (ch.format) { "html" -> Export.htmlBody(body, tags, pics = pics); "markdown" -> Export.markdown(title, body, tags, pics).substringAfter("\n").trim(); else -> body }
+    fun body(ch: Channel, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList(), show: Boolean = true): String {
+        val content = when (ch.format) { "html" -> Export.htmlBody(body, tags, pics = pics, showCredit = show); "markdown" -> Export.markdown(title, body, tags, pics, show).substringAfter("\n").trim(); else -> Md.plainBody(body) }
         return Export.jsonTpl(ch.bodyTpl, title, content, tags)
     }
     private fun headers(ctx: Context, ch: Channel): Map<String, String> {
@@ -194,7 +220,7 @@ object Custom {
     }
     suspend fun publish(ctx: Context, ch: Channel, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String = withContext(Dispatchers.IO) {
         if (ch.url.isBlank()) throw ConfigError("「${ch.name}」还没有填接口地址")
-        val (c, t) = Http.call(ch.method, ch.url, headers(ctx, ch), body(ch, title, body, tags, pics))
+        val (c, t) = Http.call(ch.method, ch.url, headers(ctx, ch), body(ch, title, body, tags, pics, Settings(ctx).showCredit))
         if (c !in 200..299) throw PublishError(Http.msg(c, t))
         val link = try { JSONObject(t).let { j -> j.optString("link").ifBlank { j.optString("url") }.ifBlank { j.optJSONObject("data")?.optString("url").orEmpty() } } } catch (_: Exception) { "" }
         link.ifBlank { "已发布（HTTP $c）" }
@@ -216,8 +242,8 @@ object Custom {
 object Out {
     fun copyHtml(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()) {
         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val html = "<h1>${Export.esc(title)}</h1>\n" + Export.htmlBody(body, tags, pics = pics)
-        cm.setPrimaryClip(ClipData.newHtmlText(title, Export.plain(title, body.lines().joinToString("\n") { if (it.startsWith("#")) headText(it) else it }, tags), html))
+        val html = "<h1>${Export.esc(title)}</h1>\n" + Export.htmlBody(body, tags, pics = pics, showCredit = Settings(ctx).showCredit)
+        cm.setPrimaryClip(ClipData.newHtmlText(title, Export.plain(title, Md.plainBody(body), tags), html))
     }
     /** 存到「下载/落笔」，返回文件名 */
     fun saveHtml(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String {
@@ -227,12 +253,22 @@ object Out {
             put(MediaStore.Downloads.RELATIVE_PATH, "Download/落笔")
         }
         val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v) ?: throw PublishError("无法在「下载」里创建文件")
-        ctx.contentResolver.openOutputStream(uri)?.use { it.write(Export.htmlDoc(title, body, tags, pics).toByteArray()) } ?: throw PublishError("无法写入文件")
+        ctx.contentResolver.openOutputStream(uri)?.use { it.write(Export.htmlDoc(title, body, tags, pics, Settings(ctx).showCredit).toByteArray()) } ?: throw PublishError("无法写入文件")
         return name
     }
     /** 每个 Uri 恰好一项（去重），用于授予读权限 */
     fun clipOf(uris: List<android.net.Uri>): ClipData { val u = uris.distinct(); return ClipData.newRawUri("", u[0]).apply { u.drop(1).forEach { addItem(ClipData.Item(it)) } } }
     val socialApps = listOf("微信" to "com.tencent.mm", "QQ" to "com.tencent.mobileqq", "微博" to "com.sina.weibo", "抖音" to "com.ss.android.ugc.aweme")
+    /** 打开某个 APP；没装返回 false */
+    fun launch(ctx: Context, pkg: String): Boolean {
+        val i = ctx.packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        return try { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true } catch (_: Exception) { false }
+    }
+    /** 用相册 / 图片查看器打开刚生成的图 */
+    fun view(ctx: Context, uri: android.net.Uri) {
+        val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "image/jpeg").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        try { ctx.startActivity(i) } catch (_: Exception) { toast(ctx, "没有能打开图片的应用，长图在相册「落笔」里") }
+    }
     /** 指定包名发送纯文字（ACTION_SEND text/plain）；没装或失败时弹系统菜单 */
     fun sendTextTo(ctx: Context, pkg: String?, text: String) {
         val it = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }

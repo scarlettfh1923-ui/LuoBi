@@ -115,7 +115,7 @@ fun rememberBitmap(key: String, load: suspend () -> android.graphics.Bitmap?): I
 
 /** 已插入的图片：图 + 图注 + 来源小字；长按出菜单 */
 @Composable
-fun PicView(ctx: Context, pic: Pic, pal: ReadPalette, onReplace: () -> Unit, onCaption: () -> Unit, onDelete: () -> Unit) {
+fun PicView(ctx: Context, pic: Pic, pal: ReadPalette, showCredit: Boolean, onReplace: () -> Unit, onCaption: () -> Unit, onDelete: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val bmp = rememberBitmap(pic.local + pic.url) { PicCache.load(ctx, pic, 1080) }
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
@@ -131,7 +131,7 @@ fun PicView(ctx: Context, pic: Pic, pal: ReadPalette, onReplace: () -> Unit, onC
             }
         }
         if (pic.caption.isNotBlank()) Text(pic.caption, Modifier.fillMaxWidth().padding(top = 6.dp), fontSize = 13.sp, color = pal.text, textAlign = TextAlign.Center)
-        if (pic.creditLine().isNotBlank()) Text(pic.creditLine(), Modifier.fillMaxWidth().padding(top = 2.dp), fontSize = 11.sp, color = pal.sub, textAlign = TextAlign.Center)
+        if (showCredit && pic.creditLine().isNotBlank()) Text(pic.creditLine(), Modifier.fillMaxWidth().padding(top = 4.dp), fontSize = 11.sp, color = pal.sub.copy(alpha = .75f), textAlign = TextAlign.Center)
     }
 }
 

@@ -240,6 +240,11 @@ class Settings(val c: Context) {
     var imgSources: List<ImgSource>
         get() = try { val a = JSONArray(s("imgSources", "")); (0 until a.length()).map { ImgSource.from(a.getJSONObject(it)) }.ifEmpty { ImgSource.DEFAULT } } catch (_: Exception) { ImgSource.DEFAULT }
         set(v) = put("imgSources", JSONArray().apply { v.forEach { put(it.json()) } }.toString())
+    /** 图片下方「图片来自 Pexafy」小字；关掉后阅读页和所有导出都不显示 */
+    var showCredit get() = p.getBoolean("showCredit", true); set(v) = put("showCredit", v)
+    var shareBar: List<String>
+        get() = ShareBar.decode(if (p.contains("shareBar")) s("shareBar", "") else null, ChannelIds.allIds(c))
+        set(v) = put("shareBar", ShareBar.encode(v))
     var picMin get() = p.getInt("picMin", 2); set(v) = put("picMin", v)
     var picMax get() = p.getInt("picMax", 3); set(v) = put("picMax", v)
     /** any / landscape / portrait */

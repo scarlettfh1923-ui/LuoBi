@@ -86,6 +86,13 @@ fun ImgSrcPage(back: () -> Unit, go: (String) -> Unit) {
                 Text("AI 通读全文后在 $mn–$mx 处给出候选，你逐张确认", Modifier.padding(top = 8.dp), fontSize = 12.sp, color = P3.text3)
             }
         }
+        item {
+            var credit by remember { mutableStateOf(s.showCredit) }
+            Row(Modifier.padding(top = 10.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { Text("显示图片来源小字", fontSize = 15.sp, color = P3.text); Text("「图片来自 Pexafy」，关掉后各处都不显示", fontSize = 12.sp, color = P3.text3) }
+                Switch(credit, { credit = it; s.showCredit = it }, colors = SwitchDefaults.colors(checkedTrackColor = P3.accent))
+            }
+        }
         item { GroupLabel("图片方向偏好") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("landscape" to "横图", "portrait" to "竖图", "any" to "不限").forEach { (k, l) -> Pill(l, orient == k) { orient = k; s.picOrient = k } } } }
     }
@@ -152,4 +159,84 @@ fun ImgSrcEdit(id: String, back: () -> Unit) {
         }
     }
     if (del) ConfirmDialog("删除「$name」？", "Key 也会一起清除。", "删除", true, onOk = { Secure.set(ctx, "imgkey_$nid", ""); ImgSources.save(ctx, ImgSources.list(ctx).filter { it.id != nid }); back() }) { del = false }
+}
+
+/** 设置 → 分享栏（变体 A）：实时预览 + 拖动排序的已显示列表 + 可添加列表 + 「更多」固定 + 来源小字开关 */
+@Composable
+fun ShareBarPage(db: AppDb, back: () -> Unit) {
+    val ctx = LocalContext.current; val s = remember { Settings(ctx) }
+    val channels by db.channels().all().collectAsState(initial = emptyList())
+    var bar by remember { mutableStateOf(s.shareBar) }
+    fun set(l: List<String>) { bar = l; s.shareBar = l }
+    var showAll by remember { mutableStateOf(false) }
+    var credit by remember { mutableStateOf(s.showCredit) }
+    val rowH = 48.dp; val rowPx = with(LocalDensity.current) { rowH.toPx() }
+    var drag by remember { mutableIntStateOf(-1) }; var dy by remember { mutableFloatStateOf(0f) }
+    Page("分享栏", back, action = { TextAction("恢复默认") { set(ShareBar.DEFAULT) } }) {
+        item {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(16.dp)).padding(vertical = 12.dp, horizontal = 4.dp)) {
+                (bar.mapNotNull { ChannelIds.def(it, channels) } + ChannelIds.more).forEach { d ->
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        SvgIcon(d.icon, if (d.id == ShareBar.MORE) P3.text3 else P3.accent, 20.dp)
+                        Text(d.name, Modifier.padding(top = 3.dp), fontSize = 10.5.sp, color = if (d.id == ShareBar.MORE) P3.text3 else P3.text, maxLines = 1, softWrap = false)
+                    }
+                }
+            }
+        }
+        item { Text("显示在栏中 · 最多 ${ShareBar.MAX} 个 + 更多（固定）· 长按拖动排序", Modifier.padding(top = 14.dp, bottom = 6.dp), fontSize = 12.sp, color = P3.text2) }
+        item {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp)) {
+                bar.forEachIndexed { i, id ->
+                    val d = ChannelIds.def(id, channels) ?: return@forEachIndexed
+                    key(id) {
+                        Row(Modifier.fillMaxWidth().height(rowH).zIndexIf(drag == i).graphicsLayer { translationY = if (drag == i) dy else 0f }.background(if (drag == i) P3.accentSoft else P3.surface)
+                            .pointerInput(bar) {
+                                detectDragGesturesAfterLongPress(onDragStart = { drag = i; dy = 0f }, onDragEnd = { drag = -1; dy = 0f }, onDragCancel = { drag = -1; dy = 0f }) { ch, dd ->
+                                    ch.consume(); dy += dd.y
+                                    val cur = drag; if (cur < 0) return@detectDragGesturesAfterLongPress
+                                    val to = (cur + (dy / rowPx).toInt()).coerceIn(0, bar.lastIndex)
+                                    if (to != cur) { set(ShareBar.move(bar, cur, to)); dy -= (to - cur) * rowPx; drag = to }
+                                }
+                            }, verticalAlignment = Alignment.CenterVertically) {
+                            SvgIcon(Ic.drag, P3.text3, 20.dp, desc = "拖动")
+                            Spacer(Modifier.width(10.dp)); SvgIcon(d.icon, P3.text2, 20.dp)
+                            Text(d.name, Modifier.weight(1f).padding(start = 10.dp), fontSize = 15.sp, color = P3.text)
+                            Box(Modifier.size(36.dp).clip(RoundedCornerShape(18.dp)).clickable { set(ShareBar.remove(bar, id)) }, contentAlignment = Alignment.Center) { SvgIcon(Ic.minusCircle, androidx.compose.ui.graphics.Color(0xFFC2410C), 20.dp, desc = "移出") }
+                        }
+                        HorizontalDivider(color = P3.border)
+                    }
+                }
+                Row(Modifier.fillMaxWidth().height(rowH), verticalAlignment = Alignment.CenterVertically) {
+                    SvgIcon(Ic.lock, P3.text3, 20.dp); Spacer(Modifier.width(10.dp)); SvgIcon(Ic.more, P3.text3, 20.dp)
+                    Text("更多", Modifier.weight(1f).padding(start = 10.dp), fontSize = 15.sp, color = P3.text3)
+                    Text("固定最右", fontSize = 12.sp, color = P3.text3)
+                }
+            }
+        }
+        item { Text(if (bar.size >= ShareBar.MAX) "可添加 · 已满 ${ShareBar.MAX} 个，先移出一个" else "可添加", Modifier.padding(top = 14.dp, bottom = 6.dp), fontSize = 12.sp, color = P3.text2) }
+        item {
+            val avail = ShareBar.others(ChannelIds.all(channels).map { it.id }, bar).mapNotNull { ChannelIds.def(it, channels) }
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp)) {
+                (if (showAll) avail else avail.take(4)).forEach { d ->
+                    Row(Modifier.fillMaxWidth().height(rowH).clickable(enabled = bar.size < ShareBar.MAX) { set(ShareBar.add(bar, d.id)) }, verticalAlignment = Alignment.CenterVertically) {
+                        SvgIcon(d.icon, P3.text2, 20.dp)
+                        Text(d.name, Modifier.weight(1f).padding(start = 10.dp), fontSize = 15.sp, color = P3.text)
+                        SvgIcon(Ic.plus, if (bar.size < ShareBar.MAX) P3.accent else P3.text3, 20.dp, desc = "加入")
+                    }
+                    HorizontalDivider(color = P3.border)
+                }
+                if (avail.size > 4) Text(if (showAll) "收起 ⌃" else "还有 ${avail.size - 4} 个 ⌄", Modifier.fillMaxWidth().clickable { showAll = !showAll }.padding(vertical = 10.dp), fontSize = 12.sp, color = P3.text3, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                if (avail.isEmpty()) Text("所有渠道都已在栏中", Modifier.padding(vertical = 12.dp), fontSize = 12.sp, color = P3.text3)
+            }
+        }
+        item {
+            Row(Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(P3.surface).border(1.dp, P3.border, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("显示图片来源小字", fontSize = 15.sp, color = P3.text)
+                    Text("图片下方显示「图片来自 Pexafy」；关掉后阅读页和所有导出都不显示", fontSize = 12.sp, color = P3.text3, lineHeight = 16.sp)
+                }
+                Switch(credit, { credit = it; s.showCredit = it }, colors = SwitchDefaults.colors(checkedTrackColor = P3.accent))
+            }
+        }
+    }
 }

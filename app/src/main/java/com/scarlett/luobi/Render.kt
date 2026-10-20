@@ -195,7 +195,8 @@ object Render {
             }
         }
         for (p in paras) {
-            if (isHead(p, paras.size)) placeHead(p.trimStart('#', ' ')) else placeBody(p)
+            val ml = Md.line(p, paras.size)
+            when (ml.kind) { MdKind.H2, MdKind.H3 -> placeHead(Md.strip(ml.text)); MdKind.HR -> {}; else -> placeBody(Md.plainLine(ml)) }
         }
         if (cur.isNotEmpty()) pageList.add(cur)
         // 收尾：任意页末仍是小标题且后面还有页，把小标题挪到下一页开头（去掉上方段距）
@@ -236,6 +237,9 @@ object Render {
     const val MAX_PAGES = 40
     /** 单张长图最大高度；超过就按行拆成多张 */
     const val LONG_MAX_H = 16000
+    /** 长图按 1.333 倍（1440 宽）出图更清晰；单张高度相应收紧，内存与原先相当 */
+    const val HD = 1.3333334f
+    const val LONG_MAX_H_HD = 9000
 
     /**
      * 杂志风奶油纸长图：标题 + 标签 + 正文（小标题同字体更大加粗），无页脚品牌。
@@ -252,13 +256,21 @@ object Render {
         val accent = pal.accent
         val tagBg = pal.tagBg
         val sizePx = 42f
-        val lineMult = 1.15f // 与配图默认行距同量级，避免锁死 1.75 忽紧忽松
-        val beforeHead = sizePx * 0.55f
-        val afterHead = sizePx * 0.28f
-        val bodyGap = sizePx * 0.22f
+        val lineMult = 1.5f // 阅读排版 A：行距约 0.5em
+        val beforeHead = sizePx * 0.9f
+        val afterHead = sizePx * 0.35f
+        val bodyGap = sizePx * 0.85f // 段距明显大于行距
+        val listGap = sizePx * 0.35f
         val titleP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 64f; typeface = boldTf; color = ink; letterSpacing = 0.02f }
         val bodyP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx; typeface = tf; color = ink; letterSpacing = 0.03f }
-        val headP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 1.25f; typeface = boldTf; color = ink; letterSpacing = 0.04f }
+        val headP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 1.3f; typeface = boldTf; color = ink; letterSpacing = 0.02f }
+        val h3P = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 1.12f; typeface = boldTf; color = ink; letterSpacing = 0.02f }
+        val quoteP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 0.95f; typeface = tf; color = 0xFF5B6576.toInt(); letterSpacing = 0.03f }
+        fun rich(text: String): CharSequence {
+            val sb = android.text.SpannableStringBuilder()
+            Md.spans(text).forEach { (x, b) -> val st = sb.length; sb.append(kinsoku(x)); if (b) sb.setSpan(android.text.style.TypefaceSpan(boldTf), st, sb.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE) }
+            return sb
+        }
         val metaP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 30f; color = sub }
         val tagP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 28f; color = pal.tagText }
         val eyebrow = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 26f; color = accent; typeface = boldTf; letterSpacing = 0.12f }
@@ -268,11 +280,32 @@ object Render {
         val iw = w - 2 * m
         val blocks = mutableListOf<LBlock>()
         paras.forEachIndexed { i, p ->
-            val head = isHead(p, paras.size)
-            val lay = layout(if (head) p.trimStart('#', ' ') else p, if (head) headP else bodyP, w - 2 * m, lineMult)
-            val padTop = if (head && i > 0) beforeHead else 0f
-            val padBottom = if (head) afterHead else bodyGap
-            blocks += LBlock(lay, padTop, padTop + lay.height + padBottom)
+            val ml = Md.line(p, paras.size)
+            when (ml.kind) {
+                MdKind.H2, MdKind.H3 -> {
+                    val lay = layoutRaw(rich(ml.text), if (ml.kind == MdKind.H2) headP else h3P, iw, 1.3f)
+                    val padTop = if (i > 0) beforeHead else 0f
+                    blocks += LBlock(lay, padTop, padTop + lay.height + afterHead)
+                }
+                MdKind.QUOTE -> {
+                    val padX = 36f; val padY = 26f
+                    val lay = layoutRaw(rich(ml.text), quoteP, iw - padX.toInt() - 24, lineMult)
+                    blocks += LBlock(lay, padY + 8f, 8f + padY + lay.height + padY + 8f + bodyGap * 0.6f, indent = padX, deco = 1, decoH = padY * 2 + lay.height)
+                }
+                MdKind.HR -> blocks += LBlock(null, 0f, sizePx * 1.6f, deco = 2)
+                MdKind.BULLET, MdKind.NUM -> {
+                    val mark = if (ml.kind == MdKind.BULLET) "•" else ml.num + "."
+                    val ind = if (ml.kind == MdKind.BULLET) sizePx * 1.1f else sizePx * 1.5f
+                    val lay = layoutRaw(rich(ml.text), bodyP, iw - ind.toInt(), lineMult)
+                    val next = paras.getOrNull(i + 1)?.let { Md.line(it, paras.size).kind }
+                    val gap = if (next == MdKind.BULLET || next == MdKind.NUM) listGap else bodyGap
+                    blocks += LBlock(lay, 0f, lay.height + gap, indent = ind, mark = mark)
+                }
+                MdKind.P -> {
+                    val lay = layoutRaw(rich(ml.text), bodyP, iw, lineMult)
+                    blocks += LBlock(lay, 0f, lay.height + bodyGap)
+                }
+            }
             pics[i]?.forEach { (bmp, cap) ->
                 val ih = bmp.height * iw.toFloat() / bmp.width
                 val capL = if (cap.isNotBlank()) layout(cap, capP, iw, 1.2f) else null
@@ -301,21 +334,23 @@ object Render {
         }
         val segs = mutableListOf<Pair<Int, Int>>()
         var st = 0
-        while (h - st > LONG_MAX_H) {
-            val limit = st + LONG_MAX_H
-            val end = cuts.filter { it > st + LONG_MAX_H / 4 && it <= limit }.maxOrNull() ?: limit
+        val maxH = LONG_MAX_H_HD
+        while (h - st > maxH) {
+            val limit = st + maxH
+            val end = cuts.filter { it > st + maxH / 4 && it <= limit }.maxOrNull() ?: limit
             segs += st to end; st = end
         }
         segs += st to h
         val more = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 28f; color = sub; textAlign = Paint.Align.CENTER }
         segs.forEachIndexed { k, (a, e) ->
             val padT = if (k > 0) 60 else 0; val padB = if (k < segs.lastIndex) 90 else 0
-            val b = Bitmap.createBitmap(w, e - a + padT + padB, Bitmap.Config.ARGB_8888)
+            val b = Bitmap.createBitmap((w * HD).toInt(), ((e - a + padT + padB) * HD).toInt(), Bitmap.Config.ARGB_8888)
             val c = Canvas(b)
             c.drawColor(cream)
-            if (padB > 0) c.drawText("（${k + 1}/${segs.size}）接下一张 ↓", w / 2f, (b.height - 36).toFloat(), more)
+            c.scale(HD, HD)
+            if (padB > 0) c.drawText("（${k + 1}/${segs.size}）接下一张 ↓", w / 2f, (e - a + padT + padB - 36).toFloat(), more)
             c.save(); c.translate(0f, (padT - a).toFloat()); c.clipRect(0, a, w, e)
-            drawLong(c, m, titleL, paras, tags, tagP, tagRowH, tagGap, tagBg, accent, eyebrow, metaP, blocks)
+            drawLong(c, m, titleL, paras, tags, tagP, tagRowH, tagGap, tagBg, accent, eyebrow, metaP, blocks, ink)
             c.restore()
             sink(b, k, segs.size)
         }
@@ -323,7 +358,7 @@ object Render {
     }
 
     private fun drawLong(c: Canvas, m: Int, titleL: StaticLayout, paras: List<String>, tags: List<String>, tagP: TextPaint, tagRowH: Float, tagGap: Float, tagBg: Int, accent: Int,
-                         eyebrow: TextPaint, metaP: TextPaint, blocks: List<LBlock>) {
+                         eyebrow: TextPaint, metaP: TextPaint, blocks: List<LBlock>, ink: Int = 0xFF111827.toInt()) {
         val w = W
         var y = 100f
         c.drawText("落笔", m.toFloat(), y, eyebrow); y += 48f
@@ -342,8 +377,19 @@ object Render {
         y = cy + (if (tags.isNotEmpty()) tagRowH else 0f) + 40f
         c.drawRoundRect(m.toFloat(), y, m + 56f, y + 6f, 3f, 3f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = accent })
         y += 14f + 48f
+        val iw = w - 2 * m
         for (b in blocks) {
-            if (b.layout != null) { c.save(); c.translate(m.toFloat(), y + b.padTop); b.layout.draw(c); c.restore() }
+            if (b.deco == 1) {
+                val top = y + 8f
+                c.drawRoundRect(m.toFloat(), top, (w - m).toFloat(), top + b.decoH, 12f, 12f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFF1F4F8.toInt() })
+                c.drawRect(m.toFloat(), top, m + 6f, top + b.decoH, Paint().apply { color = 0xFFCBD5E1.toInt() })
+            }
+            if (b.deco == 2) c.drawRect(m.toFloat(), y + b.height / 2 - 1f, (w - m).toFloat(), y + b.height / 2 + 1f, Paint().apply { color = 0xFFE3E8EF.toInt() })
+            if (b.mark != null && b.layout != null) {
+                val mp = TextPaint(b.layout.paint).apply { color = ink }
+                c.drawText(b.mark, m.toFloat() + (if (b.mark == "•") 6f else 0f), y + b.padTop + b.layout.getLineBaseline(0), mp)
+            }
+            if (b.layout != null) { c.save(); c.translate(m.toFloat() + b.indent, y + b.padTop); b.layout.draw(c); c.restore() }
             if (b.bmp != null) {
                 val top = y + b.padTop
                 c.save(); val rr = android.graphics.RectF(m.toFloat(), top, (w - m).toFloat(), top + b.bmpH)
@@ -359,4 +405,5 @@ object Render {
 }
 
 /** 长图里的一块：一段文字，或一张插图（含图注） */
-class LBlock(val layout: StaticLayout?, val padTop: Float, val height: Float, val bmp: Bitmap? = null, val bmpH: Float = 0f, val cap: StaticLayout? = null)
+class LBlock(val layout: StaticLayout?, val padTop: Float, val height: Float, val bmp: Bitmap? = null, val bmpH: Float = 0f, val cap: StaticLayout? = null,
+             val indent: Float = 0f, val deco: Int = 0, val decoH: Float = 0f, val mark: String? = null)

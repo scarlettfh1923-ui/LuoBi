@@ -6,8 +6,10 @@ import org.json.JSONObject
 /** 文中插图：插在第 after 段（Export.paras 索引）之后 */
 data class Pic(val after: Int, val url: String, val thumb: String = "", val caption: String = "", val credit: String = "", val source: String = "", val local: String = "") {
     fun json(): JSONObject = JSONObject().put("after", after).put("url", url).put("thumb", thumb).put("caption", caption).put("credit", credit).put("source", source).put("local", local)
-    /** 图注下的来源小字，如「图片：Ann / via Pexels」 */
-    fun creditLine() = listOf(credit.takeIf { it.isNotBlank() }?.let { "图片：$it" }, source.takeIf { it.isNotBlank() }?.let { "via $it" }).filterNotNull().joinToString(" / ")
+    /** 来源小字：只写「图片来自 Pexafy」，不带作者和链接 */
+    fun creditLine() = if (source.isBlank()) "" else if (source == "AI") "图片由 AI 生成" else "图片来自 $source"
+    /** 图下的一行：有图注显示图注；来源小字受开关控制 */
+    fun captionLine(showCredit: Boolean) = listOf(caption, if (showCredit) creditLine() else "").filter { it.isNotBlank() }.joinToString(" · ")
     val isWeb get() = url.startsWith("http://") || url.startsWith("https://")
 }
 

@@ -46,7 +46,7 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
                 SettingRow(Ic.send, "发布渠道", (listOf("Notion", "语雀", "Telegraph") + channels.map { it.name }).joinToString("、")) { go("channels") }
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
-                SettingRow(Ic.pin, "常用渠道排序", (listOf("小红书") + s.pinned.map { ChannelIds.short(it, channels) }).joinToString(" · ")) { go("pinned") }
+                SettingRow(Ic.share, "分享栏", (s.shareBar.map { ChannelIds.short(it, channels) } + "更多").joinToString(" · ")) { go("sharebar") }
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
                 SettingRow(Ic.image, "图片来源", ImgSources.list(LocalContext.current).filter { it.on }.joinToString(" → ") { it.name.substringBefore("（") } + " · 文中插图") { go("imgsrc") }
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = P3.border)
@@ -77,7 +77,7 @@ fun SubPage(db: AppDb, r: Route.Sub, back: () -> Unit, go: (Route) -> Unit) {
                 "models" -> ModelsPage(back)
                 "channels" -> ChannelsPage(db, back, sub)
                 "channel" -> ChannelEdit(db, arg, back)
-                "pinned" -> PinnedPage(db, back)
+                "pinned", "sharebar" -> ShareBarPage(db, back)
                 "style" -> StylePage(back)
                 "length" -> LengthPage(back)
                 "imgsrc" -> if (r.page.contains(":")) ImgSrcEdit(r.page.substringAfter(":"), back) else ImgSrcPage(back, sub)
@@ -561,7 +561,7 @@ fun ChannelEdit(db: AppDb, id: Long, back: () -> Unit) {
         if (c.id != 0L) item { TextAction("删除这个渠道", P3.danger) { del = true } }
     }
     if (del) ConfirmDialog("删除「${c.name}」？", "密钥一起删除；常用渠道里的它也会移除。", "删除", true, onOk = {
-        scope.launch { db.channels().delete(c); Secure.set(ctx, "ch_${c.id}", ""); val s = Settings(ctx); s.pinned = s.pinned - "c${c.id}"; back() }
+        scope.launch { db.channels().delete(c); Secure.set(ctx, "ch_${c.id}", ""); val s = Settings(ctx); s.shareBar = s.shareBar - "c${c.id}"; back() }
     }) { del = false }
 }
 

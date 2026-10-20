@@ -70,7 +70,9 @@ class PicExportTest {
     @Test fun decodeBad() { assertTrue(Pics.decode("oops").isEmpty()); assertTrue(Pics.decode(null).isEmpty()) }
     @Test fun markdownHasImage() {
         val md = Export.markdown("T", body, emptyList(), listOf(pic, local))
-        assertTrue(md.contains("第一段。\n\n![夜里的书桌](https://img/1.jpg)\n*夜里的书桌 · 图片：Ann / via Pexels*"))
+        assertTrue(md.contains("第一段。\n\n![夜里的书桌](https://img/1.jpg)\n*夜里的书桌 · 图片来自 Pexels*"))
+        assertFalse(md.contains("Ann"))
+        assertTrue(Export.markdown("T", body, emptyList(), listOf(pic), showCredit = false).contains("*夜里的书桌*\n"))
         assertFalse(md.contains("file://"))
         assertTrue(md.indexOf("![夜里") < md.indexOf("## 小标题"))
     }
@@ -81,6 +83,11 @@ class PicExportTest {
         assertTrue(Export.htmlDoc("T", body, emptyList(), listOf(pic)).contains("<figure"))
     }
     @Test fun plainUnchanged() = assertEquals(Export.plain("T", body, emptyList()), "T\n\n$body")
-    @Test fun creditLine() { assertEquals("图片：Ann / via Pexels", pic.creditLine()); assertEquals("", Pic(0, "u").creditLine()) }
+    @Test fun creditLine() {
+        assertEquals("图片来自 Pexels", pic.creditLine()); assertEquals("", Pic(0, "u").creditLine()); assertEquals("图片来自 我的 Unsplash", Pic(0, "u", source = "我的 Unsplash").creditLine())
+        assertEquals("夜里的书桌", pic.captionLine(false)); assertEquals("", Pic(0, "u", source = "Pexafy").captionLine(false)); assertEquals("图片来自 Pexafy", Pic(0, "u", source = "Pexafy").captionLine(true))
+        assertFalse(Export.htmlBody("a", emptyList(), pics = listOf(Pic(0, "https://x", source = "Pexafy")), showCredit = false).contains("图片来自"))
+        assertTrue(Export.htmlBody("a", emptyList(), pics = listOf(Pic(0, "https://x", source = "Pexafy"))).contains("图片来自 Pexafy"))
+    }
     @Test fun byParaClamps() = assertEquals(setOf(0, 2), Pics.byPara(listOf(pic, local.copy(after = 50)), 3).keys)
 }

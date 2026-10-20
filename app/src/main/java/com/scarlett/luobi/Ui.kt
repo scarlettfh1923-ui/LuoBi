@@ -40,31 +40,38 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlin.math.roundToInt
 
 // ---------- 全局提示（Snackbar） ----------
-class SnackMsg(override val message: String, val ok: Boolean, override val actionLabel: String? = null, val onAction: (() -> Unit)? = null, val sub: String? = null) : SnackbarVisuals {
+class SnackMsg(override val message: String, val ok: Boolean, override val actionLabel: String? = null, val onAction: (() -> Unit)? = null, val sub: String? = null, val busy: Boolean = false) : SnackbarVisuals {
     override val withDismissAction = false
-    override val duration = if (actionLabel != null || !ok || message.length > 30) SnackbarDuration.Long else SnackbarDuration.Short
+    override val duration = if (busy) SnackbarDuration.Indefinite else if (actionLabel != null || !ok || message.length > 30) SnackbarDuration.Long else SnackbarDuration.Short
 }
 object Snack { val flow = MutableSharedFlow<SnackMsg>(extraBufferCapacity = 8) }
 private val errWords = listOf("失败", "错误", "请先", "无效", "超时", "不通", "已存在", "未检测")
 fun toast(c: Context, s: String) { Snack.flow.tryEmit(SnackMsg(s, errWords.none { s.contains(it) })) }
 fun snack(s: String, ok: Boolean = true, action: String? = null, onAction: (() -> Unit)? = null) { Snack.flow.tryEmit(SnackMsg(s, ok, action, onAction)) }
+/** 进行中提示（转圈），下一条提示出现时自动消失 */
+fun snackBusy(s: String) { Snack.flow.tryEmit(SnackMsg(s, true, busy = true)) }
 /** 失败提示：中文说明 + 小字原始信息 */
 fun snackErr(e: Throwable, prefix: String = "", action: String? = null, onAction: (() -> Unit)? = null) {
     val f = Errors.explain(e)
     Snack.flow.tryEmit(SnackMsg(prefix + f.title + "\n" + f.detail, false, action, onAction, f.raw.takeIf { it.isNotBlank() }?.let { "原始信息：" + it.take(160) }))
 }
 
+/** 提示样式 A：底部深色条 + 白字 + 浅蓝动作 */
 @Composable
 fun SoftSnackbar(d: SnackbarData) {
     val m = d.visuals as? SnackMsg
-    Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF3A2F27)).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Ico(if (m?.ok != false) R.drawable.ic_check else R.drawable.ic_xcircle, if (m?.ok != false) Color(0xFF9FD3A8) else Color(0xFFF2A190), 20)
+    Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF111827)).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        when {
+            m?.busy == true -> androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+            m?.ok != false -> SvgIcon(Ic.check, Color.White, 20.dp)
+            else -> SvgIcon(Ic.close, Color(0xFFF2A190), 20.dp)
+        }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(d.visuals.message, color = Color(0xFFF7EFE2), fontSize = 13.sp, lineHeight = 19.sp)
-            m?.sub?.let { Text(it, Modifier.padding(top = 3.dp), color = Color(0xFFB5A898), fontSize = 11.sp, lineHeight = 15.sp, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
+            Text(d.visuals.message, color = Color.White, fontSize = 14.sp, lineHeight = 20.sp)
+            m?.sub?.let { Text(it, Modifier.padding(top = 3.dp), color = Color(0xFF9CA3AF), fontSize = 11.sp, lineHeight = 15.sp, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
         }
-        d.visuals.actionLabel?.let { a -> Text(a, Modifier.padding(start = 10.dp).clickable { m?.onAction?.invoke(); d.performAction() }, color = Color(0xFFF6B8A6), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+        d.visuals.actionLabel?.let { a -> Text(a, Modifier.padding(start = 10.dp).clickable { m?.onAction?.invoke(); d.performAction() }, color = Color(0xFF9DB8FF), fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
     }
 }
 
