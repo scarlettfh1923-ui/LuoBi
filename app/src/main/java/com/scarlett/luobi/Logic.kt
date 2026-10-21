@@ -148,7 +148,7 @@ object CleanParse {
     }
 }
 
-data class Article(val title: String, val body: String, val tags: List<String>)
+data class Article(val title: String, val body: String, val tags: List<String>, val category: String = "")
 
 /** 写作结果：优先读 JSON {title, body, tags}，失败时把纯文本当正文 */
 object ArticleParse {
@@ -157,7 +157,7 @@ object ArticleParse {
         if (j != null && j.optString("body").isNotBlank()) {
             val ta = j.optJSONArray("tags")
             val tags = if (ta != null) (0 until ta.length()).map { ta.optString(it) } else j.optString("tags").split(" ", ",", "，")
-            return Article(j.optString("title").trim().ifBlank { fallbackTitle }, j.optString("body").trim(), cleanTags(tags))
+            return Article(j.optString("title").trim().ifBlank { fallbackTitle }, j.optString("body").trim(), cleanTags(tags), Categories.validate(j.optString("category")))
         }
         var t = text.replace(Regex("<think>[\\s\\S]*?</think>"), "").trim()
         Regex("```(?:markdown|md)?\\s*([\\s\\S]*?)```").find(t)?.let { t = it.groupValues[1].trim() }

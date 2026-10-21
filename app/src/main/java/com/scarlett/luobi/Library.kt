@@ -60,6 +60,8 @@ fun LibraryScreen(
     val notes = notesRaw?.filter { it.root !in gone }
     val templates by db.templates().all().collectAsState(initial = emptyList())
     var tplFilter by remember { mutableStateOf("") }
+    var catFilter by remember { mutableStateOf("") }
+    var catMenu by remember { mutableStateOf(false) }
     var q by remember { mutableStateOf("") }
     var filter by remember { mutableIntStateOf(0) }
     var sort by remember { mutableIntStateOf(s.libSort.coerceIn(0, 3)) }
@@ -78,7 +80,7 @@ fun LibraryScreen(
     }
     val counts = listOf(match.size, match.count { it.favorite })
     val filtered = match.filter { n ->
-        (filter != 1 || n.favorite) && (tplFilter.isBlank() || n.templateName == tplFilter)
+        (filter != 1 || n.favorite) && (tplFilter.isBlank() || n.templateName == tplFilter) && (catFilter.isBlank() || n.category == catFilter)
     }
     val shown = when (sort) {
         1 -> filtered.sortedBy { it.createdAt }
@@ -124,6 +126,11 @@ fun LibraryScreen(
                             openSwipeId = null; setManaging(true); selected = emptySet()
                         }.padding(horizontal = 6.dp, vertical = 6.dp), fontSize = 14.sp, color = cs.primary, fontWeight = FontWeight.SemiBold)
                     }
+                    // 1.15 方案 A：「全部分类 ⌄」→ iOS 下拉菜单
+                    Box(Modifier.padding(start = 16.dp, bottom = 4.dp)) {
+                        CategoryMenuButton(if (catFilter.isBlank()) "全部分类" else catFilter) { catMenu = true }
+                        CategoryMenu(catMenu, Desk.counts(match), catFilter, bottom, onPick = { catFilter = it; catMenu = false }) { catMenu = false }
+                    }
                 }
             }
             item {
@@ -138,8 +145,8 @@ fun LibraryScreen(
                 Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 10.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     // 1.5：筛选统一为分段胶囊，选中实心
                     Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("全部", "收藏").forEachIndexed { i, l -> SegChip("$l ${counts[i]}", filter == i) { filter = i } }
-                        all.map { it.templateName }.filter { it.isNotBlank() }.distinct().let { names -> if (names.size > 1) names.forEach { nm -> SegChip(nm, tplFilter == nm) { tplFilter = if (tplFilter == nm) "" else nm } } }
+                        // 1.15：分类筛选移到标题下的下拉；「收藏」仍可在右侧排序里选
+                        if (catFilter.isNotBlank()) Text("${catFilter} · ${shown.size} 篇", fontSize = 12.sp, color = t3())
                     }
                     Box {
                         Row(Modifier.clip(Sq.s).clickable { sortMenu = true }.padding(horizontal = 6.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -165,6 +172,7 @@ fun LibraryScreen(
             }
             if (notes != null && shown.isEmpty()) item {
                 if (all.isEmpty()) EmptyState(R.drawable.ic_book, "还没有文章", "这里会保存你生成的每一篇文章，\n包括原始输入、意图、模板和最终提示词。", "去写第一篇", goWrite)
+                else if (catFilter.isNotBlank() && q.isBlank()) EmptyState(R.drawable.ic_search, "「$catFilter」下还没有文章", "生成时 AI 会自动归类，也可以在阅读页点标题上方的分类修改", "查看全部分类") { catFilter = "" }
                 else EmptyState(R.drawable.ic_search, "没有符合条件的文章", "换个关键词或筛选试试", null)
             }
             if (sort >= 2) {
@@ -179,7 +187,7 @@ fun LibraryScreen(
                         onTapDelete = { confirmOne = n }) }
                 }
             } else {
-                shown.groupBy { dayLabel(it.createdAt) }.forEach { (d, list) ->
+                shown.groupBy { Desk.section(it.createdAt) }.forEach { (d, list) ->
                     item(key = "d$d$sort") { SectionLabel(d, Modifier.padding(start = 16.dp)) }
                     items(list, key = { it.id }) { n ->
                         Box(Modifier.animateItem(fadeInSpec = Motion.enter(Motion.SHORT), placementSpec = Motion.enter(), fadeOutSpec = Motion.exit())) { LibraryRow(n, managing, n.id in selected, openSwipeId == n.id,
@@ -258,10 +266,11 @@ private fun ElevCard(modifier: Modifier = Modifier, selected: Boolean = false, o
 private fun NoteTitleBlock(n: Note, showHeart: Boolean, onToggleFav: () -> Unit = {}) {
     val cs = MaterialTheme.colorScheme
     // 1.5：标题一行 + 摘要一行 + 一行弱化信息
-    Text(n.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 23.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = P3.text)
-    Text(Md.snippet(n.body), Modifier.padding(top = 4.dp), fontSize = 13.sp, color = P3.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    Row(Modifier.padding(top = 6.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(listOf(n.templateName, java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA).format(java.util.Date(n.createdAt)), "%,d".format(n.body.length) + " 字", if (n.version > 1) "v${n.version}" else "").filter { it.isNotBlank() }.joinToString(" · "), Modifier.weight(1f), fontSize = 12.sp, color = t3(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    // 1.15 方案 A：蓝色小分类 + 标题 + 日期 · 字数
+    if (n.category.isNotBlank()) Text(n.category, Modifier.padding(bottom = 3.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = P3.accent, maxLines = 1)
+    Text(n.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = P3.text)
+    Row(Modifier.padding(top = 4.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(listOf(java.text.SimpleDateFormat("M月d日", java.util.Locale.CHINA).format(java.util.Date(n.createdAt)), "%,d".format(n.body.length) + " 字", if (n.version > 1) "第 ${n.version} 版" else "").filter { it.isNotBlank() }.joinToString(" · "), Modifier.weight(1f), fontSize = 12.sp, color = t3(), maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (showHeart) Box(Modifier.size(32.dp).clip(Sq.full).clickable { onToggleFav() }, contentAlignment = Alignment.Center) {
             SvgIcon(Ic.heart, if (n.favorite) P3.accent else t3(), 18.dp, if (n.favorite) P3.accent else null, "收藏")
         }

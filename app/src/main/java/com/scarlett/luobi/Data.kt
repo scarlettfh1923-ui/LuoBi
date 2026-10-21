@@ -26,6 +26,10 @@ data class Note(
     @ColumnInfo(defaultValue = "[]") val images: String = "[]",
     /** 1.12：事实校对缓存（JSON：issues/selected/correction/applied…）；空=从未校对 */
     @ColumnInfo(defaultValue = "") val factReportJson: String = "",
+    /** 1.15：文章分类（Categories.LIST 之一；空 = 未分类） */
+    @ColumnInfo(defaultValue = "") val category: String = "",
+    /** 1.15：AI 生成时推荐的分类（选择器里标「AI 推荐」） */
+    @ColumnInfo(defaultValue = "") val categoryAi: String = "",
 ) {
     fun pics() = Pics.decode(images)
     fun tagList() = tags.split(" ", ",", "，").map { it.trim().trimStart('#') }.filter { it.isNotEmpty() }
@@ -68,6 +72,12 @@ data class Channel(
     @Query("SELECT * FROM notes n WHERE n.version = (SELECT MAX(version) FROM notes m WHERE m.rootId = n.rootId) ORDER BY createdAt DESC LIMIT :n") suspend fun recent(n: Int): List<Note>
     @Query("SELECT * FROM notes WHERE rootId=:root ORDER BY version") fun versions(root: Long): Flow<List<Note>>
     @Query("SELECT MAX(version) FROM notes WHERE rootId=:root") suspend fun maxVersion(root: Long): Int?
+    /** 1.15：按分类筛选（每个 root 只取最新版），按日期新→旧；给案头日后的分类下拉用 */
+    @Query("SELECT * FROM notes n WHERE n.category = :cat AND n.version = (SELECT MAX(version) FROM notes m WHERE m.rootId = n.rootId) ORDER BY createdAt DESC")
+    fun byCategory(cat: String): Flow<List<Note>>
+    /** 1.15：有文章的分类及篇数 */
+    @Query("SELECT category AS name, COUNT(*) AS count FROM notes n WHERE n.category != '' AND n.version = (SELECT MAX(version) FROM notes m WHERE m.rootId = n.rootId) GROUP BY category")
+    suspend fun categoryCounts(): List<CategoryCount>
     @Insert suspend fun insert(n: Note): Long
     @Update suspend fun update(n: Note)
     @Query("UPDATE notes SET favorite=:f WHERE rootId=:root OR (rootId = 0 AND id = :root)") suspend fun setFav(root: Long, f: Boolean)
@@ -75,6 +85,9 @@ data class Channel(
     @Query("DELETE FROM notes WHERE rootId IN (:roots) OR (rootId = 0 AND id IN (:roots))") suspend fun deleteRoots(roots: List<Long>)
     /** 1.8：启动时修复遗留的 rootId=0 行 */
     @Query("UPDATE notes SET rootId = id WHERE rootId = 0") suspend fun repairRoots()
+    // 1.15 复查：只改一个字段，避免用旧的 Note 整行覆盖（把刚改正的正文 / 分类写回旧值）
+    @Query("UPDATE notes SET factReportJson=:json WHERE id=:id") suspend fun setFactReport(id: Long, json: String)
+    @Query("UPDATE notes SET category=:c WHERE rootId=:root OR (rootId = 0 AND id = :root)") suspend fun setCategory(root: Long, c: String)
     @Query("DELETE FROM notes WHERE id=:id") suspend fun deleteId(id: Long)
 }
 @Dao interface TemplateDao {
@@ -104,7 +117,7 @@ data class Channel(
     @Delete suspend fun delete(c: Channel)
 }
 
-@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class], version = 4, exportSchema = false)
+@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class], version = 5, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun notes(): NoteDao
     abstract fun templates(): TemplateDao
@@ -113,7 +126,7 @@ abstract class AppDb : RoomDatabase() {
     companion object {
         @Volatile private var inst: AppDb? = null
         fun get(c: Context): AppDb = inst ?: synchronized(this) {
-            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { inst = it }
+            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { inst = it }
         }
     }
 }
@@ -370,3 +383,10 @@ val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
 val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) { db.execSQL("ALTER TABLE notes ADD COLUMN factReportJson TEXT NOT NULL DEFAULT ''") }
 }
+
+/** 1.15：notes 增加 category 列（非破坏，旧文章为空） */
+val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) { db.execSQL("ALTER TABLE notes ADD COLUMN category TEXT NOT NULL DEFAULT ''"); db.execSQL("ALTER TABLE notes ADD COLUMN categoryAi TEXT NOT NULL DEFAULT ''") }
+}
+
+data class CategoryCount(val name: String, val count: Int)

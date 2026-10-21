@@ -59,7 +59,7 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
             "html" -> { val doc = Export.htmlDoc(title, n.body, tags, n.pics(), Settings(ctx).showCredit); Share.shareDoc(ctx, title, "html", "text/html", doc) }
             "md" -> { val doc = Export.markdown(title, n.body, tags, n.pics(), Settings(ctx).showCredit); Share.shareDoc(ctx, title, "md", "text/markdown", doc) }
             "copy" -> { Share.copy(ctx, "全文", fullText()); snack("已复制全文") }
-            "notion" -> bg("Notion") { val r = Notion.uploadFull(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "Notion", r.url); "已上传到 Notion，链接已复制" + if (r.coverNote.isNotBlank()) "（${r.coverNote}）" else "" }
+            "notion" -> bg("Notion") { val r = Notion.uploadFull(ctx, title, n.body, tags, n.pics(), n.category, n.model); Share.copy(ctx, "Notion", r.url); "已上传到 Notion，链接已复制" + if (r.coverNote.isNotBlank()) "（${r.coverNote}）" else "" }
             "yuque" -> bg("语雀") { val u = Yuque.upload(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "语雀", u); "已上传到语雀，链接已复制" }
             "telegraph" -> bg("Telegraph") { val u = Telegraph.upload(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "Telegraph", u); "已发布：$u（链接已复制）" }
             else -> if (id.startsWith("c")) {
@@ -118,7 +118,7 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
 
 /** 「更多」面板（列表 B）：所有不在分享栏里的渠道 + 编辑分享栏 */
 @Composable
-fun SharePanel(custom: List<Channel>, act: ChannelActions, editBar: () -> Unit, onFactCheck: () -> Unit = {}, dismiss: () -> Unit) {
+fun SharePanel(custom: List<Channel>, act: ChannelActions, editBar: () -> Unit, onFactCheck: () -> Unit = {}, info: String = "", versionsLabel: String = "", onVersions: () -> Unit = {}, dismiss: () -> Unit) {
     val ctx = LocalContext()
     val bar = remember { Settings(ctx).shareBar }
     val items = ShareBar.others(ChannelIds.all(custom).map { it.id }, bar).mapNotNull { ChannelIds.def(it, custom) }
@@ -130,6 +130,18 @@ fun SharePanel(custom: List<Channel>, act: ChannelActions, editBar: () -> Unit, 
                 Row(Modifier.clip(Sq.s).clickable { dismiss(); editBar() }.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(Ic.edit, P3.accent, 14.dp); Text(" 编辑分享栏", fontSize = 13.sp, color = P3.accent)
                 }
+            }
+            // 1.15：阅读页去掉的「模板 · 模型 · 第 N 版」放这里，点开版本记录
+            if (info.isNotBlank()) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(Sq.m).clickable { onVersions() }, verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { SvgIcon(Ic.info, P3.text, 18.dp) }
+                    Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                        Text("文章信息 · 版本记录", fontSize = 15.sp, color = P3.text)
+                        Text(info, fontSize = 12.sp, color = P3.text3, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                    if (versionsLabel.isNotBlank()) Text(versionsLabel, fontSize = 12.sp, color = P3.accent)
+                }
+                HorizontalDivider(Modifier.padding(start = 34.dp), thickness = Dp.Hairline, color = P3.border)
             }
             Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(Sq.m).clickable { onFactCheck() }, verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { SvgIcon(Ic.search, P3.text, 18.dp) }

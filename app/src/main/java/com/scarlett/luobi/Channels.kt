@@ -101,7 +101,7 @@ object Notion {
     fun looksLikeDatabaseLink(input: String) = Regex("[?&]v=[0-9a-fA-F]{32}").containsMatchIn(input)
     @Deprecated("用 parseId") fun idOf(s: String): String = parseId(s) ?: s.trim()
 
-    data class Target(val type: String, val id: String, val parentJson: JSONObject, val titleProp: String, val tested: List<String>)
+    data class Target(val type: String, val id: String, val parentJson: JSONObject, val titleProp: String, val tested: List<String>, val schema: JSONObject = JSONObject())
 
     private fun call(token: String, method: String, path: String, body: String? = null): Pair<Int, String> = transport(method, "$API$path", h(token), body)
 
@@ -142,12 +142,12 @@ object Notion {
             val (c2, t2) = call(token, "GET", dsPath)
             if (c2 !in 200..299) throw fail(type, "GET", dbPath, c, t, "也试了 GET /v1$dsPath：HTTP $c2。请确认数据库右上角「…→ 连接」里已添加你的集成。")
             dsId = id
-            return Target("database", id, JSONObject().put("type", "data_source_id").put("data_source_id", dsId), titleOf(JSONObject(t2), titlePropSetting), tested)
+            return Target("database", id, JSONObject().put("type", "data_source_id").put("data_source_id", dsId), titleOf(JSONObject(t2), titlePropSetting), tested, JSONObject(t2).optJSONObject("properties") ?: JSONObject())
         } else throw fail(type, "GET", dbPath, c, t)
         val dsPath = "/data_sources/$dsId"; tested += "GET /v1$dsPath"
         val (c3, t3) = call(token, "GET", dsPath)
         if (c3 !in 200..299) throw fail(type, "GET", dsPath, c3, t3)
-        return Target("database", id, JSONObject().put("type", "data_source_id").put("data_source_id", dsId), titleOf(JSONObject(t3), titlePropSetting), tested)
+        return Target("database", id, JSONObject().put("type", "data_source_id").put("data_source_id", dsId), titleOf(JSONObject(t3), titlePropSetting), tested, JSONObject(t3).optJSONObject("properties") ?: JSONObject())
     }
     private fun titleOf(ds: JSONObject, setting: String): String {
         if (setting.isNotBlank()) return setting
@@ -181,11 +181,14 @@ object Notion {
     data class Result(val url: String, val coverNote: String = "")
 
     suspend fun upload(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String = uploadFull(ctx, title, body, tags, pics).url
-    suspend fun uploadFull(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): Result = withContext(Dispatchers.IO) {
+    suspend fun uploadFull(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList(), category: String = "", writerModel: String = ""): Result = withContext(Dispatchers.IO) {
         val s = Settings(ctx); val token = Secure.get(ctx, "notion_token")
         if (token.isBlank() || s.notionTarget.isBlank()) throw ConfigError("还没有配置 Notion。请到「设定 → 发布渠道 → Notion」填集成 Token 和目标页面 / 数据库。")
         val cover = firstImage(pics, Export.paras(body).size)?.let { coverSourceOf(it) }
-        publishFull(token, s.notionType, s.notionTarget, s.notionTitleProp, s.notionTagsProp, title, blocks(body, tags, pics, s.showCredit), tags, cover)
+        // 摘要只在数据库目标、且发布时现生成（用写作模型）；失败不挡发布
+        val summarize: () -> String = { kotlinx.coroutines.runBlocking { Summary.make(ctx, title, body, writerModel) } }
+        publishFull(token, s.notionType, s.notionTarget, s.notionTitleProp, s.notionTagsProp, title, blocks(body, tags, pics, s.showCredit), tags, cover,
+            Meta(category, summarize))
     }
     fun publish(token: String, type: String, rawTarget: String, titleProp: String, tagsProp: String, title: String, bl: List<JSONObject>, tags: List<String>): String =
         publishFull(token, type, rawTarget, titleProp, tagsProp, title, bl, tags, null).url
@@ -245,13 +248,46 @@ object Notion {
         ""
     } catch (e: Throwable) { "封面没设上（文章已发布）：" + (e.message ?: e.javaClass.simpleName).take(200) }
 
-    fun publishFull(token: String, type: String, rawTarget: String, titleProp: String, tagsProp: String, title: String, bl: List<JSONObject>, tags: List<String>, cover: CoverSource?): Result {
+    /** 1.15：数据库属性要填的内容；summarize 只在数据库里有「文章摘要」时才调用 */
+    class Meta(val category: String = "", val summarize: (() -> String)? = null)
+    const val PROP_CATEGORY = "文章分类"; const val PROP_TAGS = "主题标签"; const val PROP_SUMMARY = "文章摘要"
+    /** 按数据源 schema 填「文章分类 / 主题标签 / 文章摘要」：只填存在且类型兼容的；返回跳过/失败说明 */
+    fun fillProps(props: JSONObject, schema: JSONObject, tags: List<String>, meta: Meta): List<String> {
+        val notes = mutableListOf<String>()
+        fun typeOf(n: String) = schema.optJSONObject(n)?.optString("type").orEmpty()
+        fun check(n: String, want: String): Boolean = when (typeOf(n)) {
+            want -> true
+            "" -> { notes += "数据库里没有「$n」"; false }
+            else -> { notes += "「$n」类型是 ${typeOf(n)}，不是 $want，已跳过"; false }
+        }
+        if (meta.category.isNotBlank() && check(PROP_CATEGORY, "select"))
+            props.put(PROP_CATEGORY, JSONObject().put("select", JSONObject().put("name", meta.category)))
+        if (tags.isNotEmpty() && check(PROP_TAGS, "multi_select"))
+            props.put(PROP_TAGS, JSONObject().put("multi_select", JSONArray().apply { tags.distinct().forEach { put(JSONObject().put("name", it.replace(",", " ").take(100))) } }))
+        if (meta.summarize != null && check(PROP_SUMMARY, "rich_text")) {
+            val sum = runCatching { meta.summarize.invoke().trim() }
+            val text = sum.getOrNull().orEmpty()
+            if (text.isNotBlank()) props.put(PROP_SUMMARY, JSONObject().put("rich_text", rt(text.take(1900))))
+            else notes += "摘要没生成：" + (sum.exceptionOrNull()?.message ?: "返回为空").take(80)
+        }
+        return notes
+    }
+    fun publishFull(token: String, type: String, rawTarget: String, titleProp: String, tagsProp: String, title: String, bl: List<JSONObject>, tags: List<String>, cover: CoverSource?, meta: Meta = Meta()): Result {
         val tgt = resolve(token, type, rawTarget, titleProp)
         val props = JSONObject().put(tgt.titleProp, JSONObject().put("title", rt(title)))
-        if (tgt.type == "database" && tagsProp.isNotBlank() && tags.isNotEmpty())
+        if (tgt.type == "database" && tagsProp.isNotBlank() && tagsProp != PROP_TAGS && tags.isNotEmpty())
             props.put(tagsProp, JSONObject().put("multi_select", JSONArray().apply { tags.forEach { put(JSONObject().put("name", it.replace(",", " "))) } }))
+        val propNotes = if (tgt.type == "database") fillProps(props, tgt.schema, tags, meta) else emptyList()
         val req = JSONObject().put("parent", tgt.parentJson).put("properties", props).put("children", JSONArray(bl.take(100)))
-        val (code, txt) = call(token, "POST", "/pages", req.toString())
+        var (code, txt) = call(token, "POST", "/pages", req.toString())
+        var extra = propNotes
+        // 属性值被拒（例如选项不允许新建）→ 去掉 1.15 新属性再发一次，保证文章先发出去
+        if (code == 400 && tgt.type == "database" && listOf(PROP_CATEGORY, PROP_TAGS, PROP_SUMMARY).any { props.has(it) }) {
+            val msg = runCatching { JSONObject(txt).optString("message") }.getOrDefault("").take(100)
+            listOf(PROP_CATEGORY, PROP_TAGS, PROP_SUMMARY).forEach { props.remove(it) }
+            val r2 = call(token, "POST", "/pages", req.put("properties", props).toString()); code = r2.first; txt = r2.second
+            extra = extra + "分类/标签/摘要没写进去：$msg"
+        }
         if (code !in 200..299) throw fail(type, "POST", "/pages", code, txt)
         val page = JSONObject(txt)
         bl.drop(100).chunked(100).forEach { chunk ->
@@ -260,7 +296,7 @@ object Notion {
             if (c2 !in 200..299) throw fail(type, "PATCH", path, c2, t2, "页面已创建，但后半段正文追加失败。")
         }
         val note = if (cover != null && page.optString("id").isNotBlank()) setCover(token, page.optString("id"), cover) else ""
-        return Result(page.optString("url"), note)
+        return Result(page.optString("url"), (listOf(note) + extra).filter { it.isNotBlank() }.joinToString("；"))
     }
     suspend fun test(ctx: Context): String = withContext(Dispatchers.IO) {
         val token = Secure.get(ctx, "notion_token"); val s = Settings(ctx)

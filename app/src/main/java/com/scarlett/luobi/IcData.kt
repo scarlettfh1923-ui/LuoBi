@@ -24,6 +24,7 @@ object Ic {
     val heart = listOf("M12 19.5s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.5c0 5.6-7.5 10-7.5 10z")
     val plus = listOf("M12 5v14M5 12h14")
     val back = listOf("M15 5l-7 7 7 7")
+    val chevronDown = listOf("M6 9.5l6 6 6-6")
     val chevron = listOf("M9.5 6l6 6-6 6")
     val close = listOf("M6 6l12 12M18 6L6 18")
     val check = listOf("M5 12.5l4.5 4.5L19 7.5")

@@ -112,10 +112,11 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     var factSheet by remember { mutableStateOf(false) }
     var factFromCache by remember { mutableStateOf(false) }
     var factFocus by remember { mutableStateOf<String?>(null) }
+    var catSheet by remember { mutableStateOf(false) }
     fun persistFact(r: FactReport?) {
         factReport = r
         val json = r?.let { FactCheck.encodeReport(it) }.orEmpty()
-        scope.launch { db.notes().update(n.copy(factReportJson = json)) }
+        scope.launch { db.notes().setFactReport(n.id, json) }
     }
     fun openFactSheet(fromCache: Boolean) {
         if (factReport == null) return
@@ -206,7 +207,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
             Crossfade(tab, Modifier.fillMaxSize().backdropSource(backdrop), label = "tab") { t ->
                 if (t == 0) Box(Modifier.fillMaxSize()) {
                     ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding() + 16.dp, top = pad.calculateTopPadding(), openVersions = { verMenu = true }, onTags = { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } }, il = il, editCaption = { capEdit = it },
-                        highlights = factReport?.issues?.filter { !it.applied }?.map { it.span }?.filter { it.isNotBlank() } ?: emptyList(), focusSpan = factFocus)
+                        highlights = factReport?.issues?.filter { !it.applied }?.map { it.span }?.filter { it.isNotBlank() } ?: emptyList(), focusSpan = factFocus, onCategory = { catSheet = true })
                     FactProgressChip(factBusy, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp))
                 }
                 else Box(Modifier.padding(top = pad.calculateTopPadding())) { Gallery(imgs, style, { style = it; s.style = it }, spacing, { spacing = it; s.cardSpacing = it }, ratio, { ratio = it; s.cardRatio = it }, s.imgOn, bgBusy, aiBg != null, pal, pad.calculateBottomPadding(),
@@ -253,7 +254,9 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
             dismissButton = { TextButton(onClick = { capEdit = null }, shape = Sq.full) { Text("取消", color = P3.text2) } })
     }
     if (xhsSheet) XhsSheet(n, imgs, pal) { xhsSheet = false }
-    if (panel) SharePanel(channels, act, { panel = false; goSub("sharebar") }, onFactCheck = { panel = false; onFactIcon() }) { panel = false; barTick++ }
+    if (panel) SharePanel(channels, act, { panel = false; goSub("sharebar") }, onFactCheck = { panel = false; onFactIcon() },
+        info = ArticleInfo.line(n), versionsLabel = if (versions.size > 1) "共 ${versions.size} 版 ›" else "", onVersions = { panel = false; verMenu = true }) { panel = false; barTick++ }
+    if (catSheet) CategorySheet(n.category, n.categoryAi, onPick = { c -> scope.launch { db.notes().setCategory(n.root, c) } }) { catSheet = false }
     if (factSheet && factReport != null) FactSheet(
         report = factReport!!,
         fromCache = factFromCache,
@@ -268,7 +271,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
 
 @Composable
 fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, family: FontFamily, bottom: Dp, top: Dp = 0.dp, openVersions: () -> Unit, onTags: (List<String>) -> Unit,
-                il: Illustrator? = null, editCaption: (Pic) -> Unit = {}, highlights: List<String> = emptyList(), focusSpan: String? = null) {
+                il: Illustrator? = null, editCaption: (Pic) -> Unit = {}, highlights: List<String> = emptyList(), focusSpan: String? = null, onCategory: () -> Unit = {}) {
     val paras = Export.paras(n.body)
     val ctx = LocalContext.current
     val byPara = Pics.byPara(n.pics(), paras.size)
@@ -298,15 +301,13 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
     }
     Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 24.dp)) {
         Spacer(Modifier.height(top + 12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(Sq.s).clickable { openVersions() }) {
-            Text(listOf(n.templateName.ifBlank { "文章" }, n.model.substringBefore(" · ").ifBlank { "" } + n.model.substringAfter(" · ", "").let { if (it.isNotBlank()) " $it" else "" }, "第 ${n.version} 版")
-                .filter { it.isNotBlank() }.joinToString("  ·  "), color = pal.sub, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (versions.size > 1) Text("  共 ${versions.size} 版 ›", color = pal.accent, fontSize = 13.sp)
-        }
-        Spacer(Modifier.height(8.dp))
+        // 1.15 方案 A：去掉灰色模板/模型/版本行（移到「更多」面板）；标题上方是分类标签
+        CategoryLabel(n.category, pal.accent, pal.sub, onCategory)
+        Spacer(Modifier.height(6.dp))
         Text(n.title, color = pal.text, fontFamily = family, fontWeight = FontWeight.Bold, fontSize = (font + 8).sp, lineHeight = ((font + 8) * 1.38f).sp)
         Spacer(Modifier.height(10.dp))
-        Text("${timeLabel(n.createdAt)} · ${"%,d".format(n.body.length)} 字 · 约 ${readMinutes(n.body.length)} 分钟", color = pal.sub, fontSize = 13.sp, fontFamily = Mono)
+        // 1.15 复查：窄屏时整段换行，不把「约 1 / 分钟」拆开
+        Text(listOf(timeLabel(n.createdAt), "${"%,d".format(n.body.length)} 字", "约 ${readMinutes(n.body.length)} 分钟").joinToString(" · ") { it.replace(' ', '\u00A0') }, color = pal.sub, fontSize = 13.sp, fontFamily = Mono)
         Spacer(Modifier.height(12.dp))
         TagEditor(n.tagList(), onTags, pal.accent, pal.bg, pal.text, pal.dark, collapsible = true)
         Spacer(Modifier.height(16.dp))

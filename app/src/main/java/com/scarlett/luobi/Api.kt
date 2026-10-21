@@ -113,7 +113,7 @@ object Ai {
         return IntentParse.parse(txt, raw)
     }
 
-    const val OUT_RULE = "只输出一个 JSON 对象：{\"title\":\"标题\",\"body\":\"正文 Markdown：段落之间空一行；小标题单独一行，以 ## 开头（下一级用 ###）；小标题必须是有内容的短语（概括这一节讲什么），不要只写数字或序号（如 ## 1、## 一、## 01）；全文挑 1–3 句最有力的金句用 **加粗**（金句放在段落里加粗，或单独一行用 > 引用；金句绝不能用 # 当标题）；需要时可用 > 引用、- 列表、--- 分隔线；不要表格和代码块\",\"tags\":[\"标签1\",\"标签2\"]}，tags 为 4–5 个不带 # 的主题标签，不要输出其它内容。"
+    val OUT_RULE = "只输出一个 JSON 对象：{\"title\":\"标题\",\"body\":\"正文 Markdown：段落之间空一行；小标题单独一行，以 ## 开头（下一级用 ###）；小标题必须是有内容的短语（概括这一节讲什么），不要只写数字或序号（如 ## 1、## 一、## 01）；全文挑 1–3 句最有力的金句用 **加粗**（金句放在段落里加粗，或单独一行用 > 引用；金句绝不能用 # 当标题）；需要时可用 > 引用、- 列表、--- 分隔线；不要表格和代码块\",\"tags\":[\"标签1\",\"标签2\"],\"category\":\"分类\"}，tags 为 4–5 个不带 # 的主题标签；category 必须从下列 15 个里原样选 1 个：" + Categories.LIST.joinToString("、") + "，不要输出其它内容。"
 
     /** 最终提示词 = 模板填值（空变量整行删）+ 篇幅 */
     fun finalPrompt(tpl: String, values: Map<String, String>, cleaned: String, attachRaw: Boolean, length: Int, range: Pair<Int, Int> = Lengths.DEFAULT[length.coerceIn(0, 2)], known: Set<String> = Vars.defaultKnown): String {
@@ -140,7 +140,7 @@ object Ai {
         if (a.body.isBlank()) throw AiFormatError("缺少正文", txt.take(200))
         val db = AppDb.get(ctx)
         val n = Note(title = a.title, body = a.body, tags = a.tags.joinToString(" "), raw = d.raw, cleaned = d.cleaned,
-            intent = JSONObject(d.values as Map<*, *>).toString(), templateId = d.templateId, templateName = d.templateName, model = "${t.name} · ${t.model}", finalPrompt = prompt)
+            intent = JSONObject(d.values as Map<*, *>).toString(), category = a.category, categoryAi = a.category, templateId = d.templateId, templateName = d.templateName, model = "${t.name} · ${t.model}", finalPrompt = prompt)
         val id = db.notes().insert(n); db.notes().update(n.copy(id = id, rootId = id))
         return id
     }
@@ -156,7 +156,7 @@ object Ai {
         val a = ArticleParse.parse(txt, n.title)
         val v = (db.notes().maxVersion(n.root) ?: n.version) + 1
         return db.notes().insert(n.copy(id = 0, createdAt = System.currentTimeMillis(), title = a.title, body = a.body,
-            tags = (a.tags.ifEmpty { n.tagList() }).joinToString(" "), rootId = n.root, version = v, instruction = instruction, model = "${t.name} · ${t.model}", factReportJson = ""))
+            tags = (a.tags.ifEmpty { n.tagList() }).joinToString(" "), rootId = n.root, version = v, instruction = instruction, model = "${t.name} · ${t.model}", factReportJson = "", category = if (n.category.isNotBlank() && n.category != n.categoryAi) n.category else a.category.ifBlank { n.category }, categoryAi = a.category.ifBlank { n.categoryAi }))
     }
 
     /** 在任意嵌套的 JSON 里找第一张 base64 图片（Gemini generateContent 的 inlineData / Interactions 的 image 块都适用） */
