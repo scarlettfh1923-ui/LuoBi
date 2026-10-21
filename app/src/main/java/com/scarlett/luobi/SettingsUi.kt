@@ -131,7 +131,7 @@ fun TemplatesPage(db: AppDb, back: () -> Unit, go: (String) -> Unit) {
                         Row(Modifier.padding(top = 6.dp)) {
                             Spacer(Modifier.weight(1f))
                             TextAction("复制") { scope.launch { val nm = Names.unique(t.name + "（副本）", list.map { it.name }); db.templates().insert(t.copy(id = 0, name = nm, builtIn = false, sort = 100, updatedAt = System.currentTimeMillis())); snack("已复制为「$nm」") } }
-                            if (t.builtIn && Defaults.builtinPrompt(t.name) != null && Defaults.builtinPrompt(t.name) != t.prompt) TextAction("恢复默认", P3.text2) { scope.launch { db.templates().update(t.copy(prompt = Defaults.builtinPrompt(t.name)!!, updatedAt = System.currentTimeMillis())); snack("已恢复默认") } }
+                            if (t.builtIn && Defaults.builtinPrompt(t.name) != null && Defaults.builtinPrompt(t.name) != t.prompt) TextAction("恢复默认", P3.text2) { scope.launch { val nn = Defaults.builtinName(t.name).takeIf { n -> n == t.name || list.none { it.name == n } } ?: t.name; db.templates().update(t.copy(name = nn, desc = Defaults.builtinDesc(t.name) ?: t.desc, prompt = Defaults.builtinPrompt(t.name)!!, updatedAt = System.currentTimeMillis())); snack("已恢复默认") } }
                             if (!t.builtIn) TextAction("删除", P3.danger) { del = t }
                         }
                     }

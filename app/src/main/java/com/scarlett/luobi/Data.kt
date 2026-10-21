@@ -165,7 +165,14 @@ object Defaults {
 {原始文本}"""
 
     /** 1.9 内置默认：头（你是谁 + 用户的意图）+ 写作要求；口播原文由程序附上，不再写 {原文} */
-    val templates get() = rawTemplates.map { t -> t.copy(prompt = TplHeader.header(t.name) + t.prompt.lines().filter { it.startsWith("写作要求") }.joinToString("\n")) }
+    /** 1.9–1.13 的内置默认（只给 migrateHeaders 识别「没改过的 1.8 默认」用，行为不变） */
+    private val templates19 get() = rawTemplates.map { t -> t.copy(prompt = TplHeader.header(t.name) + t.prompt.lines().filter { it.startsWith("写作要求") }.joinToString("\n")) }
+    /** 1.14 内置默认：她的 5 个模板 + 标签指令。只用于全新安装和「恢复默认」；已有用户的模板不覆盖 */
+    val templates get() = DefaultTemplates114.texts.keys.map { n ->
+        Template(name = n, desc = DefaultTemplates114.descs[n].orEmpty(), builtIn = true, sort = DefaultTemplates114.sorts[n] ?: 0, prompt = DefaultTemplates114.prompt(n)!!)
+    }
+    /** 旧内置名（口播转文章/观点表达/答疑解惑）→ 1.14 新名 */
+    fun builtinName(name: String) = DefaultTemplates114.RENAMED[name] ?: name
     private val rawTemplates = listOf(
         Template(name = "财经非虚构", desc = "用真实数据和具体人物讲清一个经济现象", builtIn = true, sort = 0, prompt = """你是一名财经非虚构作者，擅长用真实数据和具体人物讲清一个经济现象。
 读者的疑问：{疑问}
@@ -217,14 +224,15 @@ object Defaults {
     }
     /** 旧版清洗提示词：要求输出 cleaned / 清洗后文字 */
     fun isOldClean(p: String) = p.contains("\"cleaned\"") || p.contains("清洗文本") || (p.contains("清洗") && !p.contains("\"想写什么\""))
-    fun builtinPrompt(name: String) = templates.firstOrNull { it.name == name }?.prompt
+    fun builtinPrompt(name: String) = DefaultTemplates114.prompt(builtinName(name))
+    fun builtinDesc(name: String) = DefaultTemplates114.descs[builtinName(name)]
     /** 1.9 迁移：每个模板开头补【你是谁】【用户的意图】，正文逐字节保留；已有头的不动（幂等） */
     suspend fun migrateHeaders(db: AppDb): Int {
         var n = 0
         db.templates().list().forEach { t ->
             // 从没改过的 1.8 内置默认 → 直接换成 1.9 默认；其余（她自己的正文）只在开头加头
             val old = rawTemplates.firstOrNull { it.name == t.name && it.prompt == t.prompt }
-            val m = if (t.builtIn && old != null) builtinPrompt(t.name)!! else TplHeader.migrate(t.name, t.prompt)
+            val m = if (t.builtIn && old != null) templates19.first { it.name == t.name }.prompt else TplHeader.migrate(t.name, t.prompt)
             if (m != t.prompt) { db.templates().update(t.copy(prompt = m)); n++ }
         }
         return n

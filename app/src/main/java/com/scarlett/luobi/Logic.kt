@@ -366,7 +366,8 @@ object ShareBar {
 object TplHeader {
     const val ROLE = "【你是谁】"; const val INTENT = "【用户的意图】"
     val INTENT_LINES = listOf("想写什么：{想写什么}", "我的观点：{观点}", "我的疑惑：{疑问}")
-    private val intentLine = Regex("^(想写什么|我的观点|我的疑惑)[：:].*$")
+    /** 1.14：意图行 = 短标签 + 只含意图占位（她的模板用「他的观点：」「用户的疑惑：」等） */
+    private val intentLine = Regex("^(?:(想写什么|我的观点|我的疑惑)[：:].*|[^。！？{}：:]{0,8}[：:]\\s*(?:\\{(?:想写什么|观点|疑问)\\}\\s*)+)$")
 
     fun role(name: String): String = when (name) {
         "财经非虚构" -> "你是一名财经非虚构作者，擅长用真实数据和具体人物讲清一个经济现象。"
