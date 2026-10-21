@@ -6,6 +6,11 @@
 - 版本：1.7.0（versionCode 5），minSdk 29，targetSdk 35
 - 技术：Kotlin + Jetpack Compose + Room + WorkManager + EncryptedSharedPreferences
 
+## 1.12.0（事实校对 UX · 方案 A）
+- 校对结果按文章缓存：关掉弹层再点搜索图标重开上次结果，不重跑；只有「重新检测」才重跑
+- 搜索图标数字角标；每条建议可手改；勾选默认全选；应用后保留未勾选项
+- Room 3→4：`notes.factReportJson`；保留 1.11.1 校对模型/检索拆分
+
 ## 构建
 ```bash
 echo "sdk.dir=/opt/android-sdk" > local.properties

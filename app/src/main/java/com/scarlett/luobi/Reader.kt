@@ -105,30 +105,60 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     androidx.activity.compose.BackHandler(enabled = tab == 1) { tab = 0 }
     act.openXhs = { if (imgs.isNotEmpty()) xhsSheet = true else snack("配图还在生成，请稍候") }
 
-    // 1.11 事实校对：不挡阅读；顶部胶囊进度；结果底部弹层；文中高亮；一键改正
+    // 1.12 事实校对：缓存上次结果；点图标重开不重跑；「重新检测」才重跑；建议可手改；勾选应用
     var factBusy by remember { mutableStateOf(false) }
-    var factReport by remember { mutableStateOf<FactReport?>(null) }
+    var factReport by remember(n.id) { mutableStateOf(FactCheck.decodeReport(n.factReportJson)) }
+    LaunchedEffect(n.id) { factReport = FactCheck.decodeReport(n.factReportJson) }
     var factSheet by remember { mutableStateOf(false) }
+    var factFromCache by remember { mutableStateOf(false) }
     var factFocus by remember { mutableStateOf<String?>(null) }
+    fun persistFact(r: FactReport?) {
+        factReport = r
+        val json = r?.let { FactCheck.encodeReport(it) }.orEmpty()
+        scope.launch { db.notes().update(n.copy(factReportJson = json)) }
+    }
+    fun openFactSheet(fromCache: Boolean) {
+        if (factReport == null) return
+        factFromCache = fromCache
+        factSheet = true
+    }
     fun runFactCheck() {
         if (factBusy) return
-        factBusy = true; factSheet = false
+        factBusy = true; factSheet = false; factFromCache = false
         scope.launch {
             try {
-                factReport = withContext(Dispatchers.IO) { FactCheck.run(ctx, n.title, n.body, n.model) }
+                val r = withContext(Dispatchers.IO) { FactCheck.run(ctx, n.title, n.body, n.model) }
+                persistFact(r)
+                factFromCache = false
                 factSheet = true
-                if (factReport!!.issues.isEmpty()) snack("没有发现硬事实问题")
+                if (r.issues.isEmpty()) snack("没有发现硬事实问题")
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: CleanParse.BadFormat) { snack("校对结果格式不对，请重试", false, "重试") { runFactCheck() } }
             catch (e: Throwable) { snackErr(e, "事实校对失败：", "重试") { runFactCheck() } }
             finally { factBusy = false }
         }
     }
+    fun onFactIcon() {
+        if (factBusy) return
+        if (factReport != null) openFactSheet(fromCache = true)
+        else runFactCheck()
+    }
     fun applyFactFixes(list: List<FactIssue>) {
         val body2 = FactCheck.applyFixes(n.body, list)
         val title2 = list.fold(n.title) { t, iss -> if (iss.span.isNotBlank() && t.contains(iss.span) && iss.correction.isNotBlank()) t.replaceFirst(iss.span, iss.correction) else t }
         if (body2 == n.body && title2 == n.title) { snack("没有可应用的改正", false); return }
-        scope.launch { db.notes().update(n.copy(title = title2, body = body2)); snack("已改正 ${list.size} 处") }
+        val appliedIds = list.filter { iss ->
+            (iss.span.isNotBlank() && (n.body.contains(iss.span) || n.title.contains(iss.span)))
+        }.map { it.id }.toSet()
+        val next = factReport?.let { FactCheck.afterApply(it, appliedIds) }
+        val json = next?.let { FactCheck.encodeReport(it) }.orEmpty()
+        factReport = next
+        scope.launch {
+            db.notes().update(n.copy(title = title2, body = body2, factReportJson = json))
+            snack("已改正 ${appliedIds.size} 处")
+            // 仍有未应用项时保持弹层；否则关掉
+            if (next == null || next.pendingCount() == 0) factSheet = false
+        }
     }
 
     val backdrop = rememberBackdrop()
@@ -141,7 +171,8 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 if (tab == 1) Text("配图", Modifier.frosted(elevation = 6.dp, dark = pal.dark).padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = pal.text)
             }
             if (tab == 0) FloatGroup(pal.dark) {
-                FloatAction(Ic.search, if (factBusy) pal.accent else pal.text, "事实校对") { runFactCheck() }
+                FloatAction(Ic.search, if (factBusy) pal.accent else pal.text, "事实校对",
+                    badge = factReport?.pendingCount() ?: 0) { onFactIcon() }
                 FloatAction(Ic.imgplus, pal.text, "文中插图") { il.start() }
                 FloatAction(Ic.text, if (showFont) pal.accent else pal.text, "阅读设置") { showFont = !showFont }
                 FloatAction(Ic.write, pal.text, "编辑") { editing = true }
@@ -175,7 +206,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
             Crossfade(tab, Modifier.fillMaxSize().backdropSource(backdrop), label = "tab") { t ->
                 if (t == 0) Box(Modifier.fillMaxSize()) {
                     ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding() + 16.dp, top = pad.calculateTopPadding(), openVersions = { verMenu = true }, onTags = { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } }, il = il, editCaption = { capEdit = it },
-                        highlights = factReport?.issues?.map { it.span }?.filter { it.isNotBlank() } ?: emptyList(), focusSpan = factFocus)
+                        highlights = factReport?.issues?.filter { !it.applied }?.map { it.span }?.filter { it.isNotBlank() } ?: emptyList(), focusSpan = factFocus)
                     FactProgressChip(factBusy, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp))
                 }
                 else Box(Modifier.padding(top = pad.calculateTopPadding())) { Gallery(imgs, style, { style = it; s.style = it }, spacing, { spacing = it; s.cardSpacing = it }, ratio, { ratio = it; s.cardRatio = it }, s.imgOn, bgBusy, aiBg != null, pal, pad.calculateBottomPadding(),
@@ -222,8 +253,16 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
             dismissButton = { TextButton(onClick = { capEdit = null }, shape = Sq.full) { Text("取消", color = P3.text2) } })
     }
     if (xhsSheet) XhsSheet(n, imgs, pal) { xhsSheet = false }
-    if (panel) SharePanel(channels, act, { panel = false; goSub("sharebar") }, onFactCheck = { panel = false; runFactCheck() }) { panel = false; barTick++ }
-    if (factSheet && factReport != null) FactSheet(factReport!!, onJump = { factFocus = it.span; factSheet = false; scope.launch { kotlinx.coroutines.delay(400); factSheet = true } }, onApply = { applyFactFixes(it) }, onDismiss = { factSheet = false })
+    if (panel) SharePanel(channels, act, { panel = false; goSub("sharebar") }, onFactCheck = { panel = false; onFactIcon() }) { panel = false; barTick++ }
+    if (factSheet && factReport != null) FactSheet(
+        report = factReport!!,
+        fromCache = factFromCache,
+        onJump = { factFocus = it.span; factSheet = false; scope.launch { kotlinx.coroutines.delay(400); factSheet = true } },
+        onApply = { applyFactFixes(it) },
+        onReCheck = { runFactCheck() },
+        onChange = { persistFact(it) },
+        onDismiss = { factSheet = false },
+    )
     if (editing) EditScreen(n, { editing = false }) { scope.launch { db.notes().update(it) }; editing = false; snack("已保存修改") }
 }
 

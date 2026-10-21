@@ -156,7 +156,7 @@ object Ai {
         val a = ArticleParse.parse(txt, n.title)
         val v = (db.notes().maxVersion(n.root) ?: n.version) + 1
         return db.notes().insert(n.copy(id = 0, createdAt = System.currentTimeMillis(), title = a.title, body = a.body,
-            tags = (a.tags.ifEmpty { n.tagList() }).joinToString(" "), rootId = n.root, version = v, instruction = instruction, model = "${t.name} · ${t.model}"))
+            tags = (a.tags.ifEmpty { n.tagList() }).joinToString(" "), rootId = n.root, version = v, instruction = instruction, model = "${t.name} · ${t.model}", factReportJson = ""))
     }
 
     /** 在任意嵌套的 JSON 里找第一张 base64 图片（Gemini generateContent 的 inlineData / Interactions 的 image 块都适用） */

@@ -24,6 +24,8 @@ data class Note(
     val templateId: Long = 0, val templateName: String = "", val model: String = "",
     val finalPrompt: String = "", val rootId: Long = 0, val version: Int = 1, val instruction: String = "",
     @ColumnInfo(defaultValue = "[]") val images: String = "[]",
+    /** 1.12：事实校对缓存（JSON：issues/selected/correction/applied…）；空=从未校对 */
+    @ColumnInfo(defaultValue = "") val factReportJson: String = "",
 ) {
     fun pics() = Pics.decode(images)
     fun tagList() = tags.split(" ", ",", "，").map { it.trim().trimStart('#') }.filter { it.isNotEmpty() }
@@ -102,7 +104,7 @@ data class Channel(
     @Delete suspend fun delete(c: Channel)
 }
 
-@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class], version = 3, exportSchema = false)
+@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class], version = 4, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun notes(): NoteDao
     abstract fun templates(): TemplateDao
@@ -111,7 +113,7 @@ abstract class AppDb : RoomDatabase() {
     companion object {
         @Volatile private var inst: AppDb? = null
         fun get(c: Context): AppDb = inst ?: synchronized(this) {
-            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { inst = it }
+            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { inst = it }
         }
     }
 }
@@ -355,4 +357,8 @@ val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
 
 val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) { db.execSQL("ALTER TABLE templates ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0") }
+}
+
+val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) { db.execSQL("ALTER TABLE notes ADD COLUMN factReportJson TEXT NOT NULL DEFAULT ''") }
 }

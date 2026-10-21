@@ -19,7 +19,7 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [34], application = TestApp::class)
 abstract class ShotBase(private val q: String, private val tag: String) {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
-    private val dir = System.getProperty("user.dir") + "/../../screenshots/v1.11/"
+    private val dir = System.getProperty("user.dir") + "/../../screenshots/v1.12/"
     fun shot(name: String) { rule.waitForIdle(); Thread.sleep(300); rule.mainClock.advanceTimeBy(800); rule.onRoot().captureRoboImage("$dir$tag-$name.png") }
     fun tap(t: String) { rule.onAllNodesWithText(t, substring = false).onFirst().performClick(); rule.mainClock.advanceTimeBy(600); rule.waitForIdle() }
     @Test fun screens() {

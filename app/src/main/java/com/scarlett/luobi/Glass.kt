@@ -97,6 +97,14 @@ fun FloatGroup(dark: Boolean = false, content: @Composable RowScope.() -> Unit) 
     Row(Modifier.height(44.dp).frosted(elevation = 8.dp, dark = dark).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, content = content)
 }
 @Composable
-fun FloatAction(icon: List<String>, tint: Color, desc: String, onClick: () -> Unit) {
-    Box(Modifier.size(width = 44.dp, height = 44.dp).clip(Sq.full).clickable(onClick = onClick), contentAlignment = Alignment.Center) { SvgIcon(icon, tint, 22.dp, desc = desc) }
+fun FloatAction(icon: List<String>, tint: Color, desc: String, badge: Int = 0, onClick: () -> Unit) {
+    Box(Modifier.size(width = 44.dp, height = 44.dp).clip(Sq.full).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        SvgIcon(icon, tint, 22.dp, desc = desc)
+        if (badge > 0) {
+            Box(Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).size(if (badge > 9) 16.dp else 14.dp)
+                .clip(Sq.full).background(P3.accent), contentAlignment = Alignment.Center) {
+                Text(if (badge > 9) "9+" else "$badge", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+        }
+    }
 }

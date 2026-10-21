@@ -13,7 +13,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 /**
- * 1.11 事实校对。
+ * 1.11–1.12 事实校对。
  * 搜索：优先 DeepSeek 官方 Search API（与写作同一把 Key）→ 失败或没 Key 时退回中文维基百科（免 Key）。
  * 核对：硬事实 only（片名/书名、情节与年代、作者/导演/演员、引语出处、可核验事件）；不做语法文笔。
  */
@@ -28,8 +28,21 @@ data class FactIssue(
     val source: String,
     val note: String = "",
     var selected: Boolean = true,
+    /** AI 原始建议；手改后 correction 可能不同 */
+    val aiCorrection: String = "",
+    /** 已成功应用到正文 */
+    var applied: Boolean = false,
 )
-data class FactReport(val issues: List<FactIssue>, val skipped: List<String>, val searchNote: String, val queries: List<String>)
+data class FactReport(
+    val issues: List<FactIssue>,
+    val skipped: List<String>,
+    val searchNote: String,
+    val queries: List<String>,
+    val checkedAt: Long = System.currentTimeMillis(),
+) {
+    /** 未应用的问题数（角标） */
+    fun pendingCount() = issues.count { !it.applied && it.span.isNotBlank() }
+}
 
 object FactCheck {
     const val DEFAULT_PROMPT = """你是事实校对编辑。只查找硬事实错误，不做语法、文笔、结构或润色建议。
@@ -61,7 +74,7 @@ object FactCheck {
    "note":"可选说明"}
 ],"skipped":["跳过的评价性句子…"]}"""
 
-    private const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36 LuoBi/1.11"
+    private const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36 LuoBi/1.12"
     private val nameLike = Regex("[《「\"“]([^》」\"”]{1,40})[》」\"”]|([\\p{IsHan}]{2,8}(?:电影|电视剧|小说|导演|主演|作者))")
     private val yearLike = Regex("(19|20)\\d{2}年")
 
@@ -234,6 +247,9 @@ object FactCheck {
                 correction = correction,
                 source = g("source", "来源"),
                 note = g("note", "说明"),
+                aiCorrection = correction,
+                selected = true,
+                applied = false,
             )
         }
         val skip = (0 until skipped.length()).map { skipped.optString(it) }.filter { it.isNotBlank() }
@@ -243,10 +259,77 @@ object FactCheck {
     /** 把 correction 替换进正文（只替换第一次出现的 span） */
     fun applyFixes(body: String, issues: List<FactIssue>): String {
         var out = body
-        issues.filter { it.selected && it.span.isNotBlank() && it.correction.isNotBlank() }
+        issues.filter { it.selected && !it.applied && it.span.isNotBlank() && it.correction.isNotBlank() }
             .sortedByDescending { it.span.length }
             .forEach { iss -> if (out.contains(iss.span)) out = out.replaceFirst(iss.span, iss.correction) }
         return out
+    }
+
+    /** 应用后：勾选且改正成功的标 applied；保留未勾选/未改成功的项与手改文案 */
+    fun afterApply(report: FactReport, appliedIds: Set<String>): FactReport {
+        val issues = report.issues.map { iss ->
+            if (iss.id in appliedIds) iss.copy(applied = true, selected = false) else iss
+        }
+        return report.copy(issues = issues)
+    }
+
+    fun encodeReport(r: FactReport): String {
+        val issues = JSONArray()
+        r.issues.forEach { iss ->
+            issues.put(JSONObject()
+                .put("id", iss.id)
+                .put("span", iss.span)
+                .put("category", iss.category)
+                .put("severity", iss.severity)
+                .put("claim", iss.claim)
+                .put("correction", iss.correction)
+                .put("aiCorrection", iss.aiCorrection.ifBlank { iss.correction })
+                .put("source", iss.source)
+                .put("note", iss.note)
+                .put("selected", iss.selected)
+                .put("applied", iss.applied))
+        }
+        val skipped = JSONArray(); r.skipped.forEach { skipped.put(it) }
+        val queries = JSONArray(); r.queries.forEach { queries.put(it) }
+        return JSONObject()
+            .put("issues", issues)
+            .put("skipped", skipped)
+            .put("searchNote", r.searchNote)
+            .put("queries", queries)
+            .put("checkedAt", r.checkedAt)
+            .toString()
+    }
+
+    fun decodeReport(json: String): FactReport? {
+        if (json.isBlank()) return null
+        return runCatching {
+            val j = JSONObject(json)
+            val arr = j.optJSONArray("issues") ?: JSONArray()
+            val issues = (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                fun g(vararg k: String) = k.firstNotNullOfOrNull { o.optString(it).takeIf { v -> v.isNotBlank() && v != "null" } } ?: ""
+                val correction = g("correction", "改正")
+                val ai = g("aiCorrection").ifBlank { correction }
+                FactIssue(
+                    id = g("id").ifBlank { "$i-${g("span").hashCode()}" },
+                    span = g("span", "原文"),
+                    category = g("category", "类别").ifBlank { "其他" },
+                    severity = g("severity", "级别").let { if (it in listOf("高", "中", "低")) it else "中" },
+                    claim = g("claim", "说法"),
+                    correction = correction,
+                    source = g("source", "来源"),
+                    note = g("note", "说明"),
+                    selected = if (o.has("selected")) o.optBoolean("selected", true) else true,
+                    aiCorrection = ai,
+                    applied = o.optBoolean("applied", false),
+                )
+            }
+            val skippedArr = j.optJSONArray("skipped") ?: JSONArray()
+            val skipped = (0 until skippedArr.length()).map { skippedArr.optString(it) }.filter { it.isNotBlank() }
+            val qArr = j.optJSONArray("queries") ?: JSONArray()
+            val queries = (0 until qArr.length()).map { qArr.optString(it) }.filter { it.isNotBlank() }
+            FactReport(issues, skipped, j.optString("searchNote"), queries, j.optLong("checkedAt", System.currentTimeMillis()))
+        }.getOrNull()
     }
 
     fun buildPrompt(tpl: String, title: String, body: String, hits: List<FactHit>): String = tpl
