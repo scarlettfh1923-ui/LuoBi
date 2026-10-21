@@ -62,12 +62,12 @@ object Ai {
         return if (ref.startsWith("c:")) {
             val cm = s.customs.firstOrNull { it.id == ref.removePrefix("c:") } ?: throw ConfigError("这个自定义模型已被删除，请在第 ③ 步重新选一个模型。")
             val key = s.customKey(cm.id)
-            if (key.isBlank()) throw ConfigError("还没有填写「${cm.name}」的 Key。请到「设置 → 模型与密钥」里填写。")
+            if (key.isBlank()) throw ConfigError("还没有填写「${cm.name}」的 Key。请到「设定 → 模型与密钥」里填写。")
             Target("custom", cm.name, cm.url.trim().trimEnd('/'), key, cm.model.trim())
         } else {
             val pid = ref.removePrefix("p:"); val p = Providers.text(pid)
             val key = s.key(pid)
-            if (key.isBlank()) throw ConfigError("还没有填写 ${p.name} 的 API Key。请到「设置 → 模型与密钥」里粘贴你的 Key。")
+            if (key.isBlank()) throw ConfigError("还没有填写 ${p.name} 的 API Key。请到「设定 → 模型与密钥」里粘贴你的 Key。")
             Target(pid, p.name, s.url(pid).trim().trimEnd('/'), key, s.model(pid).trim())
         }
     }
@@ -98,8 +98,8 @@ object Ai {
     /** 第 ① 步：固定用 DeepSeek 清洗 + 识别意图 + 推荐模板 */
     suspend fun clean(ctx: Context, raw: String): Pair<CleanResult, CleanTpl> {
         val db = AppDb.get(ctx); Defaults.ensure(db)
-        val ct = db.cleans().active() ?: throw ConfigError("没有选中的清洗模板，请到「设置 → 清洗模板」选一个。")
-        val t = try { target(ctx, "p:deepseek") } catch (e: ConfigError) { throw ConfigError("第 ① 步固定用 DeepSeek 清洗，请先到「设置 → 模型与密钥」填写 DeepSeek Key。") }
+        val ct = db.cleans().active() ?: throw ConfigError("没有选中的清洗模板，请到「设定 → 清洗模板」选一个。")
+        val t = try { target(ctx, "p:deepseek") } catch (e: ConfigError) { throw ConfigError("第 ① 步固定用 DeepSeek 清洗，请先到「设定 → 模型与密钥」填写 DeepSeek Key。") }
         val list = db.templates().list().joinToString("\n") { "- ${it.name}：${it.desc}" }
         val prompt = Vars.fillClean(ct.prompt, raw, list)
         val txt = chatText(t, "你是中文文字编辑。只输出一个合法 JSON 对象。", prompt, true)
@@ -186,7 +186,7 @@ object Ai {
 
     suspend fun image(ctx: Context, prompt: String, aspect: String = "3:4"): Bitmap = withContext(Dispatchers.IO) {
         val st = Settings(ctx); val pid = st.imgProv; val key = st.imgKey(pid); val model = st.imgModel(pid); val url = Providers.image(pid).url
-        if (key.isBlank()) throw ConfigError("还没有填写配图模型 ${Providers.image(pid).name} 的 Key。请到「设置 → 模型与密钥 → 配图模型」填写。")
+        if (key.isBlank()) throw ConfigError("还没有填写配图模型 ${Providers.image(pid).name} 的 Key。请到「设定 → 模型与密钥 → 配图模型」填写。")
         var imgUrl: String? = null; var b64: String? = null
         when (pid) {
             "google" -> b64 = googleImage(url, key, model, prompt, aspect)

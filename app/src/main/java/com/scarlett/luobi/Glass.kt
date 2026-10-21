@@ -52,16 +52,16 @@ private val labelStyle = TextStyle(fontSize = 10.5.sp, lineHeight = 14.sp, textA
     lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both))
 
 @Composable
-fun RowScope.GridCell(icon: List<String>, label: String, on: Boolean, base: Color, sub: Color, busy: Boolean = false, glyph: Dp = GridSpec.glyph, onClick: () -> Unit) {
+fun RowScope.GridCell(icon: List<String>, label: String, on: Boolean, base: Color, sub: Color, busy: Boolean = false, glyph: Dp = GridSpec.glyph, pill: Boolean = true, onClick: () -> Unit) {
     val c = if (on) P3.accent else base
     Column(Modifier.weight(1f).fillMaxHeight().clip(Sq.full).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         // 1.6 选中态：图标后面一块浅蓝胶囊（不改变网格尺寸）
-        Box(Modifier.size(width = 56.dp, height = GridSpec.icon + 8.dp).clip(Sq.full).background(if (on) P3.accentSoft else Color.Transparent), contentAlignment = Alignment.Center) {
-            if (busy) CircularProgressIndicator(Modifier.size(16.dp), color = P3.accent, strokeWidth = 2.dp) else SvgIcon(icon, c, glyph)
+        Box(Modifier.size(width = 56.dp, height = GridSpec.icon + 8.dp).clip(Sq.full).background(if (on && pill) P3.accentSoft else Color.Transparent), contentAlignment = Alignment.Center) {
+            if (busy) CircularProgressIndicator(Modifier.size(16.dp), color = P3.accent, strokeWidth = 2.dp) else SvgIcon(icon, c, glyph, if (on && !pill) c else null)
         }
         Spacer(Modifier.height(GridSpec.gap - 2.dp))
         Box(Modifier.heightIn(min = GridSpec.label).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text(label, style = labelStyle, color = if (on) P3.accent else sub, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+            Text(label, style = if (on && !pill) labelStyle.copy(fontWeight = FontWeight.Bold) else labelStyle, color = if (on) P3.accent else sub, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
         }
     }
 }
@@ -80,8 +80,9 @@ val FloatingBarSpace = 64.dp + 8.dp + 12.dp + 12.dp
 @Composable
 fun FloatingNav(sel: Int, onSel: (Int) -> Unit) {
     FloatingBar {
-        listOf(Triple("写作", Ic.write, 0), Triple("文案库", Ic.library, 1), Triple("设置", Ic.settings, 2)).forEach { (l, ic, i) ->
-            GridCell(ic, l, sel == i, NavInk, NavInk) { onSel(i) }
+        listOf(Triple("创作", Ic.write, 0), Triple("案头", Ic.library, 1), Triple("设定", Ic.settings, 2)).forEach { (l, ic, i) ->
+            // 1.8 方案 A：选中不加底块，实心蓝图标 + 加粗字；未选中浅灰
+            GridCell(ic, l, sel == i, P3.text3, P3.text3, pill = false) { onSel(i) }
         }
     }
 }

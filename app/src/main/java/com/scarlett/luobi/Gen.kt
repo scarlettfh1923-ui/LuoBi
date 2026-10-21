@@ -63,7 +63,7 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
         return try {
             val id = if (job.kind == "rewrite") Ai.rewrite(ctx, job.noteId, job.instruction, job.model) else Ai.write(ctx, job)
             val title = AppDb.get(ctx).notes().get(id)?.title ?: ""
-            if (AppState.visible <= 0) notify(ctx, "文章已写好：$title", "点开查看全文，已自动存进文案库", id)
+            if (AppState.visible <= 0) notify(ctx, "文章已写好：$title", "点开查看全文，已自动放到案头", id)
             Result.success(workDataOf(K_NOTE to id, K_KIND to job.kind))
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e

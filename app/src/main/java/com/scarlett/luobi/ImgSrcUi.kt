@@ -64,7 +64,7 @@ fun ImgSrcPage(back: () -> Unit, go: (String) -> Unit) {
                                 Switch(src.on, { v -> save(list.map { if (it.id == src.id) it.copy(on = v) else it }) }, Modifier.padding(start = 6.dp).scale(.8f), colors = SwitchDefaults.colors(checkedTrackColor = P3.accent))
                             }
                             if (open == src.id) Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp)) {
-                                if (src.type == "ai") Text("复用「设置 → 模型与密钥 → 配图模型」的 Key 和模型，每次生成 1 张。生成的图只存在手机上，Notion 等外链导出会跳过。", fontSize = 12.sp, color = P3.text2, lineHeight = 17.sp)
+                                if (src.type == "ai") Text("复用「设定 → 模型与密钥 → 配图模型」的 Key 和模型，每次生成 1 张。生成的图只存在手机上，Notion 等外链导出会跳过。", fontSize = 12.sp, color = P3.text2, lineHeight = 17.sp)
                                 else {
                                     var k by remember { mutableStateOf(ImgSources.key(ctx, src.id)) }
                                     FieldLabel("API Key", if (src.type == "pexafy") "docs.pexafy.com 申请" else "pexels.com/api 申请")

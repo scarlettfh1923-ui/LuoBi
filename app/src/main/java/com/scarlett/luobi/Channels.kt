@@ -99,7 +99,7 @@ object Notion {
     }
     suspend fun upload(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String = withContext(Dispatchers.IO) {
         val s = Settings(ctx); val token = Secure.get(ctx, "notion_token")
-        if (token.isBlank() || s.notionTarget.isBlank()) throw ConfigError("还没有配置 Notion。请到「设置 → 发布渠道 → Notion」填集成 Token 和目标页面 / 数据库。")
+        if (token.isBlank() || s.notionTarget.isBlank()) throw ConfigError("还没有配置 Notion。请到「设定 → 发布渠道 → Notion」填集成 Token 和目标页面 / 数据库。")
         val target = idOf(s.notionTarget)
         val bl = blocks(body, tags, pics, Settings(ctx).showCredit)
         val req = JSONObject()
@@ -159,7 +159,7 @@ object Yuque {
     }
     suspend fun upload(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String = withContext(Dispatchers.IO) {
         val s = Settings(ctx); val token = Secure.get(ctx, "yuque_token")
-        if (token.isBlank() || s.yuqueNs.isBlank()) throw ConfigError("还没有配置语雀。请到「设置 → 发布渠道 → 语雀」填个人 Token 并选择知识库。")
+        if (token.isBlank() || s.yuqueNs.isBlank()) throw ConfigError("还没有配置语雀。请到「设定 → 发布渠道 → 语雀」填个人 Token 并选择知识库。")
         val md = Export.markdown(title, body, tags, pics, Settings(ctx).showCredit).substringAfter("\n").trim()
         val req = JSONObject().put("title", title).put("format", "markdown").put("body", md).put("public", if (s.yuquePublic) 1 else 0)
         val (c, t) = Http.call("POST", "$API/repos/${s.yuqueNs.trim('/')}/docs", h(token), req.toString())

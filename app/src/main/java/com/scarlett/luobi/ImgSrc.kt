@@ -91,7 +91,7 @@ object ImgSources {
     /** 按顺序搜：第一个失败或无结果顺延下一个 */
     fun searchChain(ctx: Context, query: String, page: Int, orient: String): Pair<List<Cand>, String> {
         val srcs = usable(ctx)
-        if (srcs.isEmpty()) throw ConfigError("还没有配置图片来源，请到「设置 → 图片来源」填写 Key")
+        if (srcs.isEmpty()) throw ConfigError("还没有配置图片来源，请到「设定 → 图片来源」填写 Key")
         val (ok, r, errs) = Pics.chain(srcs) { search(ctx, it, query, page, orient) }
         if (ok == null) throw PublishError(errs.joinToString("；") { "${it.first.name}：${it.second}" })
         return r to ok.name

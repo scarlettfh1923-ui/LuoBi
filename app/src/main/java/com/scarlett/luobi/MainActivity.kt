@@ -237,7 +237,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                 ws.step = 1
                 ws.cleanedReady = true
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: CleanParse.BadFormat) { ws.err = Friendly("清洗结果格式不对", "DeepSeek 返回的内容不是约定的 JSON。可以点「重试」，或在「设置 → 清洗模板」检查提示词的输出约定。", e.raw) }
+            catch (e: CleanParse.BadFormat) { ws.err = Friendly("清洗结果格式不对", "DeepSeek 返回的内容不是约定的 JSON。可以点「重试」，或在「设定 → 清洗模板」检查提示词的输出约定。", e.raw) }
             catch (e: Throwable) { ws.err = Errors.explain(e).let { if (e is ConfigError) it.copy(settings = true) else it } }
             finally { ws.cleanBusy = false }
         }
@@ -260,20 +260,17 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
 
     Box(Modifier.fillMaxSize()) {
     LazyColumnFill(bottom + 64.dp) {
-        item { BigTitle("落笔", "口播 → 文章") }
-        item { InlineStepper(ws.step) { if (it < ws.step) ws.step = it } }
+        // 1.8 方案 A：去掉 Logo / 副标题 / 步骤条，只留醒目的「今天写什么」
+        item { Text("今天写什么", Modifier.padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 14.dp), fontSize = 32.sp, fontWeight = FontWeight.Bold, lineHeight = 40.sp, color = P3.text) }
         // ① 清洗与意图
         item {
             if (ws.step > 1) DoneRow("清洗与意图", ws.values.filter { it.second.isNotBlank() }.joinToString(" · ") { it.first }.ifBlank { "未识别到意图" }) { ws.step = 1 }
             else Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 if (!ws.cleanedReady) {
-                    StepHead(1, "内容清洗与意图识别", 1) { Text("DeepSeek", Modifier.clip(Sq.full).background(P3.surface2).padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, color = P3.text2, fontFamily = Mono) }
-                    Spacer(Modifier.height(12.dp))
                     // 1.5：不再卡片套卡片——步骤卡本身就是输入区
                     Column(Modifier.fillMaxWidth()) {
-                        Text("粘贴你的口播 / 想说的话 / 疑问", fontSize = 13.sp, color = P3.text3)
-                        Spacer(Modifier.height(6.dp))
-                        Box(Modifier.fillMaxWidth().heightIn(min = 150.dp)) {
+                        Box(Modifier.fillMaxWidth().heightIn(min = 240.dp)) {
+                            if (ws.raw.isEmpty()) Text("粘贴你的口播 / 想说的话 / 疑问", fontSize = 16.sp, lineHeight = 27.sp, color = P3.text3)
                             androidx.compose.foundation.text.BasicTextField(ws.raw, { ws.raw = it }, Modifier.fillMaxWidth(),
                                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, lineHeight = 27.sp, color = P3.text), cursorBrush = androidx.compose.ui.graphics.SolidColor(P3.accent))
                         }
@@ -290,7 +287,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
                         }
                     }
                     Text("去掉口头禅、重复和错字，把句子理顺，再判断你想写哪类文章。", Modifier.padding(vertical = 10.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp)
-                    if (!hasDeepseek) WarnBox("清洗固定用 DeepSeek，请先到「设置 → 模型与密钥」填写 DeepSeek Key。", Modifier.padding(bottom = 10.dp).clickable { goModels() })
+                    if (!hasDeepseek) WarnBox("清洗固定用 DeepSeek，请先到「设定 → 模型与密钥」填写 DeepSeek Key。", Modifier.padding(bottom = 10.dp).clickable { goModels() })
                 } else {
                     StepHead(1, "内容清洗与意图识别", 1) { TextAction(if (ws.cleanBusy) "识别中…" else "重新识别", enabled = !ws.cleanBusy) { clean() } }
                     FieldLabel("清洗后文字", "可编辑")
@@ -356,7 +353,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: androidx.compose.ui.unit.Dp, 
             else Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 StepHead(3, "选择模型并生成", 1)
                 FieldLabel("模型")
-                if (configured.isEmpty()) WarnBox("还没有配置任何模型的 Key，请先到「设置 → 模型与密钥」填写。", Modifier.clickable { goModels() })
+                if (configured.isEmpty()) WarnBox("还没有配置任何模型的 Key，请先到「设定 → 模型与密钥」填写。", Modifier.clickable { goModels() })
                 else ChoiceList(configured.map { Triple(it.label, it.sub, ws.model == it.ref) }) { i -> ws.model = configured[i].ref }
                 Spacer(Modifier.height(10.dp))
                 HorizontalDivider(thickness = Dp.Hairline, color = P3.border)
@@ -428,7 +425,9 @@ fun fieldHint(k: String) = when (k) { "疑问" -> "我的疑问是什么"; "观�
 
 @Composable
 fun LazyColumnFill(bottom: androidx.compose.ui.unit.Dp, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
-    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize().imePadding(), contentPadding = PaddingValues(bottom = bottom + 20.dp), content = content)
+    // 1.8 修复：键盘弹出时不再预留底栏高度（之前 imePadding + 底栏留白叠加，键盘上方空出一大块）；只留主按钮的位置
+    val imeOn = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
+    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize().imePadding(), contentPadding = PaddingValues(bottom = if (imeOn) 76.dp else bottom + 20.dp), content = content)
 }
 
 /** 1.5：紧凑的行内步骤条  1 理清 — 2 选模板 — 3 生成 */

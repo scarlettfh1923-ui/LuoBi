@@ -59,7 +59,7 @@ fun BottomNav(sel: Int, onSel: (Int) -> Unit) {
     Column(Modifier.fillMaxWidth().background(P3.surface)) {
         HorizontalDivider(thickness = Dp.Hairline, color = P3.border)
         Row(Modifier.fillMaxWidth().navigationBarsPadding().height(64.dp)) {
-            listOf(Triple("写作", Ic.write, 0), Triple("文案库", Ic.library, 1), Triple("设置", Ic.settings, 2)).forEach { (l, ic, i) ->
+            listOf(Triple("创作", Ic.write, 0), Triple("案头", Ic.library, 1), Triple("设定", Ic.settings, 2)).forEach { (l, ic, i) ->
                 val on = sel == i
                 Column(Modifier.weight(1f).fillMaxHeight().clickable { onSel(i) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     SvgIcon(ic, if (on) P3.accent else P3.text3, 24.dp, if (on) P3.accent else null)

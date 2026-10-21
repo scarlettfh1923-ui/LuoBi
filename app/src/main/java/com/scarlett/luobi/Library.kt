@@ -51,7 +51,13 @@ fun LibraryScreen(
     val ctx = LocalContext.current
     val s = remember { Settings(ctx) }
     val cs = MaterialTheme.colorScheme
-    val notes by db.notes().latest().collectAsState(initial = null)
+    // 1.8 修复：Flow 必须 remember。之前每次重组都新建一个 latest() Flow，collectAsState 随之重启，
+    // 删除时旧查询的结果可能晚于新结果写回，列表停在删除前（库里已删，界面还在，「2 篇」不变）。
+    val notesFlow = remember(db) { db.notes().latest() }
+    val notesRaw by notesFlow.collectAsState(initial = null)
+    // 删除后立刻从界面移除（不等 Flow 回推），Flow 回来后自然一致
+    var gone by remember { mutableStateOf(setOf<Long>()) }
+    val notes = notesRaw?.filter { it.root !in gone }
     val templates by db.templates().all().collectAsState(initial = emptyList())
     var tplFilter by remember { mutableStateOf("") }
     var q by remember { mutableStateOf("") }
@@ -85,10 +91,13 @@ fun LibraryScreen(
     fun deleteNotes(ids: List<Long>, undo: Note? = null) {
         scope.launch {
             if (undo != null) {
+                gone = gone + undo.root
                 db.notes().deleteRoots(listOf(undo.root))
                 snack("已删除「${undo.title.take(12)}」")
             } else {
-                db.notes().deleteRoots(all.filter { it.id in ids }.map { it.root })
+                val roots = all.filter { it.id in ids }.map { it.root }
+                gone = gone + roots
+                db.notes().deleteRoots(roots)
                 snack("已删除 ${ids.size} 篇")
             }
             selected = emptySet()
@@ -108,7 +117,7 @@ fun LibraryScreen(
                 } else {
                     Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
                         Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
-                            Text("文案库", fontSize = 24.sp, fontWeight = FontWeight.Bold, lineHeight = 30.sp, color = P3.text)
+                            Text("案头", fontSize = 24.sp, fontWeight = FontWeight.Bold, lineHeight = 30.sp, color = P3.text)
                             Text("${all.size} 篇", Modifier.padding(start = 10.dp, bottom = 3.dp), fontSize = 13.sp, color = P3.text2)
                         }
                         Text("管理", Modifier.clip(Sq.s).clickable {

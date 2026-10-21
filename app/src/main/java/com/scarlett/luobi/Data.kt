@@ -66,8 +66,11 @@ data class Channel(
     @Query("SELECT MAX(version) FROM notes WHERE rootId=:root") suspend fun maxVersion(root: Long): Int?
     @Insert suspend fun insert(n: Note): Long
     @Update suspend fun update(n: Note)
-    @Query("UPDATE notes SET favorite=:f WHERE rootId=:root") suspend fun setFav(root: Long, f: Boolean)
-    @Query("DELETE FROM notes WHERE rootId IN (:roots)") suspend fun deleteRoots(roots: List<Long>)
+    @Query("UPDATE notes SET favorite=:f WHERE rootId=:root OR (rootId = 0 AND id = :root)") suspend fun setFav(root: Long, f: Boolean)
+    /** 1.8 修复：rootId=0 的行（root 回落为自己的 id）以前永远匹配不到，删除「成功」但行还在 */
+    @Query("DELETE FROM notes WHERE rootId IN (:roots) OR (rootId = 0 AND id IN (:roots))") suspend fun deleteRoots(roots: List<Long>)
+    /** 1.8：启动时修复遗留的 rootId=0 行 */
+    @Query("UPDATE notes SET rootId = id WHERE rootId = 0") suspend fun repairRoots()
     @Query("DELETE FROM notes WHERE id=:id") suspend fun deleteId(id: Long)
 }
 @Dao interface TemplateDao {
@@ -172,6 +175,7 @@ object Defaults {
 
     suspend fun ensure(db: AppDb) {
         if (db.templates().count() == 0) templates.forEach { db.templates().insert(it) }
+        db.notes().repairRoots()
         if (db.cleans().count() == 0) db.cleans().insert(CleanTpl(name = CLEAN_NAME, prompt = CLEAN, fields = Vars.DEFAULT_FIELDS.joinToString("\n"), builtIn = true, active = true))
     }
     fun builtinPrompt(name: String) = templates.firstOrNull { it.name == name }?.prompt

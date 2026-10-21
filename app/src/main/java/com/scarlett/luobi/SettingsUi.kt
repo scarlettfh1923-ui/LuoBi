@@ -35,8 +35,8 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
     val active by db.cleans().activeFlow().collectAsState(initial = null)
     val channels by db.channels().all().collectAsState(initial = emptyList())
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottom + 20.dp)) {
-        item { BigTitle("设置") }
-        item { RowGroup("写作", listOf(
+        item { BigTitle("设定") }
+        item { RowGroup("创作", listOf(
             { SettingRow(Ic.key, "模型与密钥", "${s.configured().size} 个") { go("models") } },
             { SettingRow(Ic.tpl, "模板管理", "${templates.size} 个") { go("templates") } },
             { SettingRow(Ic.wand, "清洗模板", active?.name ?: "未选择") { go("cleans") } },
@@ -59,7 +59,8 @@ fun SubPage(db: AppDb, r: Route.Sub, back: () -> Unit, go: (Route) -> Unit) {
     val name = r.page.substringBefore(":"); val arg = r.page.substringAfter(":", "0").toLongOrNull() ?: 0L
     val sub: (String) -> Unit = { go(Route.Sub(it)) }
     Scaffold(containerColor = P3.bg, bottomBar = { FloatingNav(2) { back() } }) { pad ->
-        Box(Modifier.padding(bottom = pad.calculateBottomPadding())) {
+        // 1.8 修复：底栏留白已经垫过了，告诉子页面这段已被消耗，imePadding 只补超出的部分（之前叠加 = 键盘上方一块空白）
+        Box(Modifier.padding(bottom = pad.calculateBottomPadding()).consumeWindowInsets(PaddingValues(bottom = pad.calculateBottomPadding()))) {
             when (name) {
                 "templates" -> TemplatesPage(db, back, sub)
                 "template" -> TemplateEdit(db, arg, back)

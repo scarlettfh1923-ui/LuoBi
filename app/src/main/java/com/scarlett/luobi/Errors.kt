@@ -105,20 +105,20 @@ object Errors {
         val http = if (code > 0) "（HTTP $code）" else ""
         return when (k) {
             Kind.NETWORK -> Friendly("网络连不上或超时", "连不上服务商的服务器。可能是手机没联网、网络不稳定，或者开着的 VPN / 代理有问题。请检查手机网络（Wi-Fi 或流量），然后点「重试」。", raw, false, code)
-            Kind.DNS -> Friendly("网络连不上或超时", "找不到服务商的服务器（域名解析失败）。最常见是手机暂时没网；如果网络正常，可能是接口地址写错了。请先检查手机网络后点「重试」；还不行就到「设置 → 高级」点「恢复默认地址」。", raw, true, code)
+            Kind.DNS -> Friendly("网络连不上或超时", "找不到服务商的服务器（域名解析失败）。最常见是手机暂时没网；如果网络正常，可能是接口地址写错了。请先检查手机网络后点「重试」；还不行就到「设定 → 高级」点「恢复默认地址」。", raw, true, code)
             Kind.TIMEOUT -> Friendly("网络连不上或超时", "等了很久服务器都没有回应（超时）。可能是网络慢，也可能是服务商那边正忙。请检查手机网络，或者稍等一会儿再点「重试」。", raw, false, code)
             Kind.SSL -> Friendly("网络连不上或超时", "和服务器建立安全连接失败。常见原因：连的是需要网页登录的公共 Wi-Fi、开了代理，或者手机时间不对。请换个网络（比如切到流量）后再点「重试」。", raw, false, code)
-            Kind.BAD_REQUEST -> Friendly("请求参数有误$http", "服务商说这次请求的参数不对。最常见的原因是模型名填错了，或者这个模型在你的账号里还没开通。请到「设置」检查模型名，可以从下拉列表里重新选一个。", raw, true, code)
-            Kind.KEY -> Friendly("API Key 无效、过期或没权限$http", "服务商不认这个 API Key：可能是复制时多了空格或少了字符、Key 已过期或被删除，或者这个 Key 没有使用该模型的权限。请到「设置」重新粘贴一遍 Key；还不行就去服务商后台新建一个 Key。", raw, true, code)
-            Kind.NOT_FOUND -> Friendly("接口地址或模型不存在$http", "按现在填的接口地址或模型名，服务商那边找不到。请到「设置」检查模型名是否拼写正确，并在「高级」里点「恢复默认地址」。", raw, true, code)
-            Kind.MODEL -> Friendly("模型不存在或没开通$http", "服务商找不到你填的这个模型，或者你的账号还没开通它。请到「设置」从下拉列表里重新选一个模型；如果是豆包等需要开通的服务商，先去它的控制台开通该模型。", raw, true, code)
+            Kind.BAD_REQUEST -> Friendly("请求参数有误$http", "服务商说这次请求的参数不对。最常见的原因是模型名填错了，或者这个模型在你的账号里还没开通。请到「设定」检查模型名，可以从下拉列表里重新选一个。", raw, true, code)
+            Kind.KEY -> Friendly("API Key 无效、过期或没权限$http", "服务商不认这个 API Key：可能是复制时多了空格或少了字符、Key 已过期或被删除，或者这个 Key 没有使用该模型的权限。请到「设定」重新粘贴一遍 Key；还不行就去服务商后台新建一个 Key。", raw, true, code)
+            Kind.NOT_FOUND -> Friendly("接口地址或模型不存在$http", "按现在填的接口地址或模型名，服务商那边找不到。请到「设定」检查模型名是否拼写正确，并在「高级」里点「恢复默认地址」。", raw, true, code)
+            Kind.MODEL -> Friendly("模型不存在或没开通$http", "服务商找不到你填的这个模型，或者你的账号还没开通它。请到「设定」从下拉列表里重新选一个模型；如果是豆包等需要开通的服务商，先去它的控制台开通该模型。", raw, true, code)
             Kind.BALANCE -> Friendly("账户余额或额度不足$http", "你在服务商那里的余额或免费额度已经用完，所以这次请求被拒绝了。请登录服务商官网后台充值（或领取额度），然后回来点「重试」。", raw, true, code)
             Kind.RATE -> Friendly("请求太频繁，被限流了$http", "短时间内请求太多，服务商暂时限制了你（免费或新账号的频率上限通常比较低）。请等 1～2 分钟再点「重试」。", raw, false, code)
-            Kind.SERVER -> Friendly("服务商服务器出错$http", "这不是你这边的问题，是服务商的服务器暂时故障或太忙。请稍后再点「重试」；如果一直这样，可以到「设置」换一家服务商。", raw, true, code)
+            Kind.SERVER -> Friendly("服务商服务器出错$http", "这不是你这边的问题，是服务商的服务器暂时故障或太忙。请稍后再点「重试」；如果一直这样，可以到「设定」换一家服务商。", raw, true, code)
             Kind.CONTENT -> Friendly("内容被服务商安全审核拦截", "服务商的内容安全审核认为这次的选题或生成的内容可能涉及敏感话题，所以拒绝输出。请换个选题、换种说法，或者修改提示词后再试。", raw, false, code)
-            Kind.TOO_LONG -> Friendly("文章或提示词太长，超出模型限制", "这次要处理的文字超过了模型一次能处理的长度上限。请缩短选题描述或提示词模板，或到「设置」换一个支持更长内容的模型。", raw, true, code)
-            Kind.FORMAT -> Friendly("AI 返回的格式不对", "AI 回复了，但不是 App 能读懂的格式${if (extra.isNotBlank()) "（$extra）" else ""}。常见于提示词被改过，或者模型偶尔没按要求输出。请直接点「重试」；反复出现的话，到「设置 → 提示词模板」恢复默认模板，或换一个模型。", raw, false, code)
-            Kind.BAD_RESPONSE -> Friendly("服务商返回的内容看不懂", "服务器有回应，但返回的不是 AI 数据，多半是接口地址填错了（连到了别的网页）。请到「设置 → 高级」点「恢复默认地址」后再试。", raw, true, code)
+            Kind.TOO_LONG -> Friendly("文章或提示词太长，超出模型限制", "这次要处理的文字超过了模型一次能处理的长度上限。请缩短选题描述或提示词模板，或到「设定」换一个支持更长内容的模型。", raw, true, code)
+            Kind.FORMAT -> Friendly("AI 返回的格式不对", "AI 回复了，但不是 App 能读懂的格式${if (extra.isNotBlank()) "（$extra）" else ""}。常见于提示词被改过，或者模型偶尔没按要求输出。请直接点「重试」；反复出现的话，到「设定 → 提示词模板」恢复默认模板，或换一个模型。", raw, false, code)
+            Kind.BAD_RESPONSE -> Friendly("服务商返回的内容看不懂", "服务器有回应，但返回的不是 AI 数据，多半是接口地址填错了（连到了别的网页）。请到「设定 → 高级」点「恢复默认地址」后再试。", raw, true, code)
             Kind.CONFIG -> Friendly("还没配置好", extra, "", true, 0)
             Kind.UNKNOWN -> Friendly("未知错误${if (code > 0) "（HTTP $code）" else ""}", "出了一个 App 没能识别的问题${if (extra.isNotBlank()) "：$extra" else ""}。请稍后点「重试」；如果一直出现，可以截图下方的原始信息，方便排查。", raw, false, code)
         }
@@ -142,7 +142,7 @@ object Errors {
             is AiFormatError -> build(Kind.FORMAT, 0, t.raw.take(200), t.what)
             is ConfigError -> build(Kind.CONFIG, 0, "", t.hint)
             is TaskError -> build(byKeyword(t.raw) ?: Kind.UNKNOWN, 0, t.raw, "出图任务失败")
-            is java.net.MalformedURLException -> Friendly("接口地址格式不对", "设置里的接口地址不是一个有效的网址（应以 https:// 开头）。请到「设置 → 高级」点「恢复默认地址」。", t.message.orEmpty(), true)
+            is java.net.MalformedURLException -> Friendly("接口地址格式不对", "设置里的接口地址不是一个有效的网址（应以 https:// 开头）。请到「设定 → 高级」点「恢复默认地址」。", t.message.orEmpty(), true)
             is UnknownHostException -> build(Kind.DNS, 0, t.message ?: "UnknownHost")
             is SocketTimeoutException -> build(Kind.TIMEOUT, 0, t.message ?: "timeout")
             is SSLException -> build(Kind.SSL, 0, t.message ?: "SSL")
@@ -171,7 +171,7 @@ object Errors {
             is SSLException -> "安全连接被中断"
             else -> "连接被拒绝或中断"
         }
-        return Friendly("连不上 $who 服务器", "$why。国内网络通常无法直连 $who，需要开启海外网络（VPN / 代理）后再点「重试」。已经开了的话，请确认代理对本 App 生效（部分代理只代理浏览器），或换一个节点；也可以到「设置」改用国内可直连的服务商。", raw, true)
+        return Friendly("连不上 $who 服务器", "$why。国内网络通常无法直连 $who，需要开启海外网络（VPN / 代理）后再点「重试」。已经开了的话，请确认代理对本 App 生效（部分代理只代理浏览器），或换一个节点；也可以到「设定」改用国内可直连的服务商。", raw, true)
     }
 
     /** Google（Gemini API）错误体：{"error":{"code":400,"message":"…","status":"INVALID_ARGUMENT","details":[{"reason":"API_KEY_INVALID"}]}} */
@@ -186,7 +186,7 @@ object Errors {
         val http = "（HTTP ${t.code}）"
         return when {
             "api_key_invalid" in all || "api key not valid" in all || "api key expired" in all || "api_key_expired" in all ->
-                Friendly("Gemini API Key 无效或已过期$http", "Google 不认这个 Key：可能复制时多了空格、少了字符，或者这个 Key 已被删除 / 过期。请到 Google AI Studio（aistudio.google.com → Get API key）重新复制或新建一个 Key，再到「设置」里粘贴。", raw, true, t.code)
+                Friendly("Gemini API Key 无效或已过期$http", "Google 不认这个 Key：可能复制时多了空格、少了字符，或者这个 Key 已被删除 / 过期。请到 Google AI Studio（aistudio.google.com → Get API key）重新复制或新建一个 Key，再到「设定」里粘贴。", raw, true, t.code)
             "user location is not supported" in all || "location is not supported" in all || "unsupported_location" in all || ("failed_precondition" in all && "location" in all) ->
                 Friendly("所在地区不支持使用 Gemini$http", "Google 按你的网络出口判断地区，当前地区不在 Gemini API 支持范围内（中国大陆、香港节点都不行）。请把海外网络切到美国、日本、新加坡等支持的地区节点后再试。", raw, false, t.code)
             "api_key_service_blocked" in all || "service_disabled" in all || "has not been used in project" in all || "is disabled" in all ->
@@ -194,14 +194,14 @@ object Errors {
             t.code == 403 || status == "PERMISSION_DENIED" ->
                 Friendly("没有权限调用 Google$http", "Google 拒绝了这次请求：可能这个 Key 没有该模型的权限、被设置了 IP / 应用限制，或者所在地区不支持。请到 Google AI Studio 检查或新建 Key；若开着代理，换个支持的地区节点试试。", raw, true, t.code)
             t.code == 429 || status == "RESOURCE_EXHAUSTED" ->
-                if ("limit: 0" in all) Friendly("这个模型没有免费额度$http", "你的 Google 账号在免费层级下对这个模型的额度是 0（多见于出图模型和 Pro 模型）。请到 Google AI Studio 开通付费（绑定结算账号），或在「设置」里换一个有免费额度的模型。", raw, true, t.code)
+                if ("limit: 0" in all) Friendly("这个模型没有免费额度$http", "你的 Google 账号在免费层级下对这个模型的额度是 0（多见于出图模型和 Pro 模型）。请到 Google AI Studio 开通付费（绑定结算账号），或在「设定」里换一个有免费额度的模型。", raw, true, t.code)
                 else Friendly("Google 额度用完或请求太频繁$http", "超过了 Google 给你的每分钟 / 每天用量上限（免费层级上限很低）。请等 1～2 分钟再点「重试」；经常出现的话，到 Google AI Studio 查看用量，或开通付费提高上限。", raw, false, t.code)
             t.code == 404 || status == "NOT_FOUND" ->
-                Friendly("Google 找不到这个模型$http", "你填的模型名 Google 那边不存在，或者已经下线（比如 Imagen 已停用）。请到「设置」从下拉列表重新选一个模型，并在「高级」里点「恢复默认地址」。", raw, true, t.code)
+                Friendly("Google 找不到这个模型$http", "你填的模型名 Google 那边不存在，或者已经下线（比如 Imagen 已停用）。请到「设定」从下拉列表重新选一个模型，并在「高级」里点「恢复默认地址」。", raw, true, t.code)
             "safety" in all || "blocked" in all ->
                 Friendly("内容被 Google 安全审核拦截$http", "Google 认为这次的内容可能不合规，所以拒绝生成。请换个选题或说法后再试。", raw, false, t.code)
             t.code == 400 || status == "INVALID_ARGUMENT" ->
-                Friendly("请求参数有误$http", "Google 说这次请求的参数不对，最常见是模型名填错，或这个模型不支持当前用法（比如拿文字模型去出图）。请到「设置」从下拉列表重新选模型。", raw, true, t.code)
+                Friendly("请求参数有误$http", "Google 说这次请求的参数不对，最常见是模型名填错，或这个模型不支持当前用法（比如拿文字模型去出图）。请到「设定」从下拉列表重新选模型。", raw, true, t.code)
             t.code in 500..599 || status == "UNAVAILABLE" || status == "INTERNAL" ->
                 Friendly("Google 服务器暂时出错$http", "这不是你这边的问题，是 Google 那边暂时故障或太忙。请稍后再点「重试」。", raw, false, t.code)
             else -> null
