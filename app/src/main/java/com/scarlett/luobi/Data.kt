@@ -290,6 +290,10 @@ class Settings(val c: Context) {
     /** 1.10 灵感：每日选题提示词（空 = 默认）与启用的热榜来源 */
     var inspirePrompt: String get() = s("inspirePrompt", "").ifBlank { Inspire.DEFAULT_PROMPT }; set(v) = put("inspirePrompt", if (v.trim() == Inspire.DEFAULT_PROMPT.trim()) "" else v)
     var inspireSources: Set<String> get() = s("inspireSrc", HotSources.all.joinToString(",") { it.id }).split(",").filter { it.isNotBlank() }.toSet(); set(v) = put("inspireSrc", v.joinToString(","))
+    /** 1.11 事实校对：提示词 + 检索源（deepseek / wiki / bocha）+ 博查 Key */
+    var factPrompt: String get() = s("factPrompt", "").ifBlank { FactCheck.DEFAULT_PROMPT }; set(v) = put("factPrompt", if (v.trim() == FactCheck.DEFAULT_PROMPT.trim()) "" else v)
+    var factSearch: String get() = s("factSearch", "deepseek"); set(v) = put("factSearch", v)
+    var bochaKey: String get() = Secure.get(c, "bocha_key"); set(v) = Secure.set(c, "bocha_key", v)
     var defaultModel get() = s("defaultModel", ""); set(v) = put("defaultModel", v)
     /** 0 短 · 1 中 · 2 长 */
     var length get() = p.getInt("length", 1); set(v) = put("length", v)

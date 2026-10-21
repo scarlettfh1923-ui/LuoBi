@@ -118,7 +118,7 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
 
 /** 「更多」面板（列表 B）：所有不在分享栏里的渠道 + 编辑分享栏 */
 @Composable
-fun SharePanel(custom: List<Channel>, act: ChannelActions, editBar: () -> Unit, dismiss: () -> Unit) {
+fun SharePanel(custom: List<Channel>, act: ChannelActions, editBar: () -> Unit, onFactCheck: () -> Unit = {}, dismiss: () -> Unit) {
     val ctx = LocalContext()
     val bar = remember { Settings(ctx).shareBar }
     val items = ShareBar.others(ChannelIds.all(custom).map { it.id }, bar).mapNotNull { ChannelIds.def(it, custom) }
@@ -131,6 +131,12 @@ fun SharePanel(custom: List<Channel>, act: ChannelActions, editBar: () -> Unit, 
                     SvgIcon(Ic.edit, P3.accent, 14.dp); Text(" 编辑分享栏", fontSize = 13.sp, color = P3.accent)
                 }
             }
+            Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(Sq.m).clickable { onFactCheck() }, verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { SvgIcon(Ic.search, P3.text, 18.dp) }
+                Text("事实校对", Modifier.weight(1f).padding(start = 16.dp), fontSize = 15.sp, color = P3.text)
+                Text("核对片名·情节·作者", fontSize = 12.sp, color = P3.text3)
+            }
+            HorizontalDivider(Modifier.padding(start = 34.dp), thickness = Dp.Hairline, color = P3.border)
             if (items.isEmpty()) Text("所有渠道都已在分享栏里", Modifier.padding(vertical = 20.dp), fontSize = 13.sp, color = P3.text3)
             items.forEachIndexed { i, d ->
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 34.dp), thickness = Dp.Hairline, color = P3.border)

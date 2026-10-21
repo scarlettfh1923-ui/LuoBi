@@ -39,6 +39,7 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
         item { RowGroup("创作", listOf(
             { SettingRow(Ic.key, "模型与密钥", "${s.configured().size} 个") { go("models") } },
             { SettingRow(Ic.tpl, "模板管理", "${templates.size} 个") { go("templates") } },
+            { SettingRow(Ic.search, "事实校对", FactCheck.SearchProvider.of(Settings(LocalContext.current).factSearch).label) { go("factcheck") } },
             { SettingRow(Ic.wand, "每日选题提示词", if (Settings(LocalContext.current).inspirePrompt.trim() == Inspire.DEFAULT_PROMPT.trim()) "默认" else "已修改") { go("inspire") } },
             { SettingRow(Ic.wand, "意图提取提示词", if (active?.prompt?.trim() == Defaults.INTENT.trim()) "默认" else "已修改") { go("cleans") } },
             { SettingRow(Ic.ruler, "篇幅", Lengths.NAMES[s.length.coerceIn(0, 2)] + " · " + s.lengthRange().let { "${it.first}–${it.second}" }) { go("length") } })) }
@@ -67,6 +68,7 @@ fun SubPage(db: AppDb, r: Route.Sub, back: () -> Unit, go: (Route) -> Unit) {
                 "template" -> TemplateEdit(db, arg, back)
                 "cleans" -> CleansPage(db, back)
                 "inspire" -> InspirePage(back)
+                "factcheck" -> FactCheckPage(back)
                 "models" -> ModelsPage(back)
                 "channels" -> ChannelsPage(db, back, sub)
                 "channel" -> ChannelEdit(db, arg, back)
@@ -260,6 +262,57 @@ fun CleansPage(db: AppDb, back: () -> Unit) {
                 PrimaryButton("保存", Modifier.width(140.dp), enabled = prompt.text != c.prompt) {
                     scope.launch { db.cleans().update(c.copy(prompt = prompt.text)); snack("已保存意图提取提示词") }
                 }
+            }
+        }
+    }
+}
+
+// ---------------- 事实校对（1.11） ----------------
+@Composable
+fun FactCheckPage(back: () -> Unit) {
+    val ctx = LocalContext.current; val s = remember { Settings(ctx) }
+    var prompt by remember { mutableStateOf(TextFieldValue(s.factPrompt)) }
+    var saved by remember { mutableStateOf(s.factPrompt) }
+    var provider by remember { mutableStateOf(s.factSearch) }
+    var bocha by remember { mutableStateOf(s.bochaKey) }
+    val hasDs = remember { s.key("deepseek").isNotBlank() }
+    Page("事实校对", back) {
+        item { Text("核对文章里的硬事实：片名、情节、作者名、引用来源等。不做语法或文笔润色。", Modifier.padding(bottom = 10.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
+        item { GroupLabel("事实检索") }
+        item {
+            Card(pad = 0.dp) {
+                FactCheck.SearchProvider.entries.forEachIndexed { i, p ->
+                    if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = Dp.Hairline, color = P3.border)
+                    Row(Modifier.fillMaxWidth().clickable { provider = p.id; s.factSearch = p.id }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(provider == p.id, { provider = p.id; s.factSearch = p.id }, colors = RadioButtonDefaults.colors(selectedColor = P3.accent))
+                        Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                            Text(p.label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
+                            Text(when (p) {
+                                FactCheck.SearchProvider.DEEPSEEK -> "用已有的 DeepSeek Key 调官方 /v1/tools/search" + if (hasDs) " · 已配置" else " · 还没填 Key"
+                                FactCheck.SearchProvider.WIKI -> "免 Key，适合片名、作者、作品基本信息"
+                                FactCheck.SearchProvider.BOCHA -> "第三方网页搜索，需单独填写博查 Key"
+                            }, fontSize = 12.sp, color = P3.text2, lineHeight = 17.sp)
+                        }
+                    }
+                }
+            }
+            Text("选中的源不可用时（没 Key 或出错），会自动换下一个，并在结果里说明。", Modifier.padding(top = 8.dp, start = 4.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp)
+        }
+        if (provider == "bocha" || bocha.isNotBlank()) item {
+            GroupLabel("博查 API Key")
+            InputBox(bocha, { bocha = it.trim(); s.bochaKey = bocha }, "粘贴博查 Key，加密存在本机", singleLine = true, secret = true, mono = true)
+        }
+        item { GroupLabel("校对提示词") }
+        item {
+            Card {
+                BasicTextField(prompt, { prompt = it }, Modifier.fillMaxWidth().heightIn(min = 220.dp), textStyle = TextStyle(fontSize = 14.sp, lineHeight = 23.sp, color = P3.text),
+                    cursorBrush = SolidColor(P3.accent), visualTransformation = VarHighlight(setOf("搜索结果", "标题", "正文")))
+            }
+            if (!prompt.text.contains("{搜索结果}")) WarnBox("提示词里没有 {搜索结果}，模型看不到参考资料。", Modifier.padding(top = 8.dp))
+            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextAction("恢复默认", P3.text2) { s.factPrompt = FactCheck.DEFAULT_PROMPT; prompt = TextFieldValue(FactCheck.DEFAULT_PROMPT); saved = FactCheck.DEFAULT_PROMPT; snack("已恢复默认") }
+                Spacer(Modifier.weight(1f))
+                PrimaryButton("保存", Modifier.width(140.dp), enabled = prompt.text != saved) { s.factPrompt = prompt.text; saved = prompt.text; snack("已保存") }
             }
         }
     }

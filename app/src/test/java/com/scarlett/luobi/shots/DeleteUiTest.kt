@@ -20,7 +20,7 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [34], application = TestApp::class, qualifiers = "w360dp-h780dp-xxhdpi")
 class DeleteUiTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
-    private val dir = System.getProperty("user.dir") + "/../../screenshots/v1.10/"
+    private val dir = System.getProperty("user.dir") + "/../../screenshots/v1.11/"
     private fun idle() { rule.mainClock.advanceTimeBy(1500); rule.waitForIdle() }
     private fun shot(n: String) { idle(); rule.onRoot().captureRoboImage("$dir$n.png") }
     private fun seed() = runBlocking {

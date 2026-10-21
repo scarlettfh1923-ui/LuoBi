@@ -34,6 +34,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 
 // ---------------- 结果页：阅读 & 配图（结构照搬小红书助手） ----------------
 @Composable
@@ -103,6 +105,32 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     androidx.activity.compose.BackHandler(enabled = tab == 1) { tab = 0 }
     act.openXhs = { if (imgs.isNotEmpty()) xhsSheet = true else snack("配图还在生成，请稍候") }
 
+    // 1.11 事实校对：不挡阅读；顶部胶囊进度；结果底部弹层；文中高亮；一键改正
+    var factBusy by remember { mutableStateOf(false) }
+    var factReport by remember { mutableStateOf<FactReport?>(null) }
+    var factSheet by remember { mutableStateOf(false) }
+    var factFocus by remember { mutableStateOf<String?>(null) }
+    fun runFactCheck() {
+        if (factBusy) return
+        factBusy = true; factSheet = false
+        scope.launch {
+            try {
+                factReport = withContext(Dispatchers.IO) { FactCheck.run(ctx, n.title, n.body, n.model) }
+                factSheet = true
+                if (factReport!!.issues.isEmpty()) snack("没有发现硬事实问题")
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: CleanParse.BadFormat) { snack("校对结果格式不对，请重试", false, "重试") { runFactCheck() } }
+            catch (e: Throwable) { snackErr(e, "事实校对失败：", "重试") { runFactCheck() } }
+            finally { factBusy = false }
+        }
+    }
+    fun applyFactFixes(list: List<FactIssue>) {
+        val body2 = FactCheck.applyFixes(n.body, list)
+        val title2 = list.fold(n.title) { t, iss -> if (iss.span.isNotBlank() && t.contains(iss.span) && iss.correction.isNotBlank()) t.replaceFirst(iss.span, iss.correction) else t }
+        if (body2 == n.body && title2 == n.title) { snack("没有可应用的改正", false); return }
+        scope.launch { db.notes().update(n.copy(title = title2, body = body2)); snack("已改正 ${list.size} 处") }
+    }
+
     val backdrop = rememberBackdrop()
     CompositionLocalProvider(LocalBackdrop provides backdrop) {
     Scaffold(containerColor = pal.bg, topBar = {
@@ -113,6 +141,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 if (tab == 1) Text("配图", Modifier.frosted(elevation = 6.dp, dark = pal.dark).padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = pal.text)
             }
             if (tab == 0) FloatGroup(pal.dark) {
+                FloatAction(Ic.search, if (factBusy) pal.accent else pal.text, "事实校对") { runFactCheck() }
                 FloatAction(Ic.imgplus, pal.text, "文中插图") { il.start() }
                 FloatAction(Ic.text, if (showFont) pal.accent else pal.text, "阅读设置") { showFont = !showFont }
                 FloatAction(Ic.write, pal.text, "编辑") { editing = true }
@@ -144,7 +173,11 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     }) { pad ->
         Box(Modifier.fillMaxSize()) {
             Crossfade(tab, Modifier.fillMaxSize().backdropSource(backdrop), label = "tab") { t ->
-                if (t == 0) ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding() + 16.dp, top = pad.calculateTopPadding(), openVersions = { verMenu = true }, onTags = { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } }, il = il, editCaption = { capEdit = it })
+                if (t == 0) Box(Modifier.fillMaxSize()) {
+                    ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding() + 16.dp, top = pad.calculateTopPadding(), openVersions = { verMenu = true }, onTags = { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } }, il = il, editCaption = { capEdit = it },
+                        highlights = factReport?.issues?.map { it.span }?.filter { it.isNotBlank() } ?: emptyList(), focusSpan = factFocus)
+                    FactProgressChip(factBusy, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp))
+                }
                 else Box(Modifier.padding(top = pad.calculateTopPadding())) { Gallery(imgs, style, { style = it; s.style = it }, spacing, { spacing = it; s.cardSpacing = it }, ratio, { ratio = it; s.cardRatio = it }, s.imgOn, bgBusy, aiBg != null, pal, pad.calculateBottomPadding(),
                     cardBusy = cardBusy, cardErr = cardErr, onAiBg = { genBg() }, clearBg = { aiBg = null },
                     save = { scope.launch { val c = withContext(Dispatchers.IO) { Share.save(ctx, imgs) }; snack("已保存 $c 张图片到相册「落笔」") } }) }
@@ -189,18 +222,26 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
             dismissButton = { TextButton(onClick = { capEdit = null }, shape = Sq.full) { Text("取消", color = P3.text2) } })
     }
     if (xhsSheet) XhsSheet(n, imgs, pal) { xhsSheet = false }
-    if (panel) SharePanel(channels, act, { panel = false; goSub("sharebar") }) { panel = false; barTick++ }
+    if (panel) SharePanel(channels, act, { panel = false; goSub("sharebar") }, onFactCheck = { panel = false; runFactCheck() }) { panel = false; barTick++ }
+    if (factSheet && factReport != null) FactSheet(factReport!!, onJump = { factFocus = it.span; factSheet = false; scope.launch { kotlinx.coroutines.delay(400); factSheet = true } }, onApply = { applyFactFixes(it) }, onDismiss = { factSheet = false })
     if (editing) EditScreen(n, { editing = false }) { scope.launch { db.notes().update(it) }; editing = false; snack("已保存修改") }
 }
 
 @Composable
 fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, family: FontFamily, bottom: Dp, top: Dp = 0.dp, openVersions: () -> Unit, onTags: (List<String>) -> Unit,
-                il: Illustrator? = null, editCaption: (Pic) -> Unit = {}) {
+                il: Illustrator? = null, editCaption: (Pic) -> Unit = {}, highlights: List<String> = emptyList(), focusSpan: String? = null) {
     val paras = Export.paras(n.body)
     val ctx = LocalContext.current
     val byPara = Pics.byPara(n.pics(), paras.size)
     val showCredit = remember { Settings(ctx).showCredit }
     var paraMenu by remember { mutableStateOf(-1) }
+    val scroll = rememberScrollState()
+    val bringers = remember(paras.size) { List(paras.size) { BringIntoViewRequester() } }
+    LaunchedEffect(focusSpan) {
+        val span = focusSpan ?: return@LaunchedEffect
+        val i = paras.indexOfFirst { it.contains(span) }
+        if (i >= 0) { kotlinx.coroutines.delay(80); bringers[i].bringIntoView() }
+    }
     @Composable fun after(i: Int) {
         byPara[i]?.forEach { pic -> PicView(ctx, pic, pal, showCredit, { il?.here(pic.after, paras.getOrElse(pic.after) { "" }, pic) }, { editCaption(pic) }, { il?.remove(pic) }) }
         val ps = il?.props ?: return
@@ -216,7 +257,7 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
             DropdownMenuItem({ Text("复制段落") }, { paraMenu = -1; cm.setText(androidx.compose.ui.text.AnnotatedString(headText(p).replace("**", ""))); snack("已复制段落") }, leadingIcon = { SvgIcon(Ic.copy, P3.text2, 18.dp) })
         }
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 24.dp)) {
         Spacer(Modifier.height(top + 12.dp))
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(Sq.s).clickable { openVersions() }) {
             Text(listOf(n.templateName.ifBlank { "文章" }, n.model.substringBefore(" · ").ifBlank { "" } + n.model.substringAfter(" · ", "").let { if (it.isNotBlank()) " $it" else "" }, "第 ${n.version} 版")
@@ -233,7 +274,11 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
         HorizontalDivider(thickness = Dp.Hairline, color = pal.border)
         Spacer(Modifier.height(18.dp))
         paras.forEachIndexed { i, p ->
-          Box(Modifier.fillMaxWidth().clip(Sq.s).background(if (paraMenu == i) pal.soft else androidx.compose.ui.graphics.Color.Transparent).combinedClickable(onClick = {}, onLongClick = { paraMenu = i })) {
+          val hit = highlights.firstOrNull { it.isNotBlank() && p.contains(it) }
+          val focused = focusSpan != null && focusSpan.isNotBlank() && p.contains(focusSpan)
+          Box(Modifier.fillMaxWidth().bringIntoViewRequester(bringers[i]).clip(Sq.s)
+              .background(when { focused || hit != null -> Color(0xFFFFF3CD); paraMenu == i -> pal.soft; else -> Color.Transparent })
+              .combinedClickable(onClick = {}, onLongClick = { paraMenu = i }).padding(vertical = if (hit != null) 4.dp else 0.dp)) {
            Column {
             val ml = Md.line(p, paras.size)
             val nextKind = paras.getOrNull(i + 1)?.let { Md.line(it, paras.size).kind }
