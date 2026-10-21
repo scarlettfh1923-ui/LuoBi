@@ -108,7 +108,7 @@ object Notion {
     private fun fail(type: String, method: String, path: String, code: Int, txt: String, extra: String = ""): PublishError {
         val j = runCatching { JSONObject(txt) }.getOrNull()
         val ec = j?.optString("code").orEmpty(); val em = j?.optString("message").orEmpty().ifBlank { txt.take(200) }
-        val typeLabel = if (type == "database") "数据库（新增一行）" else "页面（建子页面）"
+        val typeLabel = when (type) { "database" -> "数据库（新增一行）"; "cover" -> "封面"; else -> "页面（建子页面）" }
         return PublishError("Notion 请求失败：$method /v1$path（目标类型：$typeLabel，HTTP $code" + (if (ec.isNotBlank()) "，$ec" else "") + "）" +
             (if (em.isNotBlank()) "：$em" else "") + (if (extra.isNotBlank()) "\n$extra" else ""))
     }
@@ -177,12 +177,75 @@ object Notion {
         if (tags.isNotEmpty()) l += blk("paragraph", JSONObject().put("rich_text", rt(tags.joinToString(" ") { "#$it" })))
         return l
     }
-    suspend fun upload(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String = withContext(Dispatchers.IO) {
+    /** 发布结果：coverNote 非空时是封面没设上的提示（不影响发布） */
+    data class Result(val url: String, val coverNote: String = "")
+
+    suspend fun upload(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String = uploadFull(ctx, title, body, tags, pics).url
+    suspend fun uploadFull(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): Result = withContext(Dispatchers.IO) {
         val s = Settings(ctx); val token = Secure.get(ctx, "notion_token")
         if (token.isBlank() || s.notionTarget.isBlank()) throw ConfigError("还没有配置 Notion。请到「设定 → 发布渠道 → Notion」填集成 Token 和目标页面 / 数据库。")
-        publish(token, s.notionType, s.notionTarget, s.notionTitleProp, s.notionTagsProp, title, blocks(body, tags, pics, s.showCredit), tags)
+        val cover = firstImage(pics, Export.paras(body).size)?.let { coverSourceOf(it) }
+        publishFull(token, s.notionType, s.notionTarget, s.notionTitleProp, s.notionTagsProp, title, blocks(body, tags, pics, s.showCredit), tags, cover)
     }
-    fun publish(token: String, type: String, rawTarget: String, titleProp: String, tagsProp: String, title: String, bl: List<JSONObject>, tags: List<String>): String {
+    fun publish(token: String, type: String, rawTarget: String, titleProp: String, tagsProp: String, title: String, bl: List<JSONObject>, tags: List<String>): String =
+        publishFull(token, type, rawTarget, titleProp, tagsProp, title, bl, tags, null).url
+
+    // ---------- 1.13：封面 = 正文第一张图 ----------
+    /** 封面来源：远程 https → external；本地文件 → File Upload */
+    sealed class CoverSource {
+        data class External(val url: String) : CoverSource()
+        data class Local(val file: java.io.File) : CoverSource()
+    }
+    /** 正文里的第一张图：按插入段落顺序，同段按原顺序 */
+    fun firstImage(pics: List<Pic>, paraCount: Int): Pic? =
+        pics.withIndex().sortedWith(compareBy({ it.value.after.coerceIn(0, (paraCount - 1).coerceAtLeast(0)) }, { it.index })).firstOrNull()?.value
+    fun coverSourceOf(p: Pic): CoverSource? = when {
+        p.url.startsWith("https://") -> CoverSource.External(p.url)
+        p.url.startsWith("file://") -> java.io.File(p.url.removePrefix("file://")).takeIf { it.isFile }?.let { CoverSource.Local(it) }
+        p.local.isNotBlank() && java.io.File(p.local).isFile -> CoverSource.Local(java.io.File(p.local))
+        else -> null
+    }
+    /** multipart 上传（单元测试可替换） */
+    var sendFile: (url: String, headers: Map<String, String>, filename: String, mime: String, bytes: ByteArray) -> Pair<Int, String> = { u, h, f, m, b -> multipart(u, h, f, m, b) }
+    private fun multipart(url: String, headers: Map<String, String>, filename: String, mime: String, bytes: ByteArray): Pair<Int, String> {
+        val boundary = "----LuoBi" + System.nanoTime()
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.requestMethod = "POST"; c.connectTimeout = 20000; c.readTimeout = 60000; c.doOutput = true
+        headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
+        c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        c.outputStream.use { o ->
+            o.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\nContent-Type: $mime\r\n\r\n".toByteArray())
+            o.write(bytes); o.write("\r\n--$boundary--\r\n".toByteArray())
+        }
+        val code = c.responseCode
+        val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
+        return code to txt
+    }
+    private fun mimeOf(f: java.io.File) = when (f.extension.lowercase()) { "png" -> "image/png"; "webp" -> "image/webp"; "gif" -> "image/gif"; else -> "image/jpeg" }
+    /** POST /v1/file_uploads → POST /v1/file_uploads/{id}/send，返回 file_upload id */
+    fun uploadFile(token: String, f: java.io.File): String {
+        val mime = mimeOf(f); val name = f.name.let { if (it.contains('.')) it else "$it.jpg" }
+        val (c, t) = call(token, "POST", "/file_uploads", JSONObject().put("filename", name).put("content_type", mime).toString())
+        if (c !in 200..299) throw fail("cover", "POST", "/file_uploads", c, t)
+        val id = JSONObject(t).optString("id"); if (id.isBlank()) throw PublishError("POST /v1/file_uploads 没有返回 id")
+        val path = "/file_uploads/$id/send"
+        val (c2, t2) = sendFile("$API$path", h(token), name, mime, f.readBytes())
+        if (c2 !in 200..299) throw fail("cover", "POST", path, c2, t2)
+        return id
+    }
+    /** PATCH /v1/pages/{id} 设封面；失败返回提示，不抛 */
+    fun setCover(token: String, pageId: String, src: CoverSource): String = try {
+        val cover = when (src) {
+            is CoverSource.External -> JSONObject().put("type", "external").put("external", JSONObject().put("url", src.url))
+            is CoverSource.Local -> JSONObject().put("type", "file_upload").put("file_upload", JSONObject().put("id", uploadFile(token, src.file)))
+        }
+        val path = "/pages/$pageId"
+        val (c, t) = call(token, "PATCH", path, JSONObject().put("cover", cover).toString())
+        if (c !in 200..299) throw fail("cover", "PATCH", path, c, t)
+        ""
+    } catch (e: Throwable) { "封面没设上（文章已发布）：" + (e.message ?: e.javaClass.simpleName).take(200) }
+
+    fun publishFull(token: String, type: String, rawTarget: String, titleProp: String, tagsProp: String, title: String, bl: List<JSONObject>, tags: List<String>, cover: CoverSource?): Result {
         val tgt = resolve(token, type, rawTarget, titleProp)
         val props = JSONObject().put(tgt.titleProp, JSONObject().put("title", rt(title)))
         if (tgt.type == "database" && tagsProp.isNotBlank() && tags.isNotEmpty())
@@ -196,7 +259,8 @@ object Notion {
             val (c2, t2) = call(token, "PATCH", path, JSONObject().put("children", JSONArray(chunk)).toString())
             if (c2 !in 200..299) throw fail(type, "PATCH", path, c2, t2, "页面已创建，但后半段正文追加失败。")
         }
-        return page.optString("url")
+        val note = if (cover != null && page.optString("id").isNotBlank()) setCover(token, page.optString("id"), cover) else ""
+        return Result(page.optString("url"), note)
     }
     suspend fun test(ctx: Context): String = withContext(Dispatchers.IO) {
         val token = Secure.get(ctx, "notion_token"); val s = Settings(ctx)

@@ -59,7 +59,7 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
             "html" -> { val doc = Export.htmlDoc(title, n.body, tags, n.pics(), Settings(ctx).showCredit); Share.shareDoc(ctx, title, "html", "text/html", doc) }
             "md" -> { val doc = Export.markdown(title, n.body, tags, n.pics(), Settings(ctx).showCredit); Share.shareDoc(ctx, title, "md", "text/markdown", doc) }
             "copy" -> { Share.copy(ctx, "全文", fullText()); snack("已复制全文") }
-            "notion" -> bg("Notion") { val u = Notion.upload(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "Notion", u); "已上传到 Notion，链接已复制" }
+            "notion" -> bg("Notion") { val r = Notion.uploadFull(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "Notion", r.url); "已上传到 Notion，链接已复制" + if (r.coverNote.isNotBlank()) "（${r.coverNote}）" else "" }
             "yuque" -> bg("语雀") { val u = Yuque.upload(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "语雀", u); "已上传到语雀，链接已复制" }
             "telegraph" -> bg("Telegraph") { val u = Telegraph.upload(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "Telegraph", u); "已发布：$u（链接已复制）" }
             else -> if (id.startsWith("c")) {
