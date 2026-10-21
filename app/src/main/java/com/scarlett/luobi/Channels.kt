@@ -47,7 +47,7 @@ object ChannelIds {
     }
 }
 
-private object Http {
+internal object Http {
     fun call(method: String, url: String, headers: Map<String, String>, body: String?, contentType: String = "application/json; charset=utf-8"): Pair<Int, String> {
         val c = URL(url).openConnection() as HttpURLConnection
         c.requestMethod = method; c.connectTimeout = 20000; c.readTimeout = 60000
@@ -66,15 +66,95 @@ private object Http {
     }
 }
 
-/** Notion 官方 API：POST /v1/pages，正文转成 blocks；目标可以是页面或数据库 */
+/**
+ * Notion 官方 API（1.12.1：Notion-Version 2025-09-03）。
+ * - 页面：GET /v1/pages/{id} 测试；POST /v1/pages parent.page_id 建子页面。绝不调数据库接口。
+ * - 数据库：GET /v1/databases/{id} → data_sources[0].id → GET /v1/data_sources/{ds} 取属性 → POST /v1/pages parent.data_source_id。
+ *   用户粘的若本身是 data source ID（databases 404），直接 GET /v1/data_sources/{id}。
+ * 测试与发布共用 resolve()，目标类型一致。
+ */
 object Notion {
     private const val API = "https://api.notion.com/v1"
-    private fun h(token: String) = mapOf("Authorization" to "Bearer $token", "Notion-Version" to "2022-06-28")
-    /** 从链接或 id 里取出 32 位 id */
-    fun idOf(s: String): String {
-        val hex = Regex("[0-9a-fA-F]{32}").findAll(s.replace("-", "")).lastOrNull()?.value ?: return s.trim()
-        return hex.lowercase()
+    const val VERSION = "2025-09-03"
+    /** 可替换的 HTTP（单元测试注入假的） */
+    var transport: (method: String, url: String, headers: Map<String, String>, body: String?) -> Pair<Int, String> =
+        { m, u, h, b -> Http.call(m, u, h, b) }
+    private fun h(token: String) = mapOf("Authorization" to "Bearer $token", "Notion-Version" to VERSION)
+
+    private val HEX32 = Regex("([0-9a-fA-F]{32})$")
+    private val UUID = Regex("([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$")
+    /**
+     * 从链接或 ID 里取目标 ID，返回带横线 UUID；取不到返回 null。
+     * 规则：去掉 ?query 和 #fragment（?v= 视图 ID、&source=copy_link 都丢弃）→ 取最后一段路径 →
+     * 末尾的 32 位十六进制（可带横线，可在 slug-标题-<id> 后面）。
+     */
+    fun parseId(input: String): String? {
+        var s = input.trim()
+        s = s.substringBefore('#').substringBefore('?').trimEnd('/')
+        val last = s.substringAfterLast('/')
+        UUID.find(last)?.let { return it.groupValues[1].lowercase() }
+        val m = HEX32.find(last.replace("-", "")) ?: return null
+        val h = m.groupValues[1].lowercase()
+        return "${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20)}"
     }
+    /** 链接里带 ?v= 说明是数据库视图链接 */
+    fun looksLikeDatabaseLink(input: String) = Regex("[?&]v=[0-9a-fA-F]{32}").containsMatchIn(input)
+    @Deprecated("用 parseId") fun idOf(s: String): String = parseId(s) ?: s.trim()
+
+    data class Target(val type: String, val id: String, val parentJson: JSONObject, val titleProp: String, val tested: List<String>)
+
+    private fun call(token: String, method: String, path: String, body: String? = null): Pair<Int, String> = transport(method, "$API$path", h(token), body)
+
+    private fun fail(type: String, method: String, path: String, code: Int, txt: String, extra: String = ""): PublishError {
+        val j = runCatching { JSONObject(txt) }.getOrNull()
+        val ec = j?.optString("code").orEmpty(); val em = j?.optString("message").orEmpty().ifBlank { txt.take(200) }
+        val typeLabel = if (type == "database") "数据库（新增一行）" else "页面（建子页面）"
+        return PublishError("Notion 请求失败：$method /v1$path（目标类型：$typeLabel，HTTP $code" + (if (ec.isNotBlank()) "，$ec" else "") + "）" +
+            (if (em.isNotBlank()) "：$em" else "") + (if (extra.isNotBlank()) "\n$extra" else ""))
+    }
+
+    /** 测试与发布共用：按目标类型解析出 parent */
+    fun resolve(token: String, type: String, rawTarget: String, titlePropSetting: String = ""): Target {
+        val id = parseId(rawTarget) ?: throw ConfigError("没能从「$rawTarget」里找到 Notion ID。请粘贴页面 / 数据库链接，或 32 位 ID。")
+        val tested = mutableListOf<String>()
+        if (type != "database") {
+            val path = "/pages/$id"; tested += "GET /v1$path"
+            val (c, t) = call(token, "GET", path)
+            if (c !in 200..299) {
+                val hint = buildString {
+                    if (looksLikeDatabaseLink(rawTarget)) append("这条链接带 ?v=，像是数据库链接：请把目标类型改成「数据库（新增一行）」。")
+                    else if (c == 404) append("请确认该页面右上角「…→ 连接」里已添加你的集成。")
+                }
+                throw fail(type, "GET", path, c, t, hint)
+            }
+            return Target("page", id, JSONObject().put("type", "page_id").put("page_id", id), "title", tested)
+        }
+        // 数据库：先 databases，拿 data_sources；404 再把它当 data source ID
+        var dsId: String
+        val dbPath = "/databases/$id"; tested += "GET /v1$dbPath"
+        val (c, t) = call(token, "GET", dbPath)
+        if (c in 200..299) {
+            val arr = JSONObject(t).optJSONArray("data_sources")
+            dsId = arr?.optJSONObject(0)?.optString("id").orEmpty()
+            if (dsId.isBlank()) throw PublishError("Notion 数据库 $id 没有返回 data_sources（GET /v1$dbPath）。")
+        } else if (c == 404 || c == 400) {
+            val dsPath = "/data_sources/$id"; tested += "GET /v1$dsPath"
+            val (c2, t2) = call(token, "GET", dsPath)
+            if (c2 !in 200..299) throw fail(type, "GET", dbPath, c, t, "也试了 GET /v1$dsPath：HTTP $c2。请确认数据库右上角「…→ 连接」里已添加你的集成。")
+            dsId = id
+            return Target("database", id, JSONObject().put("type", "data_source_id").put("data_source_id", dsId), titleOf(JSONObject(t2), titlePropSetting), tested)
+        } else throw fail(type, "GET", dbPath, c, t)
+        val dsPath = "/data_sources/$dsId"; tested += "GET /v1$dsPath"
+        val (c3, t3) = call(token, "GET", dsPath)
+        if (c3 !in 200..299) throw fail(type, "GET", dsPath, c3, t3)
+        return Target("database", id, JSONObject().put("type", "data_source_id").put("data_source_id", dsId), titleOf(JSONObject(t3), titlePropSetting), tested)
+    }
+    private fun titleOf(ds: JSONObject, setting: String): String {
+        if (setting.isNotBlank()) return setting
+        val props = ds.optJSONObject("properties") ?: return "Name"
+        return props.keys().asSequence().firstOrNull { props.optJSONObject(it)?.optString("type") == "title" } ?: "Name"
+    }
+
     private fun rt(text: String) = JSONArray().apply { text.chunked(1900).forEach { put(JSONObject().put("type", "text").put("text", JSONObject().put("content", it))) } }
     /** 行内粗体 → rich_text annotations.bold */
     private fun rtMd(text: String) = JSONArray().apply { Md.spans(text).forEach { (t, b) -> t.chunked(1900).forEach { c -> put(JSONObject().put("type", "text").put("text", JSONObject().put("content", c)).apply { if (b) put("annotations", JSONObject().put("bold", true)) }) } } }
@@ -100,46 +180,36 @@ object Notion {
     suspend fun upload(ctx: Context, title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList()): String = withContext(Dispatchers.IO) {
         val s = Settings(ctx); val token = Secure.get(ctx, "notion_token")
         if (token.isBlank() || s.notionTarget.isBlank()) throw ConfigError("还没有配置 Notion。请到「设定 → 发布渠道 → Notion」填集成 Token 和目标页面 / 数据库。")
-        val target = idOf(s.notionTarget)
-        val bl = blocks(body, tags, pics, Settings(ctx).showCredit)
-        val req = JSONObject()
-        if (s.notionType == "database") {
-            var titleProp = s.notionTitleProp
-            if (titleProp.isBlank()) {
-                val (c, t) = Http.call("GET", "$API/databases/$target", h(token), null)
-                if (c !in 200..299) throw PublishError(Http.msg(c, t))
-                val props = JSONObject(t).optJSONObject("properties") ?: JSONObject()
-                titleProp = props.keys().asSequence().firstOrNull { props.optJSONObject(it)?.optString("type") == "title" } ?: "Name"
-            }
-            val props = JSONObject().put(titleProp, JSONObject().put("title", rt(title)))
-            if (s.notionTagsProp.isNotBlank() && tags.isNotEmpty())
-                props.put(s.notionTagsProp, JSONObject().put("multi_select", JSONArray().apply { tags.forEach { put(JSONObject().put("name", it.replace(",", " "))) } }))
-            req.put("parent", JSONObject().put("database_id", target)).put("properties", props)
-        } else {
-            req.put("parent", JSONObject().put("page_id", target)).put("properties", JSONObject().put("title", JSONObject().put("title", rt(title))))
-        }
-        req.put("children", JSONArray(bl.take(100)))
-        val (code, txt) = Http.call("POST", "$API/pages", h(token), req.toString())
-        if (code !in 200..299) throw PublishError(Http.msg(code, txt))
+        publish(token, s.notionType, s.notionTarget, s.notionTitleProp, s.notionTagsProp, title, blocks(body, tags, pics, s.showCredit), tags)
+    }
+    fun publish(token: String, type: String, rawTarget: String, titleProp: String, tagsProp: String, title: String, bl: List<JSONObject>, tags: List<String>): String {
+        val tgt = resolve(token, type, rawTarget, titleProp)
+        val props = JSONObject().put(tgt.titleProp, JSONObject().put("title", rt(title)))
+        if (tgt.type == "database" && tagsProp.isNotBlank() && tags.isNotEmpty())
+            props.put(tagsProp, JSONObject().put("multi_select", JSONArray().apply { tags.forEach { put(JSONObject().put("name", it.replace(",", " "))) } }))
+        val req = JSONObject().put("parent", tgt.parentJson).put("properties", props).put("children", JSONArray(bl.take(100)))
+        val (code, txt) = call(token, "POST", "/pages", req.toString())
+        if (code !in 200..299) throw fail(type, "POST", "/pages", code, txt)
         val page = JSONObject(txt)
-        // 一次最多 100 个 block，剩下的分批追加
         bl.drop(100).chunked(100).forEach { chunk ->
-            val (c2, t2) = Http.call("PATCH", "$API/blocks/${page.optString("id")}/children", h(token), JSONObject().put("children", JSONArray(chunk)).toString())
-            if (c2 !in 200..299) throw PublishError("页面已创建，但后半段正文追加失败：" + Http.msg(c2, t2))
+            val path = "/blocks/${page.optString("id")}/children"
+            val (c2, t2) = call(token, "PATCH", path, JSONObject().put("children", JSONArray(chunk)).toString())
+            if (c2 !in 200..299) throw fail(type, "PATCH", path, c2, t2, "页面已创建，但后半段正文追加失败。")
         }
-        page.optString("url")
+        return page.optString("url")
     }
     suspend fun test(ctx: Context): String = withContext(Dispatchers.IO) {
         val token = Secure.get(ctx, "notion_token"); val s = Settings(ctx)
         if (token.isBlank()) throw ConfigError("请先填写 Notion 集成 Token")
-        val (c, t) = Http.call("GET", "$API/users/me", h(token), null)
-        if (c !in 200..299) throw PublishError(Http.msg(c, t))
-        if (s.notionTarget.isNotBlank()) {
-            val path = if (s.notionType == "database") "databases" else "pages"
-            val (c2, t2) = Http.call("GET", "$API/$path/${idOf(s.notionTarget)}", h(token), null)
-            if (c2 !in 200..299) throw PublishError("Token 有效，但访问不到目标：" + Http.msg(c2, t2) + "。请在 Notion 里把该页面 / 数据库「连接」到你的集成。")
-        }
-        "连接正常" + if (s.notionTarget.isNotBlank()) "，能访问目标" else ""
+        testWith(token, s.notionType, s.notionTarget)
+    }
+    fun testWith(token: String, type: String, rawTarget: String): String {
+        val (c, t) = call(token, "GET", "/users/me")
+        if (c !in 200..299) throw fail(type, "GET", "/users/me", c, t, "Token 无效或已失效。")
+        if (rawTarget.isBlank()) return "Token 有效（还没填目标）"
+        val tgt = resolve(token, type, rawTarget)
+        return if (tgt.type == "page") "连接正常：能访问页面 ${tgt.id}"
+        else "连接正常：能访问数据库 ${tgt.id}（data source ${tgt.parentJson.optString("data_source_id")}）"
     }
 }
 
