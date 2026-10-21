@@ -46,8 +46,8 @@ class Illustrator(private val ctx: Context, private val db: AppDb, private val s
 
     fun start() {
         val n = note ?: return
-        if (ImgSources.usable(ctx).isEmpty()) { snack("还没有可用的图片来源", false, "去设置") { goSub("imgsrc") }; return }
-        if (modelRef().isBlank()) { snack("需要一个文字模型来通读全文，请先配置模型", false, "去设置") { goSub("models") }; return }
+        if (ImgSources.usable(ctx).isEmpty()) { snack("还没有可用的图片来源", false, "去设定") { goSub("imgsrc") }; return }
+        if (modelRef().isBlank()) { snack("需要一个文字模型来通读全文，请先配置模型", false, "去设定") { goSub("models") }; return }
         if (analyzing) return
         analyzing = true; inserted = 0
         scope.launch {
@@ -70,7 +70,7 @@ class Illustrator(private val ctx: Context, private val db: AppDb, private val s
         scope.launch {
             try { val (l, src) = withContext(Dispatchers.IO) { ImgSources.searchChain(ctx, p.query, p.page, s.picOrient) }; p.cands = l; p.sel = 0; p.source = src }
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: ConfigError) { p.err = e.message; snack(e.message ?: "", false, "去设置") { goSub("imgsrc") } }
+            catch (e: ConfigError) { p.err = e.message; snack(e.message ?: "", false, "去设定") { goSub("imgsrc") } }
             catch (e: Throwable) { p.err = Errors.explain(e).let { it.title + "：" + it.detail }.take(160) }
             finally { p.loading = false }
         }
@@ -95,7 +95,7 @@ class Illustrator(private val ctx: Context, private val db: AppDb, private val s
     fun caption(pic: Pic, c: String) { val n = note ?: return; scope.launch { save(n, n.pics().map { if (it == pic) it.copy(caption = c) else it }) } }
     /** 长按段落「在此插图」/ 换图：先让 AI 把该段写成英文描述，没有模型就直接用该段文字 */
     fun here(after: Int, para: String, replace: Pic? = null) {
-        if (ImgSources.usable(ctx).isEmpty()) { snack("还没有可用的图片来源", false, "去设置") { goSub("imgsrc") }; return }
+        if (ImgSources.usable(ctx).isEmpty()) { snack("还没有可用的图片来源", false, "去设定") { goSub("imgsrc") }; return }
         scope.launch {
             val q = try {
                 if (modelRef().isBlank()) para.take(60)

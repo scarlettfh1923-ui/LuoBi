@@ -15,7 +15,7 @@ android {
   compileSdk = 35
   defaultConfig {
     applicationId = "com.scarlett.luobi"
-    minSdk = 29; targetSdk = 35; versionCode = 8; versionName = "1.8.0"
+    minSdk = 29; targetSdk = 35; versionCode = 9; versionName = "1.9.0"
   }
   signingConfigs {
     if (signProps.isNotEmpty()) create("release") {

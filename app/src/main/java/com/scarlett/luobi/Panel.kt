@@ -37,7 +37,7 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
         ui.launch {
             try { val r = block(); if (r.isNotBlank()) snack(r) }
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: ConfigError) { snack(e.message ?: "请先完成设置", false, "去设置") { goSub("channels") } }
+            catch (e: ConfigError) { snack(e.message ?: "请先完成设置", false, "去设定") { goSub("channels") } }
             catch (e: PublishError) { snack("$label 失败：${e.message}", false) }
             catch (e: OutOfMemoryError) { snack("文章太长，图片生成不了", false) }
             catch (e: Throwable) { snackErr(e, "$label 失败：") }

@@ -110,7 +110,8 @@ class CleanParseTest {
         assertEquals("a；b", CleanParse.parse("""{"cleaned":"x","观点":["a","b"]}""", f).values["观点"])
     }
     @Test(expected = CleanParse.BadFormat::class) fun notJson() { CleanParse.parse("抱歉，我无法完成", f) }
-    @Test(expected = CleanParse.BadFormat::class) fun missingCleaned() { CleanParse.parse("""{"疑问":"q"}""", f) }
+    @Test fun cleanedOptional19() { assertEquals("q", CleanParse.parse("""{"疑问":"q"}""", f).values["疑问"]) }
+    @Test(expected = CleanParse.BadFormat::class) fun emptyObject() { CleanParse.parse("""{"x":1}""", f) }
     @Test fun recommendMatch() {
         val names = listOf("财经非虚构", "观点表达")
         assertEquals("观点表达", CleanParse.match("观点表达", names) { it })

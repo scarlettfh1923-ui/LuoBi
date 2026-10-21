@@ -95,15 +95,20 @@ object Ai {
         return (System.currentTimeMillis() - t0) to "${t.model} 已回复"
     }
 
-    /** 第 ① 步：固定用 DeepSeek 清洗 + 识别意图 + 推荐模板 */
-    suspend fun clean(ctx: Context, raw: String): Pair<CleanResult, CleanTpl> {
+    /** 1.9：意图提取。优先 DeepSeek；没填 DeepSeek Key 时用所选模型 */
+    suspend fun extract(ctx: Context, raw: String, fallbackRef: String): CleanResult {
         val db = AppDb.get(ctx); Defaults.ensure(db)
-        val ct = db.cleans().active() ?: throw ConfigError("没有选中的清洗模板，请到「设定 → 清洗模板」选一个。")
-        val t = try { target(ctx, "p:deepseek") } catch (e: ConfigError) { throw ConfigError("第 ① 步固定用 DeepSeek 清洗，请先到「设定 → 模型与密钥」填写 DeepSeek Key。") }
+        val ct = db.cleans().active()
+        val t = try { target(ctx, "p:deepseek") } catch (e: ConfigError) {
+            val s = Settings(ctx)
+            val ref = fallbackRef.ifBlank { s.defaultModel }.ifBlank { s.configured().firstOrNull()?.ref ?: "" }
+            if (ref.isBlank()) throw ConfigError("还没有可用的模型。请到「设定 → 模型与密钥」填写 DeepSeek 或其它模型的 Key。")
+            target(ctx, ref)
+        }
         val list = db.templates().list().joinToString("\n") { "- ${it.name}：${it.desc}" }
-        val prompt = Vars.fillClean(ct.prompt, raw, list)
-        val txt = chatText(t, "你是中文文字编辑。只输出一个合法 JSON 对象。", prompt, true)
-        return CleanParse.parse(txt, ct.fieldList()) to ct
+        val prompt = Vars.fillClean(ct?.prompt?.ifBlank { null } ?: Defaults.INTENT, raw, list)
+        val txt = chatText(t, "你是中文写作助理。只输出一个合法 JSON 对象。", prompt, true)
+        return CleanParse.parse(txt, Vars.DEFAULT_FIELDS)
     }
 
     const val OUT_RULE = "只输出一个 JSON 对象：{\"title\":\"标题\",\"body\":\"正文 Markdown：段落之间空一行；小标题单独一行，以 ## 开头（下一级用 ###）；小标题必须是有内容的短语（概括这一节讲什么），不要只写数字或序号（如 ## 1、## 一、## 01）；全文挑 1–3 句最有力的金句用 **加粗**（金句放在段落里加粗，或单独一行用 > 引用；金句绝不能用 # 当标题）；需要时可用 > 引用、- 列表、--- 分隔线；不要表格和代码块\",\"tags\":[\"标签1\",\"标签2\"]}，tags 为 3–8 个不带 # 的话题词，不要输出其它内容。"
@@ -119,8 +124,8 @@ object Ai {
     suspend fun current(ctx: Context, d: GenJob): String? {
         if (d.kind != "write" || d.templateId <= 0) return null
         val db = AppDb.get(ctx); val tpl = db.templates().get(d.templateId) ?: return null
-        val s = Settings(ctx); val known = (db.cleans().active()?.fieldList() ?: Vars.DEFAULT_FIELDS).toSet()
-        return finalPrompt(tpl.prompt, d.values, d.cleaned, s.attachRaw, s.length, s.lengthRange(), known)
+        val s = Settings(ctx)
+        return Compose.prompt(tpl.name, tpl.desc, tpl.prompt, d.values, d.raw, s.length, s.lengthRange())
     }
 
     /** 第 ③ 步：生成并存入文案库，返回 note id */

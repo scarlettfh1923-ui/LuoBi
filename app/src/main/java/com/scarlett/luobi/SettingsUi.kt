@@ -39,7 +39,7 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
         item { RowGroup("创作", listOf(
             { SettingRow(Ic.key, "模型与密钥", "${s.configured().size} 个") { go("models") } },
             { SettingRow(Ic.tpl, "模板管理", "${templates.size} 个") { go("templates") } },
-            { SettingRow(Ic.wand, "清洗模板", active?.name ?: "未选择") { go("cleans") } },
+            { SettingRow(Ic.wand, "意图提取提示词", if (active?.prompt?.trim() == Defaults.INTENT.trim()) "默认" else "已修改") { go("cleans") } },
             { SettingRow(Ic.ruler, "篇幅", Lengths.NAMES[s.length.coerceIn(0, 2)] + " · " + s.lengthRange().let { "${it.first}–${it.second}" }) { go("length") } })) }
         item { RowGroup("分享与图片", listOf(
             { SettingRow(Ic.share, "分享栏", "${s.shareBar.size} 项") { go("sharebar") } },
@@ -99,9 +99,9 @@ fun TemplatesPage(db: AppDb, back: () -> Unit, go: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val list by db.templates().all().collectAsState(initial = emptyList())
     val active by db.cleans().activeFlow().collectAsState(initial = null)
-    val fields = active?.fieldList() ?: Vars.DEFAULT_FIELDS
+    val fields = Vars.DEFAULT_FIELDS // 1.9：意图卡固定三项
     var del by remember { mutableStateOf<Template?>(null) }
-    Page("模板管理", back, { NewButton { scope.launch { val id = db.templates().insert(Template(name = Names.unique("新模板", list.map { it.name }), updatedAt = System.currentTimeMillis(), desc = "", builtIn = false, prompt = "你是一名作者。\n我的观点：{观点}\n读者的疑问：{疑问}\n要写成：{想写什么}\n写作要求：\n参考原文：{原文}", sort = 100)); go("template:$id") } } }) {
+    Page("模板管理", back, { NewButton { scope.launch { val id = db.templates().insert(Template(name = Names.unique("新模板", list.map { it.name }), updatedAt = System.currentTimeMillis(), desc = "", builtIn = false, prompt = TplHeader.header("新模板") + "写作要求：\n", sort = 100)); go("template:$id") } } }) {
         listOf(true to "内置模板", false to "我的模板").forEach { (b, label) ->
             item { GroupLabel(label) }
             val l = list.filter { it.builtIn == b }
@@ -157,7 +157,7 @@ fun TemplateEdit(db: AppDb, id: Long, back: () -> Unit) {
     var desc by remember(tpl.id) { mutableStateOf(tpl.desc) }
     var prompt by remember(tpl.id) { mutableStateOf(TextFieldValue(tpl.prompt)) }
     var dm by remember(tpl.id) { mutableStateOf(tpl.defaultModel) }
-    val fields = active?.fieldList() ?: Vars.DEFAULT_FIELDS
+    val fields = Vars.DEFAULT_FIELDS // 1.9：意图卡固定三项
     val known = (fields + Vars.RAW).toSet()
     val miss = Vars.missing(prompt.text, fields)
     // 1.4：自动保存。改动 600ms 后写库；离开页面（返回键 / 手势 / 左上角）时再兜底写一次并提示「已保存」
@@ -202,9 +202,9 @@ fun TemplateEdit(db: AppDb, id: Long, back: () -> Unit) {
             }
         }
         if (miss.isNotEmpty()) item {
-            WarnBox("${miss.joinToString("") { "{$it}" }} 不是当前清洗模板「${active?.name ?: ""}」的输出字段，生成时会是空的：如果它在「标签：{变量}」这种短行里，那一行会去掉；在长段落里只去掉占位，段落保留。", Modifier.padding(top = 10.dp))
+            WarnBox("${miss.joinToString("") { "{$it}" }} 不是意图卡的字段（{想写什么}{观点}{疑问}）也不是 {原文}，会原样发送。", Modifier.padding(top = 10.dp))
         }
-        item { GroupLabel("可插入变量 · 来自清洗模板「${active?.name ?: ""}」") }
+        item { GroupLabel("可插入变量 · 来自意图卡") }
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 (fields + Vars.RAW).forEach { v ->
@@ -224,96 +224,32 @@ fun TemplateEdit(db: AppDb, id: Long, back: () -> Unit) {
     }
 }
 
-// ---------------- 清洗模板 ----------------
+// ---------------- 意图提取提示词（1.9，替代清洗模板） ----------------
 @Composable
 fun CleansPage(db: AppDb, back: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val list by db.cleans().all().collectAsState(initial = emptyList())
-    val templates by db.templates().all().collectAsState(initial = emptyList())
-    var editId by remember { mutableLongStateOf(0L) }
-    val cur = list.firstOrNull { it.id == editId } ?: list.firstOrNull { it.active } ?: list.firstOrNull()
-    var prompt by remember(cur?.id) { mutableStateOf(TextFieldValue(cur?.prompt ?: "")) }
-    var name by remember(cur?.id) { mutableStateOf(cur?.name ?: "") }
-    var newField by remember { mutableStateOf<String?>(null) }
-    var del by remember { mutableStateOf<CleanTpl?>(null) }
-    var affected by remember { mutableStateOf<String?>(null) }
-    fun impact(fields: List<String>): String? {
-        val bad = templates.mapNotNull { t -> Vars.missing(t.prompt, fields).takeIf { it.isNotEmpty() }?.let { "「${t.name}」${it.joinToString("") { v -> "{$v}" }}" } }
-        return if (bad.isEmpty()) null else "这些写作模板引用了当前清洗模板不输出的变量，生成时那一行会被去掉：\n" + bad.joinToString("\n")
-    }
-    Page("清洗模板", back, { NewButton { scope.launch { val id = db.cleans().insert(CleanTpl(name = "新清洗模板", prompt = Defaults.CLEAN, fields = Vars.DEFAULT_FIELDS.joinToString("\n"), builtIn = false, active = false)); editId = id } } }) {
-        item {
-            Card(pad = 0.dp) {
-                list.forEachIndexed { i, c ->
-                    if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = Dp.Hairline, color = P3.border)
-                    Row(Modifier.fillMaxWidth().clickable { editId = c.id }.background(if (c.id == cur?.id) P3.surface2.copy(alpha = .5f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(c.active, { scope.launch { db.cleans().activate(c.id); affected = impact(c.fieldList()) } }, colors = RadioButtonDefaults.colors(selectedColor = P3.accent))
-                        Column(Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(c.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
-                                if (c.builtIn) Text("内置", Modifier.padding(start = 6.dp).clip(Sq.full).background(P3.surface2).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.text2)
-                            }
-                            Text("字段：" + c.fieldList().joinToString(" / "), fontSize = 12.sp, color = P3.text2)
-                        }
-                        if (c.active) Text("当前使用", fontSize = 13.sp, color = P3.accent) else TextAction("设为当前", P3.text3) { scope.launch { db.cleans().activate(c.id); affected = impact(c.fieldList()) } }
-                    }
-                }
-            }
-        }
-        val c = cur ?: return@Page
-        item { GroupLabel("输出字段 · 即写作模板变量") }
-        item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                c.fieldList().forEach { f ->
-                    Row(Modifier.clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.accent).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(f, fontSize = 14.sp, color = P3.onAccentSoft)
-                        Box(Modifier.size(28.dp).clip(Sq.full).clickable {
-                            val nf = c.fieldList() - f
-                            scope.launch { db.cleans().update(c.copy(fields = nf.joinToString("\n"))); if (c.active) affected = impact(nf) }
-                        }, contentAlignment = Alignment.Center) { SvgIcon(Ic.close, P3.accent, 14.dp, desc = "删除字段") }
-                    }
-                }
-                Row(Modifier.clip(Sq.full).hairline(Sq.full, P3.borderStrong).clickable { newField = "" }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SvgIcon(Ic.plus, P3.text2, 14.dp); Text(" 字段", fontSize = 14.sp, color = P3.text)
-                }
-            }
-            Text("JSON 键名 = 字段名，写作模板用 ${c.fieldList().joinToString(" ") { "{$it}" }} 引用。增删字段后记得同步修改下方提示词里的 JSON 示例。", Modifier.padding(top = 8.dp), fontSize = 12.sp, color = P3.text2, lineHeight = 18.sp)
-        }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                GroupLabel("编辑 · ${c.name}", Modifier.weight(1f))
-                if (c.builtIn) TextAction("恢复默认") { scope.launch { db.cleans().update(c.copy(prompt = Defaults.CLEAN, fields = Vars.DEFAULT_FIELDS.joinToString("\n"), name = Defaults.CLEAN_NAME)); prompt = TextFieldValue(Defaults.CLEAN); snack("已恢复默认") } }
-            }
-        }
-        if (!c.builtIn) item { InputBox(name, { name = it }, "名称", singleLine = true); Spacer(Modifier.height(8.dp)) }
+    val active by remember(db) { db.cleans().activeFlow() }.collectAsState(initial = null)
+    val c = active
+    var prompt by remember(c?.id) { mutableStateOf(TextFieldValue(c?.prompt ?: "")) }
+    Page("意图提取提示词", back) {
+        item { Text("粘贴口播后点「提取意图」时发给模型的提示词。输出须是一个 JSON 对象：想写什么 / 观点 / 疑问 / recommend。{原始文本} 是你粘贴的口播，{模板列表} 由程序自动填入全部写作模板的名称和说明。", Modifier.padding(bottom = 12.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
+        if (c == null) return@Page
+        if (c.prompt.contains("\"cleaned\"")) item { WarnBox("这是旧版「清洗」提示词，仍然可用，但会多花时间输出清洗后文字。点「恢复默认」换成新的意图提取提示词。", Modifier.padding(bottom = 10.dp)) }
         item {
             Card {
                 BasicTextField(prompt, { prompt = it }, Modifier.fillMaxWidth().heightIn(min = 240.dp), textStyle = TextStyle(fontSize = 14.sp, lineHeight = 23.sp, color = P3.text),
                     cursorBrush = SolidColor(P3.accent), visualTransformation = VarHighlight(setOf("模板列表", "原始文本")))
             }
-            Text("变量：{原始文本} 是粘贴的原文，{模板列表} 由程序自动填入全部写作模板的名称和说明。输出须是一个 JSON 对象：cleaned / 各字段 / recommend。", Modifier.padding(top = 8.dp), fontSize = 12.sp, color = P3.text2, lineHeight = 18.sp)
-            if (!prompt.text.contains("{原始文本}")) WarnBox("提示词里没有 {原始文本}，DeepSeek 将看不到你粘贴的原文。", Modifier.padding(top = 8.dp))
-            Row(Modifier.padding(top = 10.dp)) {
-                if (!c.builtIn) TextAction("删除", P3.danger) { del = c }
+            if (!prompt.text.contains("{原始文本}")) WarnBox("提示词里没有 {原始文本}，模型将看不到你粘贴的口播。", Modifier.padding(top = 8.dp))
+            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextAction("恢复默认", P3.text2) { scope.launch { db.cleans().update(c.copy(name = Defaults.INTENT_NAME, prompt = Defaults.INTENT, fields = Vars.DEFAULT_FIELDS.joinToString("\n"))); prompt = TextFieldValue(Defaults.INTENT); snack("已恢复默认") } }
                 Spacer(Modifier.weight(1f))
-                PrimaryButton("保存", Modifier.width(140.dp), enabled = prompt.text != c.prompt || (!c.builtIn && name != c.name)) {
-                    scope.launch { db.cleans().update(c.copy(prompt = prompt.text, name = if (c.builtIn) c.name else name.trim().ifBlank { c.name })); snack("已保存清洗模板") }
+                PrimaryButton("保存", Modifier.width(140.dp), enabled = prompt.text != c.prompt) {
+                    scope.launch { db.cleans().update(c.copy(prompt = prompt.text)); snack("已保存意图提取提示词") }
                 }
             }
         }
     }
-    if (newField != null) AlertDialog(shape = Sq.xl, onDismissRequest = { newField = null }, containerColor = P3.surface, title = { Text("添加输出字段") },
-        text = { Column { InputBox(newField!!, { newField = it.replace(Regex("[^\\p{IsHan}\\w]"), "") }, "比如：读者", singleLine = true); Text("只能用汉字、字母、数字，写作模板里用 {字段名} 引用。", Modifier.padding(top = 8.dp), fontSize = 12.sp, color = P3.text3) } },
-        confirmButton = { TextButton(onClick = {
-            val f = newField!!.trim(); newField = null
-            val c = cur ?: return@TextButton
-            if (f.isNotBlank() && f !in c.fieldList() && f != Vars.RAW) scope.launch { db.cleans().update(c.copy(fields = (c.fieldList() + f).joinToString("\n"))) }
-        }, shape = Sq.full) { Text("添加", color = P3.accent) } }, dismissButton = { TextButton(onClick = { newField = null }, shape = Sq.full) { Text("取消", color = P3.text2) } })
-    affected?.let { a -> AlertDialog(shape = Sq.xl, onDismissRequest = { affected = null }, containerColor = P3.surface, title = { Text("有写作模板会受影响") }, text = { Text(a, color = P3.warnText) },
-        confirmButton = { TextButton(onClick = { affected = null }, shape = Sq.full) { Text("知道了", color = P3.accent) } }) }
-    del?.let { c -> ConfirmDialog("删除「${c.name}」？", if (c.active) "它是当前使用的清洗模板，删除后会改用「${Defaults.CLEAN_NAME}」。" else "删除后无法恢复。", "删除", true, onOk = {
-        scope.launch { db.cleans().delete(c); if (c.active) list.firstOrNull { it.builtIn }?.let { db.cleans().activate(it.id) }; editId = 0 }
-    }) { del = null } }
 }
 
 // ---------------- 模型与密钥 ----------------
@@ -324,7 +260,7 @@ fun ModelsPage(back: () -> Unit) {
     var ver by remember { mutableIntStateOf(0) }
     var customs by remember { mutableStateOf(s.customs) }
     Page("模型与密钥", back) {
-        item { Text("清洗固定用 DeepSeek，必须先配置 DeepSeek Key。Key 只加密存在这台手机上。", Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(Sq.l).background(P3.surface2).padding(14.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
+        item { Text("意图提取优先用 DeepSeek；没填 DeepSeek Key 时用你在意图卡里选的模型。Key 只加密存在这台手机上。", Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(Sq.l).background(P3.surface2).padding(14.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
         item {
             Card(pad = 0.dp) {
                 Providers.text.forEachIndexed { i, p ->

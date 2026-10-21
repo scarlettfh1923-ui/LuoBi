@@ -203,7 +203,7 @@ fun ErrorCard(f: Friendly, onRetry: (() -> Unit)?, onSettings: (() -> Unit)?, on
                 maxLines = if (rawOpen) 12 else 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (onRetry != null) Text("重试", Modifier.clip(Sq.full).background(red).clickable { onRetry() }.padding(horizontal = 14.dp, vertical = 6.dp), color = Color.White, fontSize = 13.sp)
-                if (onSettings != null) Text("去设置", Modifier.clip(Sq.full).hairline(Sq.full, Color(0xFFE7B3A8)).clickable { onSettings() }.padding(horizontal = 14.dp, vertical = 5.dp), color = red, fontSize = 13.sp)
+                if (onSettings != null) Text("去设定", Modifier.clip(Sq.full).hairline(Sq.full, Color(0xFFE7B3A8)).clickable { onSettings() }.padding(horizontal = 14.dp, vertical = 5.dp), color = red, fontSize = 13.sp)
             }
         }
         Box(Modifier.size(28.dp).clip(Sq.full).clickable { onClose() }, contentAlignment = Alignment.Center) { Ico(R.drawable.ic_x, red.copy(alpha = .6f), 16, "关闭") }

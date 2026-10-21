@@ -74,6 +74,9 @@ object Vars {
         lines.forEachIndexed { i, l -> res += lineSegs(l, values, known); if (i < lines.lastIndex) res += "\n" to 0 }
         return res
     }
+    /** 1.9：她的模板正文用这个——一行都不删，空占位只去掉占位本身 */
+    fun fillKeep(prompt: String, values: Map<String, String>, known: Set<String> = defaultKnown): String =
+        prompt.replace("\r\n", "\n").split("\n").joinToString("\n") { l -> lineSegs(l, values, known).joinToString("") { it.first } }
     fun fill(prompt: String, values: Map<String, String>, known: Set<String> = defaultKnown): String =
         segmentsK(prompt, values, known).joinToString("") { it.first }
     /** 预览高亮用：返回 [文本, 是否是替换进来的值]；与 fill 同规则 */
@@ -101,10 +104,11 @@ object CleanParse {
 
     fun parse(text: String, fields: List<String>): CleanResult {
         val j = lenient(text) ?: throw BadFormat(text.take(300))
+        // 1.9：不再要求 cleaned（意图提取只输出三项意图 + recommend）；旧提示词带 cleaned 也兼容
         val cleaned = str(j.opt("cleaned")).ifBlank { str(j.opt("清洗后文字")) }.ifBlank { str(j.opt("text")) }
-        if (cleaned.isBlank()) throw BadFormat(text.take(300))
         val values = LinkedHashMap<String, String>()
         for (f in fields) { val v = str(j.opt(f)).trim(); if (v.isNotBlank() && v != "null" && v != "无" && v != "……") values[f] = v }
+        if (values.isEmpty() && cleaned.isBlank() && !j.has("recommend")) throw BadFormat(text.take(300))
         return CleanResult(cleaned.trim(), values, str(j.opt("recommend")).trim().trim('「', '」', '"', '《', '》'))
     }
 
@@ -352,4 +356,88 @@ object ShareBar {
     fun tiles(l: List<String>) = l + MORE
     /** 「更多」面板：所有不在栏里的渠道，保持原顺序 */
     fun others(all: List<String>, bar: List<String>) = all.filter { it !in bar && it != MORE }
+}
+
+
+/**
+ * 1.9 模板头：每个模板开头是【你是谁】+【用户的意图】，后面才是她自己的正文。
+ * 迁移只在开头加头，正文逐字节保留；已有头就不动（幂等）。
+ */
+object TplHeader {
+    const val ROLE = "【你是谁】"; const val INTENT = "【用户的意图】"
+    val INTENT_LINES = listOf("想写什么：{想写什么}", "我的观点：{观点}", "我的疑惑：{疑问}")
+    private val intentLine = Regex("^(想写什么|我的观点|我的疑惑)[：:].*$")
+
+    fun role(name: String): String = when (name) {
+        "财经非虚构" -> "你是一名财经非虚构作者，擅长用真实数据和具体人物讲清一个经济现象。"
+        "口播转文章" -> "你是一名资深编辑，擅长把口播整理成可以直接发布、保留原有语气的文章。"
+        "观点表达" -> "你是一名评论作者，擅长亮明观点、讲清理由、回应不同意见。"
+        "答疑解惑" -> "你是一名科普作者，擅长把一个问题讲明白：是什么、为什么、怎么办。"
+        "小红书风格" -> "你是一名小红书博主，擅长写短段落、有钩子的图文笔记。"
+        else -> "你是一名专业的中文写作者，擅长写「$name」类文章。"
+    }
+    fun header(name: String) = "$ROLE\n${role(name)}\n$INTENT\n" + INTENT_LINES.joinToString("\n") + "\n\n"
+    fun has(text: String) = text.trimStart().startsWith(ROLE) && text.contains(INTENT)
+    /** 迁移：没有头才加；正文原样接在头后面 */
+    fun migrate(name: String, text: String): String = if (has(text)) text else header(name) + text
+
+    /** 拆成 [头, 正文]；头 = 从开头到【用户的意图】后连续的意图行（及紧随的一个空行） */
+    fun split(text: String): Pair<String, String>? {
+        if (!has(text)) return null
+        val lines = text.split("\n")
+        val i = lines.indexOfFirst { it.trim() == INTENT }; if (i < 0) return null
+        var j = i + 1
+        while (j < lines.size && intentLine.matches(lines[j].trim())) j++
+        val headEnd = if (j < lines.size && lines[j].isBlank()) j + 1 else j
+        return lines.take(j).joinToString("\n") to lines.drop(headEnd).joinToString("\n")
+    }
+    /** 填头：意图行占位为空 → 整行省略（只对这些生成的头行）；三项全空 → 连【用户的意图】一起省略 */
+    fun fillHeader(head: String, values: Map<String, String>): String {
+        val lines = head.split("\n"); val i = lines.indexOfFirst { it.trim() == INTENT }
+        val ph = Regex("\\{([\\p{IsHan}\\w]{1,20})\\}")
+        val out = ArrayList<String>(); val kept = ArrayList<String>()
+        lines.forEachIndexed { n, l ->
+            if (n < i) out += Vars.fillKeep(l, values)
+            else if (n > i) {
+                val ks = ph.findAll(l).map { it.groupValues[1] }.toList()
+                if (ks.isEmpty() || ks.any { !values[it].isNullOrBlank() }) kept += Vars.fillKeep(l, values)
+            }
+        }
+        if (kept.isNotEmpty()) { out += INTENT; out += kept }
+        return out.joinToString("\n").trimEnd()
+    }
+}
+
+/**
+ * 1.9 最终提示词：你是谁 → 用户的意图（空项整段省略）→ 你要创作什么（体裁 + 篇幅）→ 口播原文 → 她的模板（原样附上，占位照常填）。
+ * 她模板里的文字一个字都不丢；模板里写了「篇幅：」就以模板为准，不再追加设置里的篇幅。
+ */
+object Compose {
+    /** 意图卡三项：占位键 → 卡片上显示的名字 */
+    val FIELDS = listOf("想写什么" to "想写什么", "观点" to "我的观点", "疑问" to "我的疑惑")
+    private val NUM = listOf("一", "二", "三", "四", "五", "六")
+
+    fun prompt(tplName: String, tplDesc: String, tplText: String, values: Map<String, String>, raw: String, length: Int,
+               range: Pair<Int, Int> = Lengths.DEFAULT[length.coerceIn(0, 2)], known: Set<String> = Vars.defaultKnown): String {
+        val v = values.mapValues { it.value.trim() }.filterValues { it.isNotEmpty() }
+        val fv = v + (Vars.RAW to raw.trim())
+        val desc = tplDesc.trim().trimEnd('。')
+        val sp = TplHeader.split(tplText)
+        val task = "写一篇「$tplName」" + (if (desc.isNotEmpty()) "：$desc" else "") + "。" +
+            (if (Lengths.inTemplate(tplText)) "篇幅按模板里的要求。" else "\n" + Lengths.hint(length, range))
+        val src = "下面是用户口播或随手记下的原话，口语化，可能有口头禅、重复和语音识别错误。写作时去掉口头禅和重复、纠正明显的识别错误，但不要改变原意，不要编造原文没有的事实、数据和观点。\n<<<\n${raw.trim()}\n>>>"
+        if (sp != null) {
+            // 模板自带【你是谁】【用户的意图】：不再另加角色/意图；顺序 = 模板头 → 你要创作什么 → 口播 → 她的正文
+            return listOf(TplHeader.fillHeader(sp.first, fv), "【你要创作什么】\n$task", "【素材：用户的口播原文】\n$src",
+                Vars.fillKeep(sp.second, fv, known + Vars.RAW).trimEnd()).filter { it.isNotBlank() }.joinToString("\n\n")
+        }
+        val secs = mutableListOf<Pair<String, String>>()
+        secs += "你是谁" to TplHeader.role(tplName)
+        val intent = FIELDS.mapNotNull { (k, label) -> v[k]?.let { "$label：$it" } }
+        if (intent.isNotEmpty()) secs += "用户的意图" to intent.joinToString("\n")
+        secs += "你要创作什么" to task
+        secs += "素材：用户的口播原文" to src
+        secs += "写作模板（用户自己的要求，必须遵守）" to Vars.fillKeep(tplText, fv, known + Vars.RAW).trimEnd()
+        return secs.mapIndexed { i, (t, b) -> "${NUM[i]}、$t\n$b" }.joinToString("\n\n")
+    }
 }

@@ -1,4 +1,5 @@
 package com.scarlett.luobi
+import kotlinx.coroutines.flow.first
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -140,7 +141,29 @@ object Defaults {
 用户原文：
 {原始文本}"""
 
-    val templates = listOf(
+    /** 1.9：意图提取提示词（替代清洗：不再输出清洗后文字，口头禅交给生成时处理） */
+    const val INTENT_NAME = "意图提取"
+    val INTENT = """你是一名中文写作助理。下面是用户的一段口播、语音转写或随手记下的想法，口语化，可能有口头禅和识别错误。请从中提取写作意图，并推荐一个模板。
+
+一、提取意图
+- 想写什么：用户想写一篇什么样的文章（主题 + 角度，可带体裁、风格），用一句话概括。这一项必须输出；原文没明说时，根据内容推断最可能想写的文章。
+- 观点：用户明确表达的看法或立场，用一句话概括；原文没有就省略这个键。
+- 疑问：用户想弄明白、或想替读者回答的问题，用一句问句概括；原文没有就省略这个键。
+只写原文里确实有的观点和疑问，不要硬凑，不要添加原文没有的信息。
+
+二、推荐模板
+从下面的可选模板里选一个最合适的，只填模板名称：
+{模板列表}
+
+只输出一个 JSON 对象，不要任何解释，不要 Markdown 代码块：
+{"想写什么": "……", "观点": "……", "疑问": "……", "recommend": "模板名称"}
+
+用户原文：
+{原始文本}"""
+
+    /** 1.9 内置默认：头（你是谁 + 用户的意图）+ 写作要求；口播原文由程序附上，不再写 {原文} */
+    val templates get() = rawTemplates.map { t -> t.copy(prompt = TplHeader.header(t.name) + t.prompt.lines().filter { it.startsWith("写作要求") }.joinToString("\n")) }
+    private val rawTemplates = listOf(
         Template(name = "财经非虚构", desc = "用真实数据和具体人物讲清一个经济现象", builtIn = true, sort = 0, prompt = """你是一名财经非虚构作者，擅长用真实数据和具体人物讲清一个经济现象。
 读者的疑问：{疑问}
 我的观点：{观点}
@@ -176,9 +199,26 @@ object Defaults {
     suspend fun ensure(db: AppDb) {
         if (db.templates().count() == 0) templates.forEach { db.templates().insert(it) }
         db.notes().repairRoots()
-        if (db.cleans().count() == 0) db.cleans().insert(CleanTpl(name = CLEAN_NAME, prompt = CLEAN, fields = Vars.DEFAULT_FIELDS.joinToString("\n"), builtIn = true, active = true))
+        migrateHeaders(db)
+        if (db.cleans().count() == 0) db.cleans().insert(CleanTpl(name = INTENT_NAME, prompt = INTENT, fields = Vars.DEFAULT_FIELDS.joinToString("\n"), builtIn = true, active = true))
+        // 1.9：没改过的内置清洗提示词自动换成意图提取；她改过的原样保留（解析兼容旧格式），页面上提示可恢复默认
+        db.cleans().all().first().filter { it.builtIn && it.prompt.trim() == CLEAN.trim() }.forEach {
+            db.cleans().update(it.copy(name = INTENT_NAME, prompt = INTENT, fields = Vars.DEFAULT_FIELDS.joinToString("\n")))
+        }
+        if (db.cleans().active() == null) db.cleans().all().first().firstOrNull { it.builtIn }?.let { db.cleans().activate(it.id) }
     }
     fun builtinPrompt(name: String) = templates.firstOrNull { it.name == name }?.prompt
+    /** 1.9 迁移：每个模板开头补【你是谁】【用户的意图】，正文逐字节保留；已有头的不动（幂等） */
+    suspend fun migrateHeaders(db: AppDb): Int {
+        var n = 0
+        db.templates().list().forEach { t ->
+            // 从没改过的 1.8 内置默认 → 直接换成 1.9 默认；其余（她自己的正文）只在开头加头
+            val old = rawTemplates.firstOrNull { it.name == t.name && it.prompt == t.prompt }
+            val m = if (t.builtIn && old != null) builtinPrompt(t.name)!! else TplHeader.migrate(t.name, t.prompt)
+            if (m != t.prompt) { db.templates().update(t.copy(prompt = m)); n++ }
+        }
+        return n
+    }
 }
 
 /** 加密存储：所有 Key / Token 只存在本机（EncryptedSharedPreferences，AES256-GCM，主钥匙在 Android Keystore） */
