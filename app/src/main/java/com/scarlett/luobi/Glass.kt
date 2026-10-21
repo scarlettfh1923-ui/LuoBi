@@ -1,5 +1,8 @@
 package com.scarlett.luobi
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -100,6 +103,7 @@ fun FloatGroup(dark: Boolean = false, content: @Composable RowScope.() -> Unit) 
 fun FloatAction(icon: List<String>, tint: Color, desc: String, badge: Int = 0, onClick: () -> Unit) {
     Box(Modifier.size(width = 44.dp, height = 44.dp).clip(Sq.full).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         SvgIcon(icon, tint, 22.dp, desc = desc)
+        if (badge < 0) Box(Modifier.align(Alignment.TopEnd).padding(top = 9.dp, end = 9.dp).size(7.dp).clip(Sq.full).background(Color(0xFFEF4444)).semantics { contentDescription = "已检测" })
         if (badge > 0) {
             Box(Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).size(if (badge > 9) 16.dp else 14.dp)
                 .clip(Sq.full).background(P3.accent), contentAlignment = Alignment.Center) {

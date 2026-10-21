@@ -15,9 +15,13 @@ import java.net.URL
 object Ai {
     /** Google / OpenAI 这类需要海外网络的服务商：连不上时给出专门的中文说明 */
     private fun overseas(host: String) = host.endsWith("googleapis.com") || host.endsWith("openai.com") || host.endsWith("google.com")
+    /** 测试用：替换 chat 请求的 HTTP（返回 code 与正文）；正常为 null */
+    internal var chatTransport: ((url: String, body: String) -> Pair<Int, String>)? = null
     private fun http(method: String, url: String, key: String, body: JSONObject?, headers: Map<String, String> = emptyMap(), bearer: Boolean = true): JSONObject {
         val u = URL(url); val host = u.host.orEmpty()
-        val code: Int; val txt: String
+        var code: Int; var txt: String
+        val fake = chatTransport
+        if (fake != null) { val r = fake(url, body?.toString().orEmpty()); code = r.first; txt = r.second } else
         try {
             val c = u.openConnection() as HttpURLConnection
             c.requestMethod = method; c.connectTimeout = 20000; c.readTimeout = 180000
@@ -31,6 +35,7 @@ object Ai {
             if (overseas(host)) throw OverseasNetError(host, e) else throw e
         }
         if (code !in 200..299) throw ApiError(code, txt, host)
+        Relay.fromSse(txt)?.let { return it }  // 1.15.1：中转站可能强制流式
         val j = try { JSONObject(txt.ifBlank { "{}" }) } catch (_: Exception) {
             // Gemini 兼容接口偶尔把对象包在数组里
             try { org.json.JSONArray(txt).optJSONObject(0) ?: throw ApiError(-1, txt, host) } catch (_: Exception) { throw ApiError(-1, txt, host) }
@@ -39,7 +44,30 @@ object Ai {
         if (j.opt("error") != null && j.opt("error") != JSONObject.NULL && !j.has("choices") && !j.has("data") && !j.has("output") && !j.has("images") && !j.has("candidates")) throw ApiError(code, txt, host)
         return j
     }
+    // ---------- 1.15.1 Kimi ----------
+    // 官方「模型参数参考」：kimi-k3 始终推理（reasoning_effort low/high/max，默认 max），temperature/top_p 固定、不要传；
+    // kimi-k2.6 默认开启思考，可 thinking:{type:disabled}；kimi-k2.7-code 始终思考、不接受 disabled。
+    // 「思考模型」：reasoning_content 的 token 也算进 max_tokens，建议 ≥16000；max_tokens 已弃用，改用 max_completion_tokens。
+    const val KIMI_MIN_TOKENS = 16000
+    const val KIMI_DEFAULT_TOKENS = 32768
+    val KIMI_RETIRED = setOf("kimi-k2.5", "kimi-latest", "kimi-thinking-preview", "kimi-k2-0905-preview", "kimi-k2-0711-preview", "kimi-k2-turbo-preview", "kimi-k2-thinking", "kimi-k2-thinking-turbo")
+    /** 已下线的 Kimi 型号自动换成 kimi-k3 */
+    fun kimiModel(m: String): String = m.trim().let { if (it.isBlank() || it in KIMI_RETIRED || it.startsWith("moonshot-v1")) "kimi-k3" else it }
+    fun kimiBody(model: String, msgs: JSONArray, json: Boolean, maxTokens: Int?, quick: Boolean): JSONObject {
+        val m = kimiModel(model)
+        val b = JSONObject().put("model", m).put("messages", msgs)
+        if (json) b.put("response_format", JSONObject().put("type", "json_object"))
+        when {
+            m.startsWith("kimi-k3") -> if (quick) b.put("reasoning_effort", "low")
+            m.startsWith("kimi-k2.6") -> b.put("thinking", JSONObject().put("type", "disabled"))
+            // k2.7-code 等：始终思考，不传 thinking
+        }
+        // 不传 temperature / top_p / n / penalty（这些模型固定，传别的值会报错）
+        b.put("max_completion_tokens", maxOf(maxTokens ?: KIMI_DEFAULT_TOKENS, KIMI_MIN_TOKENS))
+        return b
+    }
     private fun chatBody(pid: String, model: String, msgs: JSONArray, json: Boolean, maxTokens: Int?, plain: Boolean = false): JSONObject {
+        if (pid == "kimi") return kimiBody(model, msgs, json && !plain, maxTokens, quick = maxTokens != null && maxTokens < 1000)
         val b = JSONObject().put("model", model).put("messages", msgs)
         if (plain) { if (maxTokens != null) b.put(if (pid == "openai") "max_completion_tokens" else "max_tokens", maxTokens); return b }
         if (json) b.put("response_format", JSONObject().put("type", "json_object"))
@@ -63,7 +91,7 @@ object Ai {
             val cm = s.customs.firstOrNull { it.id == ref.removePrefix("c:") } ?: throw ConfigError("这个自定义模型已被删除，请在第 ③ 步重新选一个模型。")
             val key = s.customKey(cm.id)
             if (key.isBlank()) throw ConfigError("还没有填写「${cm.name}」的 Key。请到「设定 → 模型与密钥」里填写。")
-            Target("custom", cm.name, cm.url.trim().trimEnd('/'), key, cm.model.trim())
+            Target("custom", cm.name.ifBlank { "中转站" }, Relay.base(cm.url), key, cm.model.trim())
         } else {
             val pid = ref.removePrefix("p:"); val p = Providers.text(pid)
             val key = s.key(pid)
@@ -77,20 +105,41 @@ object Ai {
         val msgs = JSONArray()
         if (system != null) msgs.put(JSONObject().put("role", "system").put("content", system))
         msgs.put(JSONObject().put("role", "user").put("content", user))
-        val r = try { http("POST", t.url + "/chat/completions", t.key, chatBody(t.pid, t.model, msgs, json, maxTokens, plain = t.pid == "custom" && !json)) }
-        catch (e: ApiError) { if (e.code == 400) http("POST", t.url + "/chat/completions", t.key, chatBody(t.pid, t.model, msgs, false, maxTokens, true)) else throw e }
+        val r = try {
+            try { http("POST", t.url + "/chat/completions", t.key, chatBody(t.pid, t.model, msgs, json, maxTokens, plain = t.pid == "custom" && !json)) }
+            catch (e: ApiError) { if (e.code == 400) http("POST", t.url + "/chat/completions", t.key, chatBody(t.pid, t.model, msgs, false, maxTokens, true)) else throw e }
+        } catch (e: Exception) {
+            if (t.pid == "custom") Relay.explain(e, t)?.let { throw ConfigError(it) }
+            throw e
+        }
         val ch = r.optJSONArray("choices")?.optJSONObject(0) ?: throw AiFormatError("没有返回任何回答", r.toString().take(200))
         val content = ch.optJSONObject("message")?.optString("content").orEmpty()
         val fr = ch.optString("finish_reason").lowercase()
         if (fr.contains("content_filter") || fr.contains("sensitive")) throw ContentBlocked("finish_reason=$fr")
-        if (content.isBlank()) throw AiFormatError(if (fr == "length") "回答被截断，内容为空" else "回答是空的", r.toString().take(200))
+        if (content.isBlank()) {
+            // 推理模型：思考过程在 reasoning_content 里，绝不当成回答
+            val thought = ch.optJSONObject("message")?.optString("reasoning_content").orEmpty()
+            val msg = when {
+                fr == "length" && thought.isNotBlank() -> "${t.name} 把输出额度都用在思考上了，回答被截断（finish_reason=length）。请重试，或换「通用」型号"
+                fr == "length" -> "回答被截断，内容为空"
+                else -> "回答是空的"
+            }
+            throw AiFormatError(msg, "finish_reason=$fr")
+        }
         content
+    }
+
+    /** 中转站模型列表：GET {base}/models */
+    fun listModels(base: String, key: String): List<String> {
+        val j = http("GET", Relay.base(base) + "/models", key, null)
+        val a = j.optJSONArray("data") ?: j.optJSONArray("models") ?: org.json.JSONArray()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it)?.optString("id")?.takeIf { s -> s.isNotBlank() } ?: a.optString(it).takeIf { s -> s.isNotBlank() && !s.startsWith("{") } }.distinct().sorted()
     }
 
     /** 真实最小调用：返回 (耗时ms, 说明) */
     suspend fun test(t: Target): Pair<Long, String> {
         val t0 = System.currentTimeMillis()
-        val mt = when (t.pid) { "openai" -> 16; "gemini" -> 64; else -> 8 }
+        val mt = when (t.pid) { "openai" -> 16; "gemini" -> 64; "custom" -> 512; else -> 8 } // 中转站后面可能是推理模型，给点余量
         chatText(t, null, "你好，回复“好”", false, mt)
         return (System.currentTimeMillis() - t0) to "${t.model} 已回复"
     }

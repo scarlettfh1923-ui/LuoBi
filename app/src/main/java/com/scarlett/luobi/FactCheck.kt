@@ -17,7 +17,11 @@ import java.net.URLEncoder
  * 搜索：优先 DeepSeek 官方 Search API（与写作同一把 Key）→ 失败或没 Key 时退回中文维基百科（免 Key）。
  * 核对：硬事实 only（片名/书名、情节与年代、作者/导演/演员、引语出处、可核验事件）；不做语法文笔。
  */
-data class FactHit(val title: String, val url: String, val snippet: String, val source: String)
+data class FactHit(val title: String, val url: String, val snippet: String, val source: String,
+    /** 来自哪个检索源（DeepSeek / Kimi / 维基 / 博查），用于交叉印证计数 */ val via: String = "",
+    /** 1.15.1 情节核对用的全文（已裁剪到相关段落） */ val text: String = "", val date: String = "")
+/** 结果里展示的依据链接 */
+data class FactLink(val title: String, val url: String, val via: String)
 data class FactIssue(
     val id: String,
     val span: String,
@@ -32,7 +36,20 @@ data class FactIssue(
     val aiCorrection: String = "",
     /** 已成功应用到正文 */
     var applied: Boolean = false,
-)
+    /** 1.15.1：有出入 / 无法核实 / 已印证 */
+    val verdict: String = "有出入",
+    /** 资料里支持判断的原句 */
+    val quote: String = "",
+    /** 依据来源（标题 + 链接） */
+    val links: List<FactLink> = emptyList(),
+    /** 有几个不同检索源印证（0 = 没有资料依据） */
+    val corroboration: Int = 0,
+    /** 模型引用的证据编号（E1…），用于回填 links */
+    val evidenceIds: List<String> = emptyList(),
+) {
+    /** 「2 个来源印证」/「仅 1 个来源」/「无资料依据」 */
+    fun corroborationLabel(): String = when { corroboration >= 2 -> "$corroboration 个来源印证"; corroboration == 1 -> "仅 1 个来源"; else -> "无资料依据" }
+}
 data class FactReport(
     val issues: List<FactIssue>,
     val skipped: List<String>,
@@ -144,8 +161,15 @@ object FactCheck {
 
     /** 可选检索源（设定里选；失败时按序兜底） */
     enum class SearchProvider(val id: String, val label: String) {
-        DEEPSEEK("deepseek", "DeepSeek（推荐）"), WIKI("wiki", "维基百科"), BOCHA("bocha", "博查");
-        companion object { fun of(id: String) = entries.firstOrNull { it.id == id } ?: DEEPSEEK }
+        DEEPSEEK("deepseek", "DeepSeek（推荐）"), KIMI("kimi", "Kimi"), WIKI("wiki", "维基百科"), BOCHA("bocha", "博查");
+        val short get() = label.replace("（推荐）", "").let { if (this == DEEPSEEK) "DeepSeek 搜索" else it }
+        companion object {
+            fun of(id: String) = entries.firstOrNull { it.id == id } ?: DEEPSEEK
+            /** 1.15.1：多选，存成逗号分隔；空 = 只用 DeepSeek（老行为） */
+            fun many(csv: String): List<SearchProvider> = csv.split(',').map { it.trim() }.filter { it.isNotBlank() }
+                .mapNotNull { id -> entries.firstOrNull { it.id == id } }.distinct().ifEmpty { listOf(DEEPSEEK) }
+            fun csv(list: List<SearchProvider>) = entries.filter { it in list }.joinToString(",") { it.id }
+        }
     }
 
     fun bochaSearch(key: String, query: String, count: Int = 5): List<FactHit> {
@@ -185,49 +209,109 @@ object FactCheck {
         return hits.values.toList()
     }
 
-    /**
-     * 按她在设定里选的检索源搜索；失败（没 Key / 网络错）时按 DeepSeek → 维基 → 博查 的顺序温柔兜底，并在 note 里说明。
-     */
-    suspend fun searchAll(ctx: Context, queries: List<String>): Pair<List<FactHit>, String> = withContext(Dispatchers.IO) {
+    /** 1.15.1 检索结果 */
+    data class Gathered(val hits: List<FactHit>, val note: String, val queries: List<String>, val modelOnly: Boolean, val fetches: Int)
+
+    suspend fun searchAll(ctx: Context, title: String, body: String): Gathered = withContext(Dispatchers.IO) {
         val s = Settings(ctx)
-        val prefer = SearchProvider.of(s.factSearch)
-        val order = listOf(prefer) + SearchProvider.entries.filter { it != prefer }
-        val notes = mutableListOf<String>()
-        for (p in order) {
-            val r = runCatching {
-                when (p) {
-                    SearchProvider.DEEPSEEK -> {
-                        val key = s.key("deepseek")
-                        if (key.isBlank()) error("还没填 DeepSeek Key")
-                        val web = coroutineScope {
-                            queries.map { q -> async { deepseekSearch(key, "$q lang:zh,en") } }.awaitAll().flatten()
-                        }
-                        web + wikiHits(queries.take(2))
-                    }
-                    SearchProvider.WIKI -> wikiHits(queries)
-                    SearchProvider.BOCHA -> {
-                        val key = s.bochaKey
-                        if (key.isBlank()) error("还没填博查 Key")
-                        coroutineScope { queries.map { q -> async { bochaSearch(key, q) } }.awaitAll().flatten() }
+        gather(SearchProvider.many(s.factSearch), { p -> when (p) { SearchProvider.DEEPSEEK -> s.key("deepseek"); SearchProvider.KIMI -> s.key("kimi"); SearchProvider.BOCHA -> s.bochaKey; else -> "" } }, title, body)
+    }
+
+    /**
+     * 多源交叉检索（全部串行，FactNet 负责间隔与 429 退避）：
+     * 1. 情节项优先：「作品 人物 结局/剧情 剧情简介」定向查询；
+     * 2. 每个选中的源跑同一组查询（去重合并后最多 4–5 条）；一个源失败不影响其它源；
+     * 3. 情节项抓全文：维基全文、Kimi 搜索带正文、Kimi 抓取权威页（维基/百度百科/豆瓣）；每项 ≤3 次、每次运行 ≤15 次；裁剪到相关段落。
+     */
+    fun gather(sel: List<SearchProvider>, keyOf: (SearchProvider) -> String, title: String, body: String): Gathered {
+        val plots = FactEvidence.plotItems(title, body)
+        val qs = FactEvidence.dedupe(plots.map { FactEvidence.plotQuery(it) } + queries(title, body, 8), FactEvidence.MAX_QUERIES + plots.size.coerceAtMost(1))
+        val hits = mutableListOf<FactHit>()
+        val fails = LinkedHashMap<SearchProvider, String>()
+        val used = mutableListOf<SearchProvider>()
+        for (p in sel) {
+            val key = keyOf(p)
+            if (p != SearchProvider.WIKI && key.isBlank()) { fails[p] = FactNet.plain(p.short, FactNet.MissingKey()); continue }
+            var got = 0
+            for (q in qs) {
+                val r = runCatching {
+                    when (p) {
+                        SearchProvider.DEEPSEEK -> FactSources.deepseek(key, q)
+                        SearchProvider.KIMI -> FactSources.kimiSearch(key, q)
+                        SearchProvider.WIKI -> FactSources.wikiSearch(q)
+                        SearchProvider.BOCHA -> FactSources.bocha(key, q)
                     }
                 }
+                if (r.isFailure) { if (got == 0) fails[p] = FactNet.plain(p.short, r.exceptionOrNull()); break }  // 重试后仍失败：这个源不再继续打
+                r.getOrThrow().forEach { hits += it; got++ }
             }
-            if (r.isSuccess) {
-                val hits = r.getOrDefault(emptyList())
-                if (hits.isNotEmpty() || p == SearchProvider.WIKI) {
-                    val used = "检索：${p.label}"
-                    val note = if (notes.isEmpty()) used else used + "（已跳过：" + notes.joinToString("；") + "）"
-                    val all = LinkedHashMap<String, FactHit>()
-                    hits.forEach { all.putIfAbsent(it.url.ifBlank { it.title }, it) }
-                    return@withContext all.values.toList() to note
+            if (got > 0) used += p
+        }
+        // 情节全文
+        var budget = FactEvidence.MAX_FETCH_PER_RUN; var fetches = 0
+        val kimiKey = if (SearchProvider.KIMI in sel) keyOf(SearchProvider.KIMI) else ""
+        val wikiOk = SearchProvider.WIKI in sel || SearchProvider.DEEPSEEK in sel
+        for (item in plots) {
+            var per = 0
+            val keys = listOf(item.work) + item.people + item.sentence.chunked(4).filter { c -> c.all { Character.isIdeographic(it.code) } }.take(6)
+            fun take(t: String, u: String, via: String, raw: String) {
+                val trimmed = FactEvidence.trim(raw, keys)
+                if (trimmed.isNotBlank()) hits += FactHit(t, u, trimmed.take(200), t, via, text = trimmed)
+            }
+            if (wikiOk && per < FactEvidence.MAX_FETCH_PER_ITEM && budget > 0) {
+                val wt = hits.firstOrNull { it.url.contains("wikipedia.org") && it.title.contains(item.work) }?.title ?: item.work
+                runCatching { FactSources.wikiExtract(wt) }.onSuccess { if (it.isNotBlank()) take(wt, "https://zh.wikipedia.org/wiki/" + java.net.URLEncoder.encode(wt, "UTF-8"), "维基", it) }
+                per++; budget--; fetches++
+            }
+            if (kimiKey.isNotBlank() && per < FactEvidence.MAX_FETCH_PER_ITEM && budget > 0) {
+                runCatching { FactSources.kimiSearch(kimiKey, FactEvidence.plotQuery(item), includeContent = true) }
+                    .onSuccess { r -> r.sortedByDescending { FactEvidence.authority(it.url) }.take(2).forEach { h -> if (h.text.isNotBlank()) take(h.title, h.url, "Kimi", h.text) else hits += h } }
+                    .onFailure { if (SearchProvider.KIMI !in fails) fails[SearchProvider.KIMI] = FactNet.plain("Kimi", it) }
+                per++; budget--; fetches++
+                val have = hits.filter { it.text.isNotBlank() }.map { it.url }.toSet()
+                val cand = hits.filter { FactEvidence.authority(it.url) > 0 && it.url !in have && !it.url.contains("wikipedia.org") }
+                    .sortedByDescending { FactEvidence.authority(it.url) }.map { it }.distinctBy { it.url }
+                for (h in cand) {
+                    if (per >= FactEvidence.MAX_FETCH_PER_ITEM || budget <= 0) break
+                    runCatching { FactSources.kimiFetch(kimiKey, h.url) }.onSuccess { if (it.isNotBlank()) take(h.title, h.url, h.via.ifBlank { "Kimi" }, it) }
+                    per++; budget--; fetches++
                 }
-                notes += "${p.label}没有结果"
-            } else {
-                notes += "${p.label}不可用：${r.exceptionOrNull()?.message?.take(40) ?: "失败"}"
             }
         }
-        emptyList<FactHit>() to ("所有检索源都没拿到结果" + if (notes.isNotEmpty()) "（${notes.joinToString("；")}）" else "")
+        // 合并去重（同一链接保留带全文的那条；via 合并用于计数）
+        val merged = LinkedHashMap<String, FactHit>()
+        for (h in hits) {
+            val k = h.url.ifBlank { h.title }
+            val old = merged[k]
+            merged[k] = if (old == null) h else old.copy(text = old.text.ifBlank { h.text }, via = (old.via.split("、") + h.via).filter { it.isNotBlank() }.distinct().joinToString("、"))
+        }
+        var total = 0
+        val capped = merged.values.map { h -> if (h.text.isBlank()) h else { val room = (FactEvidence.TOTAL_CAP - total).coerceAtLeast(0); total += minOf(room, h.text.length); h.copy(text = h.text.take(room)) } }
+        val modelOnly = capped.isEmpty()
+        return Gathered(capped, searchNote(sel, used, fails, modelOnly), qs, modelOnly, fetches)
     }
+
+    /** 人话版检索说明：「检索：DeepSeek 搜索、Kimi · 维基百科请求太频繁，被暂时限流；博查未填写 Key」 */
+    fun searchNote(sel: List<SearchProvider>, used: List<SearchProvider>, fails: Map<SearchProvider, String>, modelOnly: Boolean): String {
+        var prevReason = ""
+        val failText = fails.entries.joinToString("；") { (p, msg) ->
+            val reason = msg.removePrefix(p.short)
+            (if (reason == prevReason) "${p.short}同上" else msg).also { prevReason = reason }
+        }
+        return when {
+            modelOnly -> "没拿到任何资料" + (if (failText.isNotBlank()) "：$failText" else "") + "。本次只凭模型自身知识核对，结论仅供参考"
+            failText.isBlank() -> "检索：" + used.joinToString("、") { it.short }
+            else -> "检索：" + used.joinToString("、") { it.short } + "（$failText）"
+        }
+    }
+
+    const val EVIDENCE_RULE = """
+
+【证据规则（系统附加，必须遵守）】
+- 参考资料按 [E编号] 给出，带「全文摘录」的是作品页面原文。
+- 每条 issue 增加字段："verdict"：「有出入」（资料与文章矛盾）/「无法核实」（资料既不支持也不反驳）/「已印证」（资料明确支持）；"evidence"：引用的资料编号数组，如 ["E2","E5"]；"quote"：从资料里原样摘一句支持你判断的话（必须是资料原文，不得编造或改写）。
+- 情节、结局、人物关系与人物命运：文章里每一处这类说法都要逐条列出核对结果；资料找不到依据的一律 verdict="无法核实"，correction 留空，绝不能默认为正确。
+- 没有资料依据时不要编造改正；verdict 为「有出入」时 evidence 和 quote 必填。"""
 
     fun parse(reply: String): Pair<List<FactIssue>, List<String>> {
         val j = CleanParse.lenient(reply) ?: throw CleanParse.BadFormat(reply.take(300))
@@ -237,7 +321,9 @@ object FactCheck {
             val o = issues.optJSONObject(i) ?: return@mapNotNull null
             fun g(vararg k: String) = k.firstNotNullOfOrNull { o.optString(it).takeIf { v -> v.isNotBlank() && v != "null" } } ?: ""
             val span = g("span", "原文", "句子"); val correction = g("correction", "正确", "改正")
-            if (span.isBlank() && correction.isBlank()) return@mapNotNull null
+            if (span.isBlank() && correction.isBlank() && g("claim", "说法").isBlank()) return@mapNotNull null
+            val verdict = g("verdict", "结论").let { v -> when { v.contains("核实") -> "无法核实"; v.contains("印证") || v.contains("正确") || v.contains("属实") -> "已印证"; else -> "有出入" } }
+            val ev = o.optJSONArray("evidence")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: g("evidence").split(Regex("[,，\\s]+")).filter { it.isNotBlank() }
             FactIssue(
                 id = "$i-${span.hashCode()}",
                 span = span.ifBlank { g("claim", "说法") },
@@ -248,8 +334,12 @@ object FactCheck {
                 source = g("source", "来源"),
                 note = g("note", "说明"),
                 aiCorrection = correction,
-                selected = true,
+                // 只有「有出入」且有改正文案才默认勾选
+                selected = verdict == "有出入" && correction.isNotBlank(),
                 applied = false,
+                verdict = verdict,
+                quote = g("quote", "引文", "依据原文"),
+                evidenceIds = ev,
             )
         }
         val skip = (0 until skipped.length()).map { skipped.optString(it) }.filter { it.isNotBlank() }
@@ -287,7 +377,9 @@ object FactCheck {
                 .put("source", iss.source)
                 .put("note", iss.note)
                 .put("selected", iss.selected)
-                .put("applied", iss.applied))
+                .put("applied", iss.applied)
+                .put("verdict", iss.verdict).put("quote", iss.quote).put("corroboration", iss.corroboration)
+                .put("links", JSONArray().apply { iss.links.forEach { l -> put(JSONObject().put("title", l.title).put("url", l.url).put("via", l.via)) } }))
         }
         val skipped = JSONArray(); r.skipped.forEach { skipped.put(it) }
         val queries = JSONArray(); r.queries.forEach { queries.put(it) }
@@ -322,6 +414,10 @@ object FactCheck {
                     selected = if (o.has("selected")) o.optBoolean("selected", true) else true,
                     aiCorrection = ai,
                     applied = o.optBoolean("applied", false),
+                    verdict = g("verdict").ifBlank { "有出入" },
+                    quote = g("quote"),
+                    corroboration = o.optInt("corroboration", 0),
+                    links = o.optJSONArray("links")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { FactLink(it.optString("title"), it.optString("url"), it.optString("via")) } } ?: emptyList(),
                 )
             }
             val skippedArr = j.optJSONArray("skipped") ?: JSONArray()
@@ -333,9 +429,26 @@ object FactCheck {
     }
 
     fun buildPrompt(tpl: String, title: String, body: String, hits: List<FactHit>): String = tpl
-        .replace("{搜索结果}", hits.joinToString("\n") { "- ${it.title}｜${it.snippet.take(280)}｜${it.source}｜${it.url}" }.ifBlank { "（没有搜到参考资料）" })
+        .replace("{搜索结果}", evidenceBlock(hits).ifBlank { "（没有搜到参考资料：只能凭模型知识判断，情节类一律标「无法核实」）" })
         .replace("{标题}", title)
-        .replace("{正文}", body.take(12000))
+        .replace("{正文}", body.take(12000)) + EVIDENCE_RULE
+
+    fun evidenceBlock(hits: List<FactHit>): String = hits.mapIndexed { i, h ->
+        "[E${i + 1}] ${h.title}｜${h.snippet.take(280)}｜${h.source}｜${h.url}" + if (h.text.isNotBlank()) "\n全文摘录：\n${h.text}" else ""
+    }.joinToString("\n")
+
+    /** 用证据编号回填链接与印证数；模型没给编号时，用改正文案在资料里出现的源数兜底 */
+    fun attachEvidence(issues: List<FactIssue>, hits: List<FactHit>): List<FactIssue> = issues.map { iss ->
+        val cited = iss.evidenceIds.mapNotNull { id -> id.trim().removePrefix("E").removePrefix("[E").trimEnd(']').toIntOrNull()?.let { hits.getOrNull(it - 1) } }
+        val support = cited.ifEmpty {
+            val needle = iss.correction.takeIf { it.length >= 2 } ?: iss.quote.takeIf { it.length >= 4 }
+            if (needle == null) emptyList() else hits.filter { (it.snippet + it.text + it.title).contains(needle) }
+        }
+        val vias = support.flatMap { it.via.split("、") }.filter { it.isNotBlank() }.distinct()
+        val verdict = if (iss.verdict != "无法核实" && support.isEmpty() && iss.quote.isBlank() && iss.verdict == "已印证") "无法核实" else iss.verdict
+        iss.copy(links = support.distinctBy { it.url }.take(3).map { FactLink(it.title, it.url, it.via) }, corroboration = vias.size, verdict = verdict,
+            source = iss.source.ifBlank { support.firstOrNull()?.title.orEmpty() })
+    }
 
     /**
      * 选定校对用的聊天模型（与「事实检索」独立）。
@@ -366,8 +479,8 @@ object FactCheck {
      */
     suspend fun run(ctx: Context, title: String, body: String, writerDisplay: String = ""): FactReport = withContext(Dispatchers.IO) {
         val s = Settings(ctx)
-        val qs = queries(title, body)
-        val (hits, note) = searchAll(ctx, qs)
+        val g = searchAll(ctx, title, body)
+        val hits = g.hits; val note = g.note; val qs = g.queries
         val prompt = buildPrompt(s.factPrompt, title, body, hits)
         val check = resolveCheckModel(s, writerDisplay)
         val target = Ai.target(ctx, check.ref)
@@ -377,7 +490,7 @@ object FactCheck {
             throw refineFactModelError(e, check) ?: e
         }
         val (issues, skipped) = parse(reply)
-        val ok = issues.filter { it.span.isBlank() || body.contains(it.span) || title.contains(it.span) }
+        val ok = attachEvidence(issues.filter { it.span.isBlank() || body.contains(it.span) || title.contains(it.span) }, hits)
         FactReport(ok, skipped, note + " · 校对模型 ${check.label} · ${check.sub}", qs)
     }
 

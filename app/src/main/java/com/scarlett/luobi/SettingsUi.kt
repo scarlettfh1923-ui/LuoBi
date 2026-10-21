@@ -41,7 +41,7 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
             { SettingRow(Ic.tpl, "模板管理", "${templates.size} 个") { go("templates") } },
             { SettingRow(Ic.search, "事实校对", run {
                 val ss = Settings(LocalContext.current)
-                val search = FactCheck.SearchProvider.of(ss.factSearch).label.replace("（推荐）", "")
+                val search = FactCheck.SearchProvider.many(ss.factSearch).joinToString("+") { it.label.replace("（推荐）", "") }
                 val check = ss.factModel.takeIf { it.isNotBlank() }?.let { ref -> ss.configured().firstOrNull { it.ref == ref } }?.let { "${it.label}校对" } ?: "校对与写作相同"
                 "${search}检索 · $check"
             }) { go("factcheck") } },
@@ -278,7 +278,8 @@ fun FactCheckPage(back: () -> Unit) {
     val ctx = LocalContext.current; val s = remember { Settings(ctx) }
     var prompt by remember { mutableStateOf(TextFieldValue(s.factPrompt)) }
     var saved by remember { mutableStateOf(s.factPrompt) }
-    var provider by remember { mutableStateOf(s.factSearch) }
+    var provider by remember { mutableStateOf(FactCheck.SearchProvider.many(s.factSearch)) }
+    var kimi by remember { mutableStateOf(s.key("kimi")) }
     var checkModel by remember { mutableStateOf(s.factModel) }
     var bocha by remember { mutableStateOf(s.bochaKey) }
     val hasDs = remember { s.key("deepseek").isNotBlank() }
@@ -290,12 +291,16 @@ fun FactCheckPage(back: () -> Unit) {
             Card(pad = 0.dp) {
                 FactCheck.SearchProvider.entries.forEachIndexed { i, p ->
                     if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = Dp.Hairline, color = P3.border)
-                    Row(Modifier.fillMaxWidth().clickable { provider = p.id; s.factSearch = p.id }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(provider == p.id, { provider = p.id; s.factSearch = p.id }, colors = RadioButtonDefaults.colors(selectedColor = P3.accent))
+                    // 1.15.1：多选，交叉印证；至少保留一个
+                    val toggle = { val next = if (p in provider) provider - p else provider + p
+                        if (next.isNotEmpty()) { provider = next; s.factSearch = FactCheck.SearchProvider.csv(next) } }
+                    Row(Modifier.fillMaxWidth().clickable { toggle() }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(p in provider, { toggle() }, colors = CheckboxDefaults.colors(checkedColor = P3.accent))
                         Column(Modifier.weight(1f).padding(start = 4.dp)) {
                             Text(p.label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
                             Text(when (p) {
                                 FactCheck.SearchProvider.DEEPSEEK -> "用 DeepSeek Key 调官方 /v1/tools/search" + if (hasDs) " · Key 已配置" else " · 还没填 Key"
+                                FactCheck.SearchProvider.KIMI -> "Kimi 联网搜索 + 网页抓取（情节核对会读作品页全文，约 ¥0.01/次）" + if (kimi.isNotBlank()) " · Key 已配置" else " · 还没填 Key"
                                 FactCheck.SearchProvider.WIKI -> "免 Key，适合片名、作者、作品基本信息"
                                 FactCheck.SearchProvider.BOCHA -> "第三方网页搜索，需单独填写博查 Key"
                             }, fontSize = 12.sp, color = P3.text2, lineHeight = 17.sp)
@@ -303,9 +308,13 @@ fun FactCheckPage(back: () -> Unit) {
                     }
                 }
             }
-            Text("选中的检索源不可用时会自动换下一个，并在结果里说明。这只影响「搜资料」，不会改下面的校对模型。", Modifier.padding(top = 8.dp, start = 4.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp)
+            Text("可以多选：每个选中的源都会去搜，结果里标出「几个来源印证」；某个源失败不影响其它源。这只影响「搜资料」，不会改下面的校对模型。", Modifier.padding(top = 8.dp, start = 4.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp)
         }
-        if (provider == "bocha" || bocha.isNotBlank()) item {
+        if (FactCheck.SearchProvider.KIMI in provider || kimi.isNotBlank()) item {
+            GroupLabel("Kimi API Key")
+            InputBox(kimi, { kimi = it.trim(); s.setKey("kimi", kimi) }, "粘贴 Moonshot Key，加密存在本机（与 Kimi 写作模型共用）", singleLine = true, secret = true, mono = true)
+        }
+        if (FactCheck.SearchProvider.BOCHA in provider || bocha.isNotBlank()) item {
             GroupLabel("博查 API Key")
             InputBox(bocha, { bocha = it.trim(); s.bochaKey = bocha }, "粘贴博查 Key，加密存在本机", singleLine = true, secret = true, mono = true)
         }
@@ -417,14 +426,15 @@ fun ModelsPage(back: () -> Unit) {
                 }
             }
         }
-        item { GroupLabel("自定义模型（OpenAI 兼容）") }
+        item { GroupLabel("自定义中转站（OpenAI 兼容）") }
+        item { Text(Relay.HINT, Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp) }
         customs.forEach { cm -> item(key = cm.id) { CustomModelCard(cm, s, { customs = s.customs; ver++ }) } }
         item {
             Column(Modifier.fillMaxWidth().clip(Sq.l).hairline(Sq.l, P3.accent.copy(alpha = .6f)).clickable {
-                s.customs = s.customs + CustomModel(System.currentTimeMillis().toString(36), "自定义模型", "", ""); customs = s.customs
+                s.customs = s.customs + CustomModel(System.currentTimeMillis().toString(36), "中转站", "", ""); customs = s.customs
             }.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { SvgIcon(Ic.plus, P3.accent, 18.dp); Text(" 自定义模型（OpenAI 兼容）", fontSize = 16.sp, color = P3.accent, fontWeight = FontWeight.SemiBold) }
-                Text("填 Base URL、Key、模型 ID，可以加多个", Modifier.padding(top = 4.dp), fontSize = 13.sp, color = P3.text2)
+                Row(verticalAlignment = Alignment.CenterVertically) { SvgIcon(Ic.plus, P3.accent, 18.dp); Text(" 自定义中转站（OpenAI 兼容）", fontSize = 16.sp, color = P3.accent, fontWeight = FontWeight.SemiBold) }
+                Text("填接口地址、API Key、模型名；同一个中转站的多个模型可以各加一个", Modifier.padding(top = 4.dp), fontSize = 13.sp, color = P3.text2)
             }
         }
         item { GroupLabel("配图模型（可选，用于 AI 生成封面背景）") }
@@ -488,10 +498,27 @@ private fun CustomModelCard(cm: CustomModel, s: Settings, changed: () -> Unit) {
             Text(name.ifBlank { "自定义模型" }, Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             TextAction("删除", P3.danger) { del = true }
         }
-        FieldLabel("名称"); InputBox(name, { name = it; save(); changed() }, "比如：我的中转", singleLine = true)
-        FieldLabel("Base URL"); InputBox(url, { url = it.trim(); save() }, "https://example.com/v1（会请求 /chat/completions）", singleLine = true, mono = true, fontSize = 13)
-        FieldLabel("Key"); InputBox(key, { key = it.trim(); s.setCustomKey(cm.id, key); changed() }, "API Key", singleLine = true, secret = true, mono = true)
-        FieldLabel("模型 ID"); InputBox(model, { model = it.trim(); save(); changed() }, "比如：gpt-4o-mini", singleLine = true, mono = true)
+        val scope = rememberCoroutineScope()
+        var models by remember { mutableStateOf<List<String>>(emptyList()) }; var listMsg by remember { mutableStateOf("") }; var listing by remember { mutableStateOf(false) }
+        FieldLabel("名称"); InputBox(name, { name = it; save(); changed() }, "比如：我的中转站", singleLine = true)
+        FieldLabel("接口地址"); InputBox(url, { url = it.trim(); save() }, "https://你的中转站.com（带不带 /v1 都可以）", singleLine = true, mono = true, fontSize = 13)
+        if (url.isNotBlank()) Text("实际请求：" + Relay.base(url) + "/chat/completions", Modifier.padding(top = 4.dp, start = 2.dp), fontSize = 11.sp, color = P3.text3)
+        FieldLabel("API Key"); InputBox(key, { key = it.trim(); s.setCustomKey(cm.id, key); changed() }, "粘贴中转站的 Key，加密存在本机", singleLine = true, secret = true, mono = true)
+        FieldLabel("模型名"); InputBox(model, { model = it.trim(); save(); changed() }, "比如：gpt-5.5、claude-sonnet-4.5、deepseek-chat", singleLine = true, mono = true)
+        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextAction(if (listing) "获取中…" else "获取模型列表", P3.accent) {
+                if (!listing && url.isNotBlank() && key.isNotBlank()) { listing = true; listMsg = ""
+                    scope.launch { val r = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Ai.listModels(url, key) } }
+                        listing = false; r.onSuccess { models = it; listMsg = if (it.isEmpty()) "中转站没有返回模型列表，请手动填写模型名" else "共 ${it.size} 个，点一下填入" }
+                            .onFailure { listMsg = "获取失败：" + (it.message ?: "未知错误").take(60) } } }
+                else if (url.isBlank() || key.isBlank()) listMsg = "先填接口地址和 API Key"
+            }
+            if (listMsg.isNotBlank()) Text(listMsg, Modifier.padding(start = 8.dp), fontSize = 12.sp, color = P3.text3)
+        }
+        if (models.isNotEmpty()) Column(Modifier.padding(top = 4.dp).heightIn(max = 220.dp).clip(Sq.m).background(P3.surface2).verticalScroll(rememberScrollState())) {
+            models.forEach { m -> Text(m, Modifier.fillMaxWidth().clickable { model = m; save(); changed(); models = emptyList() }.padding(horizontal = 12.dp, vertical = 9.dp),
+                fontSize = 13.sp, color = if (m == model) P3.accent else P3.text, fontFamily = Mono) }
+        }
         TestRow { save(); Ai.test(Ai.target(ctx, "c:${cm.id}")).let { (ms, m) -> "$m · ${ms}ms" } }
     }
     if (del) ConfirmDialog("删除「${name}」？", "Key 也会一起删除。", "删除", true, onOk = { s.customs = s.customs.filter { it.id != cm.id }; s.setCustomKey(cm.id, ""); changed() }) { del = false }

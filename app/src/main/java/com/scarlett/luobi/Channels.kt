@@ -272,13 +272,22 @@ object Notion {
         }
         return notes
     }
+    /** blocks() 末尾追加的「#标签1 #标签2」段落 */
+    fun isTagBlock(b: JSONObject, tags: List<String>): Boolean {
+        if (tags.isEmpty() || b.optString("type") != "paragraph") return false
+        val rt = b.optJSONObject("paragraph")?.optJSONArray("rich_text") ?: return false
+        val text = (0 until rt.length()).joinToString("") { rt.optJSONObject(it)?.optJSONObject("text")?.optString("content").orEmpty() }
+        return text == tags.joinToString(" ") { "#$it" }
+    }
     fun publishFull(token: String, type: String, rawTarget: String, titleProp: String, tagsProp: String, title: String, bl: List<JSONObject>, tags: List<String>, cover: CoverSource?, meta: Meta = Meta()): Result {
         val tgt = resolve(token, type, rawTarget, titleProp)
         val props = JSONObject().put(tgt.titleProp, JSONObject().put("title", rt(title)))
         if (tgt.type == "database" && tagsProp.isNotBlank() && tagsProp != PROP_TAGS && tags.isNotEmpty())
             props.put(tagsProp, JSONObject().put("multi_select", JSONArray().apply { tags.forEach { put(JSONObject().put("name", it.replace(",", " "))) } }))
         val propNotes = if (tgt.type == "database") fillProps(props, tgt.schema, tags, meta) else emptyList()
-        val req = JSONObject().put("parent", tgt.parentJson).put("properties", props).put("children", JSONArray(bl.take(100)))
+        // 1.15.1：数据库目标的标签已写进「主题标签」属性，正文末尾不再追加 #标签 段落；页面目标没有属性，保留
+        val children = if (tgt.type == "database") bl.filterNot { isTagBlock(it, tags) } else bl
+        val req = JSONObject().put("parent", tgt.parentJson).put("properties", props).put("children", JSONArray(children.take(100)))
         var (code, txt) = call(token, "POST", "/pages", req.toString())
         var extra = propNotes
         // 属性值被拒（例如选项不允许新建）→ 去掉 1.15 新属性再发一次，保证文章先发出去

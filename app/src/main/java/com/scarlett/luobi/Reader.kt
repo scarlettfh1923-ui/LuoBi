@@ -1,6 +1,11 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 package com.scarlett.luobi
 
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import android.graphics.Bitmap
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
@@ -158,7 +163,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
             db.notes().update(n.copy(title = title2, body = body2, factReportJson = json))
             snack("已改正 ${appliedIds.size} 处")
             // 仍有未应用项时保持弹层；否则关掉
-            if (next == null || next.pendingCount() == 0) factSheet = false
+            if (next == null || next.issues.none { !it.applied }) factSheet = false
         }
     }
 
@@ -173,7 +178,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
             }
             if (tab == 0) FloatGroup(pal.dark) {
                 FloatAction(Ic.search, if (factBusy) pal.accent else pal.text, "事实校对",
-                    badge = factReport?.pendingCount() ?: 0) { onFactIcon() }
+                    badge = if (factReport != null) -1 else 0) { onFactIcon() } // 1.15.1：检测过就显示小红点，不显示数字
                 FloatAction(Ic.imgplus, pal.text, "文中插图") { il.start() }
                 FloatAction(Ic.text, if (showFont) pal.accent else pal.text, "阅读设置") { showFont = !showFont }
                 FloatAction(Ic.write, pal.text, "编辑") { editing = true }
@@ -207,7 +212,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
             Crossfade(tab, Modifier.fillMaxSize().backdropSource(backdrop), label = "tab") { t ->
                 if (t == 0) Box(Modifier.fillMaxSize()) {
                     ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding() + 16.dp, top = pad.calculateTopPadding(), openVersions = { verMenu = true }, onTags = { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } }, il = il, editCaption = { capEdit = it },
-                        highlights = factReport?.issues?.filter { !it.applied }?.map { it.span }?.filter { it.isNotBlank() } ?: emptyList(), focusSpan = factFocus, onCategory = { catSheet = true })
+                        highlights = emptyList() /* 1.15.1：阅读优先，不在正文上画黄色高亮 */, focusSpan = factFocus, onCategory = { catSheet = true })
                     FactProgressChip(factBusy, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp))
                 }
                 else Box(Modifier.padding(top = pad.calculateTopPadding())) { Gallery(imgs, style, { style = it; s.style = it }, spacing, { spacing = it; s.cardSpacing = it }, ratio, { ratio = it; s.cardRatio = it }, s.imgOn, bgBusy, aiBg != null, pal, pad.calculateBottomPadding(),
@@ -260,6 +265,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     if (factSheet && factReport != null) FactSheet(
         report = factReport!!,
         fromCache = factFromCache,
+        articleTitle = n.title,
         onJump = { factFocus = it.span; factSheet = false; scope.launch { kotlinx.coroutines.delay(400); factSheet = true } },
         onApply = { applyFactFixes(it) },
         onReCheck = { runFactCheck() },
@@ -495,14 +501,29 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
     var t by remember { mutableStateOf(n.title) }; var b by remember { mutableStateOf(n.body) }; var g by remember { mutableStateOf(n.tagList()) }
     val changed = t != n.title || b != n.body || g != n.tagList()
     var confirm by remember { mutableStateOf(false) }
-    val close = { if (changed) confirm = true else dismiss() }
+    // 1.15.1：进入时不弹键盘；点空白 / 返回 / 保存都收起键盘
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    fun hideKb() { focus.clearFocus(force = true); kb?.hide() }
+    val close = { hideKb(); if (changed) confirm = true else dismiss() }
     androidx.compose.ui.window.Dialog(onDismissRequest = close, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        // Dialog 窗口默认的软键盘状态会在打开时把键盘带出来：改为「进入时隐藏 + adjustResize」
+        // 焦点 / 键盘要取 Dialog 自己窗口里的，外层 Activity 的清不掉这里的焦点
+        val focus = androidx.compose.ui.platform.LocalFocusManager.current
+        val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        fun hideKb() { focus.clearFocus(force = true); kb?.hide() }
+        val dv = androidx.compose.ui.platform.LocalView.current
+        SideEffect {
+            (dv.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.setSoftInputMode(
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
         Surface(Modifier.fillMaxSize(), color = cs.background) {
-            Column(Modifier.fillMaxSize().statusBarsPadding().imePadding().navigationBarsPadding()) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().imePadding().navigationBarsPadding()
+                .pointerInput(Unit) { detectTapGestures { hideKb() } }) {
                 Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = close) { SvgIcon(Ic.close, cs.onSurface, desc = "关闭") }
+                    IconButton(onClick = { hideKb(); close() }) { SvgIcon(Ic.close, cs.onSurface, desc = "关闭") }
                     Text("编辑文章", Modifier.weight(1f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                    Button(onClick = { save(n.copy(title = t.trim(), body = b, tags = g.joinToString(" "))) }, enabled = changed && t.isNotBlank(), shape = Sq.full,
+                    Button(onClick = { hideKb(); save(n.copy(title = t.trim(), body = b, tags = g.joinToString(" "))) }, enabled = changed && t.isNotBlank(), shape = Sq.full,
                         contentPadding = PaddingValues(horizontal = 18.dp), modifier = Modifier.padding(end = 8.dp).height(36.dp)) { Text("保存", fontSize = 15.sp) }
                 }
                 Column(Modifier.padding(horizontal = 20.dp).weight(1f)) {
@@ -512,7 +533,10 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
                     HorizontalDivider(Modifier.padding(vertical = 12.dp), thickness = Dp.Hairline, color = cs.outlineVariant)
                     TagEditor(g, { g = it }, cs.primary, cs.background, cs.onSurface, false, collapsible = false)
                     HorizontalDivider(Modifier.padding(vertical = 12.dp), thickness = Dp.Hairline, color = cs.outlineVariant)
-                    BasicTextField(b, { b = it }, Modifier.fillMaxWidth().weight(1f),
+                    // 正文自己滚动：开始拖动时收起键盘（像系统备忘录）
+                    val bodyScroll = rememberScrollState()
+                    LaunchedEffect(bodyScroll) { snapshotFlow { bodyScroll.isScrollInProgress }.collect { if (it) hideKb() } }
+                    BasicTextField(b, { b = it }, Modifier.fillMaxWidth().weight(1f).verticalScroll(bodyScroll),
                         textStyle = TextStyle(fontSize = 16.sp, lineHeight = 27.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary),
                         decorationBox = { inner -> Box { if (b.isEmpty()) Text("正文", fontSize = 16.sp, color = t3()); inner() } })
                     Text("正文 ${b.length} 字" + if (changed) " · 未保存" else "", Modifier.fillMaxWidth().padding(vertical = 8.dp), textAlign = TextAlign.End, fontSize = 12.sp, color = t3())

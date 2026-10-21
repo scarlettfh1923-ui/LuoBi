@@ -126,11 +126,6 @@ fun LibraryScreen(
                             openSwipeId = null; setManaging(true); selected = emptySet()
                         }.padding(horizontal = 6.dp, vertical = 6.dp), fontSize = 14.sp, color = cs.primary, fontWeight = FontWeight.SemiBold)
                     }
-                    // 1.15 方案 A：「全部分类 ⌄」→ iOS 下拉菜单
-                    Box(Modifier.padding(start = 16.dp, bottom = 4.dp)) {
-                        CategoryMenuButton(if (catFilter.isBlank()) "全部分类" else catFilter) { catMenu = true }
-                        CategoryMenu(catMenu, Desk.counts(match), catFilter, bottom, onPick = { catFilter = it; catMenu = false }) { catMenu = false }
-                    }
                 }
             }
             item {
@@ -142,16 +137,16 @@ fun LibraryScreen(
                     }
                     if (q.isNotEmpty()) Box(Modifier.size(28.dp).clip(Sq.full).clickable { q = "" }, contentAlignment = Alignment.Center) { SvgIcon(Ic.close, t3(), 16.dp, desc = "清空") }
                 }
-                Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 10.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    // 1.5：筛选统一为分段胶囊，选中实心
-                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // 1.15：分类筛选移到标题下的下拉；「收藏」仍可在右侧排序里选
-                        if (catFilter.isNotBlank()) Text("${catFilter} · ${shown.size} 篇", fontSize = 12.sp, color = t3())
+                // 1.15.1：一行紧凑工具条——左「全部分类 ⌄」（强调色、无底），右「最新 ⇅」（灰）；左右边距与卡片对齐
+                if (!managing) Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        CategoryMenuButton(if (catFilter.isBlank()) "全部分类" else "$catFilter · ${shown.size}") { catMenu = true }
+                        CategoryMenu(catMenu, Desk.counts(match), catFilter, bottom, onPick = { catFilter = it; catMenu = false }) { catMenu = false }
                     }
                     Box {
-                        Row(Modifier.clip(Sq.s).clickable { sortMenu = true }.padding(horizontal = 6.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            SvgIcon(Ic.swap, t3(), 14.dp); Spacer(Modifier.width(2.dp))
-                            Text(SortLabels[sort], fontSize = 12.sp, color = t3())
+                        Row(Modifier.clip(Sq.s).clickable { sortMenu = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(SortLabels[sort], fontSize = 14.sp, color = t3())
+                            Spacer(Modifier.width(3.dp)); SvgIcon(Ic.swap, t3(), 14.dp)
                         }
                         DropdownMenu(sortMenu, { sortMenu = false }, shape = Sq.m) {
                             SortLabels.forEachIndexed { i, l ->
