@@ -55,8 +55,9 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
             "weibo" -> sendLong("com.sina.weibo", "微博")
             "douyin" -> douyin()
             "long" -> saveLong()
-            "html" -> bg("HTML") { Out.copyHtml(ctx, title, n.body, tags, n.pics()); val f = withContext(Dispatchers.IO) { Out.saveHtml(ctx, title, n.body, tags, n.pics()) }; "已复制 HTML 富文本，并保存到「下载/落笔/$f」" }
-            "md" -> { Share.copy(ctx, "Markdown", Export.markdown(title, n.body, tags, n.pics(), Settings(ctx).showCredit)); snack("已复制 Markdown") }
+            // 1.10：以 .html / .md 文件弹系统分享（临时文件在 cache，不留存储）
+            "html" -> { val doc = Export.htmlDoc(title, n.body, tags, n.pics(), Settings(ctx).showCredit); Share.shareDoc(ctx, title, "html", "text/html", doc) }
+            "md" -> { val doc = Export.markdown(title, n.body, tags, n.pics(), Settings(ctx).showCredit); Share.shareDoc(ctx, title, "md", "text/markdown", doc) }
             "copy" -> { Share.copy(ctx, "全文", fullText()); snack("已复制全文") }
             "notion" -> bg("Notion") { val u = Notion.upload(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "Notion", u); "已上传到 Notion，链接已复制" }
             "yuque" -> bg("语雀") { val u = Yuque.upload(ctx, title, n.body, tags, n.pics()); Share.copy(ctx, "语雀", u); "已上传到语雀，链接已复制" }
@@ -85,7 +86,7 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
         ui.launch {
             try {
                 val u = withContext(Dispatchers.Default) { makeLong(true) }
-                snack(if (u.size > 1) "已保存长图到相册（${u.size} 张）" else "已保存长图到相册", true, "查看") { Out.view(ctx, u.first()) }
+                snack("已保存长图到相册", true, "查看") { Out.view(ctx, u.first()) }
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: OutOfMemoryError) { snack("文章太长，图片生成不了", false) }
             catch (e: Throwable) { snackErr(e, "长图失败：") }
@@ -100,7 +101,7 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
             try {
                 val u = withContext(Dispatchers.Default) { makeLong(false) }
                 Out.sendImagesTo(ctx, pkg, u, "")
-                snack(if (u.size > 1) "已生成 ${u.size} 张长图，正在打开$name" else "长图已生成，正在打开$name")
+                snack("长图已生成，正在打开$name")
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: OutOfMemoryError) { snack("文章太长，图片生成不了", false) }
             catch (e: Throwable) { snackErr(e, "分享到$name 失败：") }

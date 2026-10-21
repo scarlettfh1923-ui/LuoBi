@@ -18,7 +18,7 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [34], application = TestApp::class, qualifiers = "w360dp-h780dp-xxhdpi")
 class Write19Shot {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
-    private val dir = System.getProperty("user.dir") + "/../../screenshots/v1.9/"
+    private val dir = System.getProperty("user.dir") + "/../../screenshots/v1.10/"
     private fun idle() { rule.mainClock.advanceTimeBy(1500); rule.waitForIdle(); Thread.sleep(200); rule.mainClock.advanceTimeBy(500); rule.waitForIdle() }
     private fun shot(n: String) { idle(); rule.onRoot().captureRoboImage("$dir$n.png") }
     private val raw = "就是那个李海啊，在鹤岗卖房子直播，六十多平才几万块，然后爆了。我觉得这事儿其实不是房子便宜，是他会讲故事。"

@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         if (savedInstanceState == null) take(intent)
+        Share.cleanDocs(this) // 1.10：启动时清理上次分享留下的临时文件
         setContent { AppTheme { App() } }
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); take(intent) }
@@ -75,9 +76,10 @@ fun App() {
     LaunchedEffect(Unit) { Defaults.ensure(db) }
     var route by remember { mutableStateOf<Route>(Route.Tab(0)) }
     val stack = remember { mutableStateListOf<Route>() }
-    fun go(r: Route) { stack.add(route); route = r }
-    fun back() { route = stack.removeLastOrNull() ?: Route.Tab(0) }
-    fun tab(i: Int) { stack.clear(); route = Route.Tab(i) }
+    var navDir by remember { mutableIntStateOf(0) }
+    fun go(r: Route) { navDir = 1; stack.add(route); route = r }
+    fun back() { navDir = -1; route = stack.removeLastOrNull() ?: Route.Tab(0) }
+    fun tab(i: Int) { navDir = if (route is Route.Tab) 0 else -1; stack.clear(); route = Route.Tab(i) }
     val ws = remember { WriteState(ctx) }
     var genErr by remember { mutableStateOf<GenErr?>(null) }
     var libManaging by remember { mutableStateOf(false) }
@@ -127,8 +129,8 @@ fun App() {
 
     Box(Modifier.fillMaxSize().background(P3.bg)) {
         AnimatedContent(route, transitionSpec = {
-            if (targetState is Route.Tab && initialState is Route.Tab) fadeIn(tween(200)) togetherWith fadeOut(tween(150))
-            else fadeIn(tween(220)) togetherWith fadeOut(tween(160))
+            // 1.10：统一动效——底栏切换淡入淡出，推入/返回水平滑动
+            when { targetState is Route.Tab && initialState is Route.Tab -> Motion.tab(); navDir < 0 -> Motion.pop(); else -> Motion.push() }
         }, label = "nav") { r ->
             when (r) {
                 is Route.Tab -> { val bd = rememberBackdrop(); CompositionLocalProvider(LocalBackdrop provides bd) { Scaffold(containerColor = P3.bg, bottomBar = { if (!(r.i == 1 && libManaging)) FloatingNav(r.i) { libManaging = false; tab(it) } }) { pad ->
@@ -146,9 +148,9 @@ fun App() {
             }
         }
         // 1.9：意图卡底部弹层画在最外层（不在 Scaffold 里），键盘留白只算一次
-        if (route == Route.Tab(0) && ws.sheet && !running) IntentSheet(db, ws, { go(Route.Sub("models")) }, { go(Route.Sub("length")) }, { go(Route.Sub("template:$it")) }) { j -> ws.sheet = false; startGen(j) }
+        if (route == Route.Tab(0) && !running) IntentSheet(db, ws, { go(Route.Sub("models")) }, { go(Route.Sub("length")) }, { go(Route.Sub("template:$it")) }) { j -> ws.sheet = false; startGen(j) }
         SnackbarHost(host, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = 96.dp)) { SoftSnackbar(it) }
-        AnimatedVisibility(running, enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(running, enter = Motion.fadeIn, exit = Motion.fadeOut) {
             Box(Modifier.fillMaxSize().background(Color(0x55000000)).clickable(enabled = false) {}, contentAlignment = Alignment.Center) {
                 Column(Modifier.padding(32.dp).clip(Sq.xl).background(P3.surface).padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = 12.dp).widthIn(max = 280.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {

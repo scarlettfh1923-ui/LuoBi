@@ -243,7 +243,7 @@ object Render {
 
     /**
      * 杂志风奶油纸长图：标题 + 标签 + 正文（小标题同字体更大加粗），无页脚品牌。
-     * 太长时按整行拆成多张（每张 ≤ LONG_MAX_H），逐张交给 [sink]，用完即可回收，避免内存爆掉。
+     * 1.10：始终一张完整长图（不再拆张），交给 [sink] 后由调用方回收。
      * 返回总张数。
      */
     fun longImage(title: String, body: String, tags: List<String>, tf: Typeface = Typeface.DEFAULT, boldTf: Typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD),
@@ -333,29 +333,33 @@ object Render {
                 by += blk.height
             }
         }
-        val segs = mutableListOf<Pair<Int, Int>>()
-        var st = 0
-        val maxH = LONG_MAX_H_HD
-        while (h - st > maxH) {
-            val limit = st + maxH
-            val end = cuts.filter { it > st + maxH / 4 && it <= limit }.maxOrNull() ?: limit
-            segs += st to end; st = end
+        // 1.10：永远只出一张完整长图（以前超过 9000 高就按行拆成多张，这就是「被分成 2 段」的原因）。
+        // 清晰度：优先 1440 宽（HD），太高时退到 1080 宽；内存吃紧时用 RGB_565（长图不透明，不需要 alpha）。
+        var sc = longScale(h)
+        fun alloc(scale: Float): Bitmap {
+            val bw = (w * scale).toInt(); val bh = (h * scale).toInt()
+            val cfg = if (bw.toLong() * bh * 4 <= LONG_ARGB_BUDGET) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565
+            return Bitmap.createBitmap(bw, bh, cfg)
         }
-        segs += st to h
-        val more = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 28f; color = sub; textAlign = Paint.Align.CENTER }
-        segs.forEachIndexed { k, (a, e) ->
-            val padT = if (k > 0) 60 else 0; val padB = if (k < segs.lastIndex) 90 else 0
-            val b = Bitmap.createBitmap((w * HD).toInt(), ((e - a + padT + padB) * HD).toInt(), Bitmap.Config.ARGB_8888)
-            val c = Canvas(b)
-            c.drawColor(cream)
-            c.scale(HD, HD)
-            if (padB > 0) c.drawText("（${k + 1}/${segs.size}）接下一张 ↓", w / 2f, (e - a + padT + padB - 36).toFloat(), more)
-            c.save(); c.translate(0f, (padT - a).toFloat()); c.clipRect(0, a, w, e)
-            drawLong(c, m, titleL, paras, tags, tagP, tagRowH, tagGap, tagBg, accent, eyebrow, metaP, blocks, ink)
-            c.restore()
-            sink(b, k, segs.size)
-        }
-        return segs.size
+        // 内存不够时退到 1080 宽 RGB_565 再试一次（仍是一张完整图）
+        val b = try { alloc(sc) } catch (e: OutOfMemoryError) { if (sc <= 1f) throw e; sc = minOf(1f, sc); System.gc(); alloc(sc) }
+        val c = Canvas(b)
+        c.drawColor(cream)
+        c.scale(sc, sc)
+        drawLong(c, m, titleL, paras, tags, tagP, tagRowH, tagGap, tagBg, accent, eyebrow, metaP, blocks, ink)
+        sink(b, 0, 1)
+        return 1
+    }
+
+    /** JPEG 单边上限 65535；留余量 */
+    const val LONG_MAX_PX = 60000
+    /** ARGB_8888 的内存预算（原生内存），超出改用 RGB_565 */
+    const val LONG_ARGB_BUDGET = 192L * 1024 * 1024
+    /** 长图缩放：1440 宽放得下就用 1440，否则 1080（1.0），极端长文再按 JPEG 上限收 */
+    fun longScale(h: Int): Float = when {
+        h * HD <= LONG_MAX_PX -> HD
+        h <= LONG_MAX_PX -> 1f
+        else -> LONG_MAX_PX.toFloat() / h
     }
 
     private fun drawLong(c: Canvas, m: Int, titleL: StaticLayout, paras: List<String>, tags: List<String>, tagP: TextPaint, tagRowH: Float, tagGap: Float, tagBg: Int, accent: Int,

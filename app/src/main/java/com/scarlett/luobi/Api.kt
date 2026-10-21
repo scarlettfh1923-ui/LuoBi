@@ -106,9 +106,11 @@ object Ai {
             target(ctx, ref)
         }
         val list = db.templates().list().joinToString("\n") { "- ${it.name}：${it.desc}" }
-        val prompt = Vars.fillClean(ct?.prompt?.ifBlank { null } ?: Defaults.INTENT, raw, list)
+        // 1.10：旧版「清洗」提示词（输出 cleaned、可能把三项融合成一段）不再用于提取，改用意图提取默认提示词；她的旧文本已备份
+        val base = ct?.prompt?.takeIf { it.isNotBlank() && !Defaults.isOldClean(it) } ?: Defaults.INTENT
+        val prompt = Vars.fillClean(base, raw, list) + IntentParse.FORMAT
         val txt = chatText(t, "你是中文写作助理。只输出一个合法 JSON 对象。", prompt, true)
-        return CleanParse.parse(txt, Vars.DEFAULT_FIELDS)
+        return IntentParse.parse(txt, raw)
     }
 
     const val OUT_RULE = "只输出一个 JSON 对象：{\"title\":\"标题\",\"body\":\"正文 Markdown：段落之间空一行；小标题单独一行，以 ## 开头（下一级用 ###）；小标题必须是有内容的短语（概括这一节讲什么），不要只写数字或序号（如 ## 1、## 一、## 01）；全文挑 1–3 句最有力的金句用 **加粗**（金句放在段落里加粗，或单独一行用 > 引用；金句绝不能用 # 当标题）；需要时可用 > 引用、- 列表、--- 分隔线；不要表格和代码块\",\"tags\":[\"标签1\",\"标签2\"]}，tags 为 3–8 个不带 # 的话题词，不要输出其它内容。"

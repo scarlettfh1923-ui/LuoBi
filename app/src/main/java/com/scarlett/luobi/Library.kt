@@ -169,27 +169,27 @@ fun LibraryScreen(
             }
             if (sort >= 2) {
                 items(shown, key = { it.id }) { n ->
-                    LibraryRow(n, managing, n.id in selected, openSwipeId == n.id,
+                    Box(Modifier.animateItem(fadeInSpec = Motion.enter(Motion.SHORT), placementSpec = Motion.enter(), fadeOutSpec = Motion.exit())) { LibraryRow(n, managing, n.id in selected, openSwipeId == n.id,
                         onOpen = {
                             if (managing) selected = if (n.id in selected) selected - n.id else selected + n.id
                             else { openSwipeId = null; open(n.id) }
                         },
                         onToggleFav = { scope.launch { db.notes().setFav(n.root, !n.favorite) } },
                         onReveal = { openSwipeId = if (it) n.id else if (openSwipeId == n.id) null else openSwipeId },
-                        onTapDelete = { confirmOne = n })
+                        onTapDelete = { confirmOne = n }) }
                 }
             } else {
                 shown.groupBy { dayLabel(it.createdAt) }.forEach { (d, list) ->
                     item(key = "d$d$sort") { SectionLabel(d, Modifier.padding(start = 16.dp)) }
                     items(list, key = { it.id }) { n ->
-                        LibraryRow(n, managing, n.id in selected, openSwipeId == n.id,
+                        Box(Modifier.animateItem(fadeInSpec = Motion.enter(Motion.SHORT), placementSpec = Motion.enter(), fadeOutSpec = Motion.exit())) { LibraryRow(n, managing, n.id in selected, openSwipeId == n.id,
                             onOpen = {
                                 if (managing) selected = if (n.id in selected) selected - n.id else selected + n.id
                                 else { openSwipeId = null; open(n.id) }
                             },
                             onToggleFav = { scope.launch { db.notes().setFav(n.root, !n.favorite) } },
                             onReveal = { openSwipeId = if (it) n.id else if (openSwipeId == n.id) null else openSwipeId },
-                            onTapDelete = { confirmOne = n })
+                            onTapDelete = { confirmOne = n }) }
                     }
                 }
             }
@@ -281,7 +281,7 @@ private fun LibraryRow(
 
     LaunchedEffect(revealed, managing) {
         if (managing) offset.snapTo(0f)
-        else offset.animateTo(if (revealed) actionPx else 0f, spring())
+        else offset.animateTo(if (revealed) actionPx else 0f, Motion.dragSpring)
     }
 
     if (managing) {
@@ -317,7 +317,7 @@ private fun LibraryRow(
                             onDragEnd = {
                                 scope.launch {
                                     val open = offset.value > actionPx * 0.4f
-                                    offset.animateTo(if (open) actionPx else 0f, spring())
+                                    offset.animateTo(if (open) actionPx else 0f, Motion.dragSpring)
                                     onReveal(open)
                                 }
                             },
@@ -331,7 +331,7 @@ private fun LibraryRow(
                     },
                 onClick = {
                     if (offset.value > actionPx * 0.3f) {
-                        scope.launch { offset.animateTo(0f, spring()); onReveal(false) }
+                        scope.launch { offset.animateTo(0f, Motion.dragSpring); onReveal(false) }
                     } else onOpen()
                 }
             ) {

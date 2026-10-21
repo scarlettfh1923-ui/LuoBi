@@ -39,6 +39,7 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
         item { RowGroup("创作", listOf(
             { SettingRow(Ic.key, "模型与密钥", "${s.configured().size} 个") { go("models") } },
             { SettingRow(Ic.tpl, "模板管理", "${templates.size} 个") { go("templates") } },
+            { SettingRow(Ic.wand, "每日选题提示词", if (Settings(LocalContext.current).inspirePrompt.trim() == Inspire.DEFAULT_PROMPT.trim()) "默认" else "已修改") { go("inspire") } },
             { SettingRow(Ic.wand, "意图提取提示词", if (active?.prompt?.trim() == Defaults.INTENT.trim()) "默认" else "已修改") { go("cleans") } },
             { SettingRow(Ic.ruler, "篇幅", Lengths.NAMES[s.length.coerceIn(0, 2)] + " · " + s.lengthRange().let { "${it.first}–${it.second}" }) { go("length") } })) }
         item { RowGroup("分享与图片", listOf(
@@ -65,6 +66,7 @@ fun SubPage(db: AppDb, r: Route.Sub, back: () -> Unit, go: (Route) -> Unit) {
                 "templates" -> TemplatesPage(db, back, sub)
                 "template" -> TemplateEdit(db, arg, back)
                 "cleans" -> CleansPage(db, back)
+                "inspire" -> InspirePage(back)
                 "models" -> ModelsPage(back)
                 "channels" -> ChannelsPage(db, back, sub)
                 "channel" -> ChannelEdit(db, arg, back)
@@ -229,12 +231,23 @@ fun TemplateEdit(db: AppDb, id: Long, back: () -> Unit) {
 fun CleansPage(db: AppDb, back: () -> Unit) {
     val scope = rememberCoroutineScope()
     val active by remember(db) { db.cleans().activeFlow() }.collectAsState(initial = null)
+    val allCleans by remember(db) { db.cleans().all() }.collectAsState(initial = emptyList())
     val c = active
     var prompt by remember(c?.id) { mutableStateOf(TextFieldValue(c?.prompt ?: "")) }
     Page("意图提取提示词", back) {
         item { Text("粘贴口播后点「提取意图」时发给模型的提示词。输出须是一个 JSON 对象：想写什么 / 观点 / 疑问 / recommend。{原始文本} 是你粘贴的口播，{模板列表} 由程序自动填入全部写作模板的名称和说明。", Modifier.padding(bottom = 12.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
         if (c == null) return@Page
-        if (c.prompt.contains("\"cleaned\"")) item { WarnBox("这是旧版「清洗」提示词，仍然可用，但会多花时间输出清洗后文字。点「恢复默认」换成新的意图提取提示词。", Modifier.padding(bottom = 10.dp)) }
+        val backup = allCleans.firstOrNull { !it.builtIn && it.name.startsWith("旧清洗提示词") }
+        if (backup != null) item {
+            var show by remember { mutableStateOf(false) }
+            Card(Modifier.padding(bottom = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("你之前改过的清洗提示词已备份（1.10 起提取意图改用上面的提示词）", Modifier.weight(1f), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp)
+                    TextAction(if (show) "收起" else "查看") { show = !show }
+                }
+                if (show) Text(backup.prompt, Modifier.padding(top = 8.dp), fontSize = 13.sp, lineHeight = 20.sp, color = P3.text2)
+            }
+        }
         item {
             Card {
                 BasicTextField(prompt, { prompt = it }, Modifier.fillMaxWidth().heightIn(min = 240.dp), textStyle = TextStyle(fontSize = 14.sp, lineHeight = 23.sp, color = P3.text),
@@ -248,6 +261,43 @@ fun CleansPage(db: AppDb, back: () -> Unit) {
                     scope.launch { db.cleans().update(c.copy(prompt = prompt.text)); snack("已保存意图提取提示词") }
                 }
             }
+        }
+    }
+}
+
+// ---------------- 每日选题提示词（1.10 灵感） ----------------
+@Composable
+fun InspirePage(back: () -> Unit) {
+    val ctx = LocalContext.current; val s = remember { Settings(ctx) }
+    var prompt by remember { mutableStateOf(TextFieldValue(s.inspirePrompt)) }
+    var saved by remember { mutableStateOf(s.inspirePrompt) }
+    var srcs by remember { mutableStateOf(s.inspireSources) }
+    Page("每日选题提示词", back) {
+        item { Text("每天第一次打开「创作」时，抓取下面这些热榜，用 DeepSeek 按你的文章和模板挑出 10 个选题。{热榜}{我的文章}{我的模板} 由程序自动填入。", Modifier.padding(bottom = 12.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
+        item {
+            Card {
+                BasicTextField(prompt, { prompt = it }, Modifier.fillMaxWidth().heightIn(min = 240.dp), textStyle = TextStyle(fontSize = 14.sp, lineHeight = 23.sp, color = P3.text),
+                    cursorBrush = SolidColor(P3.accent), visualTransformation = VarHighlight(setOf("热榜", "我的文章", "我的模板")))
+            }
+            if (!prompt.text.contains("{热榜}")) WarnBox("提示词里没有 {热榜}，模型将看不到今天的热榜。", Modifier.padding(top = 8.dp))
+            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextAction("恢复默认", P3.text2) { s.inspirePrompt = Inspire.DEFAULT_PROMPT; prompt = TextFieldValue(Inspire.DEFAULT_PROMPT); saved = Inspire.DEFAULT_PROMPT; snack("已恢复默认") }
+                Spacer(Modifier.weight(1f))
+                PrimaryButton("保存", Modifier.width(140.dp), enabled = prompt.text != saved) { s.inspirePrompt = prompt.text; saved = prompt.text; snack("已保存，下拉「灵感」即可按新提示词刷新") }
+            }
+        }
+        item { GroupLabel("热榜来源") }
+        item {
+            Card(pad = 0.dp) {
+                HotSources.all.forEachIndexed { i, src ->
+                    if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = Dp.Hairline, color = P3.border)
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(src.name, Modifier.weight(1f), fontSize = 15.sp, color = P3.text)
+                        Switch(src.id in srcs, { on -> srcs = if (on) srcs + src.id else srcs - src.id; s.inspireSources = srcs }, colors = SwitchDefaults.colors(checkedTrackColor = P3.accent))
+                    }
+                }
+            }
+            Text("小红书没有可以免登录访问的公开热榜，暂不支持。某个来源抓取失败时会自动跳过。", Modifier.padding(top = 8.dp, start = 4.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp)
         }
     }
 }

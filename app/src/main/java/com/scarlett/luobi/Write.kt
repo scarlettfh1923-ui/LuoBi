@@ -77,12 +77,30 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGen
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        LazyColumnFill(bottom + 64.dp) {
+    // 1.10 灵感：每天第一次打开自动抓取（有当天缓存就直接用），下拉刷新强制重抓
+    var insp by remember { mutableStateOf(Inspire.cached(ctx)) }
+    var inspBusy by remember { mutableStateOf(false) }
+    var inspErr by remember { mutableStateOf<Friendly?>(null) }
+    fun loadInspire(force: Boolean) {
+        if (inspBusy) return
+        inspBusy = true; inspErr = null
+        scope.launch {
+            try { insp = Inspire.load(ctx, force) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: CleanParse.BadFormat) { inspErr = Friendly("选题结果格式不对", "模型返回的不是约定的 JSON。可以下拉重试，或在「设定 → 每日选题提示词」恢复默认。", e.raw) }
+            catch (e: Throwable) { inspErr = Errors.explain(e) }
+            finally { inspBusy = false }
+        }
+    }
+    LaunchedEffect(Unit) { if (insp == null) loadInspire(false) }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing = inspBusy && insp != null, onRefresh = { loadInspire(true) }, modifier = Modifier.fillMaxSize()) {
+        LazyColumnFill(bottom) {
             item { Text("今天写什么", Modifier.padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 14.dp), fontSize = 32.sp, fontWeight = FontWeight.Bold, lineHeight = 40.sp, color = P3.text) }
             item {
                 Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                    Box(Modifier.fillMaxWidth().heightIn(min = 240.dp)) {
+                    Box(Modifier.fillMaxWidth().heightIn(min = 140.dp)) {
                         if (ws.raw.isEmpty()) Text("粘贴你的口播 / 想说的话 / 疑问", fontSize = 16.sp, lineHeight = 27.sp, color = P3.text3)
                         BasicTextField(ws.raw, { ws.raw = it; ws.saveRaw() }, Modifier.fillMaxWidth(),
                             textStyle = TextStyle(fontSize = 16.sp, lineHeight = 27.sp, color = P3.text), cursorBrush = SolidColor(P3.accent))
@@ -100,23 +118,62 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGen
                     }
                 }
             }
-            if (ws.extracted && !ws.sheet) item {
-                Row(Modifier.padding(horizontal = 24.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            // 1.10：主按钮紧跟在输入框下面
+            item {
+                val m = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                when {
+                    ws.extracting -> PrimaryButton("正在提取意图…", m, busy = true) {}
+                    ws.extracted -> PrimaryButton("查看意图卡", m) { ws.sheet = true; ws.save() }
+                    else -> PrimaryButton("提取意图", m, enabled = ws.raw.isNotBlank()) { extract() }
+                }
+            }
+            if (ws.extracted && !ws.sheet) item(key = "done") {
+                Row(Modifier.animateItem().padding(horizontal = 24.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("意图已提取：" + (ws.values["想写什么"]?.takeIf { it.isNotBlank() } ?: "（未填写想写什么）"), Modifier.weight(1f), fontSize = 13.sp, color = P3.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     TextAction(if (ws.extracting) "提取中…" else "重新提取", enabled = !ws.extracting) { extract() }
                 }
             }
-            ws.err?.let { e -> item { Box(Modifier.padding(vertical = 2.dp)) { ErrorCard(e, { extract() }, if (e.settings) goModels else null) { ws.err = null } } } }
-            if (genErr != null) item { Box(Modifier.padding(vertical = 2.dp)) { ErrorCard(genErr.f, { clearGenErr(); genErr.retry() }, if (genErr.f.settings) goModels else null) { clearGenErr() } } }
-        }
-        // 主按钮固定在浮动导航之上；键盘弹出时跟到键盘上方（不叠加导航高度）
-        val imeB = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-        Box(Modifier.fillMaxSize().padding(bottom = maxOf(bottom + 4.dp, imeB + 8.dp)), contentAlignment = Alignment.BottomCenter) {
-            val m = Modifier.padding(horizontal = 16.dp)
-            when {
-                ws.extracting -> PrimaryButton("正在提取意图…", m, busy = true) {}
-                ws.extracted -> PrimaryButton("查看意图卡", m) { ws.sheet = true; ws.save() }
-                else -> PrimaryButton("提取意图", m, enabled = ws.raw.isNotBlank()) { extract() }
+            ws.err?.let { e -> item(key = "err") { Box(Modifier.animateItem().padding(vertical = 2.dp)) { ErrorCard(e, { extract() }, if (e.settings) goModels else null) { ws.err = null } } } }
+            if (genErr != null) item(key = "genErr") { Box(Modifier.animateItem().padding(vertical = 2.dp)) { ErrorCard(genErr.f, { clearGenErr(); genErr.retry() }, if (genErr.f.settings) goModels else null) { clearGenErr() } } }
+            // ---- 灵感 ----
+            item(key = "inspHead") {
+                Row(Modifier.padding(start = 24.dp, end = 20.dp, top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
+                    Text("灵感", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = P3.text)
+                    val sub = insp?.let { r -> "今日 ${r.topics.size} 个选题 · " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA).format(java.util.Date(r.updatedAt)) + " 更新" } ?: if (inspBusy) "正在挑选今天的选题…" else ""
+                    Text(sub, Modifier.weight(1f).padding(start = 10.dp, bottom = 2.dp), fontSize = 12.sp, color = P3.text3, maxLines = 1)
+                    Text(if (inspBusy) "刷新中…" else "刷新", Modifier.clip(Sq.s).clickable(enabled = !inspBusy) { loadInspire(true) }.padding(4.dp), fontSize = 12.sp, color = P3.accent)
+                }
+            }
+            inspErr?.let { e -> item(key = "inspErr") { Box(Modifier.animateItem()) { ErrorCard(e, { loadInspire(true) }, if (e.settings) goModels else null) { inspErr = null } } } }
+            val r = insp
+            if (r == null && inspBusy) item(key = "inspLoading") {
+                Card(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).animateItem()) {
+                    repeat(4) { i -> if (i > 0) Spacer(Modifier.height(14.dp)); Box(Modifier.fillMaxWidth(if (i % 2 == 0) .85f else .6f).height(14.dp).clip(Sq.full).background(P3.surface2)) }
+                }
+            }
+            if (r != null) {
+                if (r.note.isNotBlank() || r.failed.isNotEmpty()) item(key = "inspNote") {
+                    Text(listOf(r.note, if (r.failed.isNotEmpty()) "${r.failed.joinToString("、")} 暂时没抓到，已跳过" else "").filter { it.isNotBlank() }.joinToString("；"),
+                        Modifier.padding(horizontal = 24.dp, vertical = 2.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp)
+                }
+                item(key = "inspList") {
+                    Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).animateItem(), pad = 0.dp) {
+                        r.topics.forEachIndexed { i, t ->
+                            if (i > 0) HorizontalDivider(Modifier.padding(start = 48.dp), thickness = Dp.Hairline, color = P3.border)
+                            Row(Modifier.fillMaxWidth().clickable { ws.raw = Inspire.fillText(t); ws.saveRaw(); snack("已填入选题，可以修改后提取意图") }.padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {
+                                Text("${i + 1}", Modifier.width(24.dp), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (i < 3) P3.accent else P3.text3)
+                                Column(Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.Top) {
+                                        Text(t.title, Modifier.weight(1f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text, lineHeight = 21.sp)
+                                        if (t.source.isNotBlank()) Text(t.source, Modifier.padding(start = 8.dp).clip(Sq.full).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.onAccentSoft, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    if (t.angle.isNotBlank()) Text("可以写：" + t.angle, Modifier.padding(top = 4.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp)
+                                    if (t.view.isNotBlank()) Text("观点：" + t.view, Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text3, lineHeight = 19.sp)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -138,7 +195,7 @@ fun IntentSheet(db: AppDb, ws: WriteState, goModels: () -> Unit, goLength: () ->
         }
     }
     fun close() { ws.sheet = false; ws.save() }
-    BackHandler { close() }
+    BackHandler(ws.sheet) { close() }
     val length = s.length; val lenRange = s.lengthRange()
     var tplMenu by remember { mutableStateOf(false) }
     var modelMenu by remember { mutableStateOf(false) }
@@ -146,7 +203,11 @@ fun IntentSheet(db: AppDb, ws: WriteState, goModels: () -> Unit, goLength: () ->
     val vals = ws.map()
     val finalPrompt = tpl?.let { Compose.prompt(it.name, it.desc, it.prompt, vals, ws.raw, length, lenRange) } ?: ""
 
-    Box(Modifier.fillMaxSize().background(Color(0x52000000)).clickable(remember { MutableInteractionSource() }, null) { close() })
+    // 1.10：遮罩淡入、弹层从底部弹簧滑入；关闭时反向
+    AnimatedVisibility(ws.sheet, enter = Motion.fadeIn, exit = Motion.fadeOut) {
+        Box(Modifier.fillMaxSize().background(Color(0x52000000)).clickable(remember { MutableInteractionSource() }, null) { close() })
+    }
+    AnimatedVisibility(ws.sheet, Modifier.fillMaxSize(), enter = Motion.sheetIn, exit = Motion.sheetOut) {
     Box(Modifier.fillMaxSize().statusBarsPadding().padding(top = 48.dp), contentAlignment = Alignment.BottomCenter) {
         Column(Modifier.fillMaxWidth().clip(Sq.topXl).background(P3.surface).clickable(remember { MutableInteractionSource() }, null) {}
             .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))) {
@@ -209,6 +270,7 @@ fun IntentSheet(db: AppDb, ws: WriteState, goModels: () -> Unit, goLength: () ->
             }
         }
     }
+}
 }
 
 @Composable

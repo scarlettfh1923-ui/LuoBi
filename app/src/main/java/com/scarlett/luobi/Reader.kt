@@ -151,7 +151,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
             }
             Column(Modifier.padding(top = pad.calculateTopPadding())) {
                 if (tab == 0) AnalyzingCard(il)
-                AnimatedVisibility(showFont && tab == 0) { AaPanel(font, { font = it; s.fontSize = it }, fontId, { fontId = it; s.readFont = it }, mode, { mode = it; s.readMode = it }, pal) }
+                AnimatedVisibility(showFont && tab == 0, enter = Motion.cardIn, exit = Motion.cardOut) { AaPanel(font, { font = it; s.fontSize = it }, fontId, { fontId = it; s.readFont = it }, mode, { mode = it; s.readMode = it }, pal) }
             }
         }
     }

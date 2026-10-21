@@ -441,3 +441,71 @@ object Compose {
         return secs.mapIndexed { i, (t, b) -> "${NUM[i]}、$t\n$b" }.joinToString("\n\n")
     }
 }
+
+
+/** 1.10：分享文件名（去掉非法字符、控制长度）；纯函数便于测试 */
+object FileNames {
+    fun sanitize(title: String, fallback: String = "文章"): String =
+        title.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "").replace(Regex("\\s+"), " ").trim().trim('.').take(60).ifBlank { fallback }
+}
+
+
+/**
+ * 1.10 意图解析（容错）：
+ * - 键名宽松：想写什么/我想写什么/主题/topic…，观点/我的观点/看法…，疑问/疑惑/我的疑惑/问题…；去掉空格、标点、花括号再比；
+ * - 支持嵌套（{"意图":{"想写什么":…}}）、数组、以及「想写什么：…」这种纯文本行；
+ * - 旧版清洗提示词把三项融合成一段（cleaned / 意图 字段）时，从那段话和原文里按句式抽取；
+ * - 想写什么为空时：原文里有「我想写…」就用它，再不行用原文第一句。
+ */
+object IntentParse {
+    private val alias = mapOf(
+        "想写什么" to listOf("想写什么", "我想写什么", "写什么", "想写", "要写成", "写作主题", "文章主题", "主题", "写作意图", "要写什么", "topic", "subject", "whattowrite", "want", "wanttowrite", "goal", "article"),
+        "观点" to listOf("观点", "我的观点", "我的看法", "看法", "立场", "主张", "想表达", "我想表达", "opinion", "viewpoint", "view", "stance", "point"),
+        "疑问" to listOf("疑问", "疑惑", "我的疑惑", "我的疑问", "读者的疑问", "问题", "question", "questions", "doubt"))
+    private val junk = setOf("", "null", "无", "没有", "未提及", "未提到", "none", "n/a", "……", "...", "-", "原文未明确表达")
+    private fun norm(k: String) = k.lowercase().replace(Regex("[\\s{}\"'“”「」【】：:（）()_\\-]"), "")
+    fun canon(k: String): String? { val n = norm(k); return alias.entries.firstOrNull { (_, l) -> l.any { norm(it) == n } }?.key }
+    private fun clean(v: String): String { val t = v.trim().trim('"', '“', '”'); return if (junk.contains(t.lowercase()) || t.startsWith("原文未明确")) "" else t }
+
+    private fun walk(o: Any?, out: MutableMap<String, String>, loose: MutableList<String>, depth: Int = 0) {
+        if (depth > 4) return
+        when (o) {
+            is org.json.JSONObject -> o.keys().forEach { k ->
+                val v = o.opt(k); val c = canon(k)
+                when {
+                    v is org.json.JSONObject -> walk(v, out, loose, depth + 1)
+                    c != null -> { val s = if (v is org.json.JSONArray) (0 until v.length()).joinToString("；") { v.optString(it) } else if (v == null || v == org.json.JSONObject.NULL) "" else v.toString()
+                        val cv = clean(s); if (cv.isNotEmpty() && out[c].isNullOrEmpty()) out[c] = cv }
+                    v is String && k != "recommend" -> loose += v
+                }
+            }
+            is org.json.JSONArray -> for (i in 0 until o.length()) walk(o.opt(i), out, loose, depth + 1)
+        }
+    }
+
+    /** 从一段自然语言里按句式抽：我想写… / 我想表达… / …吗？ */
+    fun fromText(t: String): Map<String, String> {
+        val r = LinkedHashMap<String, String>()
+        Regex("(?:我|就是)?(?:想|要|打算|准备)写(一篇|一个|篇|点|一部)?([^，。,.!！？?；;\\n]{2,40})").find(t)?.let { m -> r["想写什么"] = ("写" + m.groupValues[1].ifEmpty { "一篇" } + m.groupValues[2]).trim() }
+        Regex("(?:我)?(?:想要?表达的?(?:是|观点是)?|我的观点是|我觉得|我认为)[：:，,]?([^。！!\\n]{2,80})").find(t)?.let { m -> r["观点"] = m.groupValues[1].trim().trimEnd('，', ',') }
+        Regex("([^。！!？?\\n]{2,60}[？?])").findAll(t).map { it.groupValues[1].trim() }.firstOrNull { it.contains(Regex("为什么|怎么|如何|吗|呢|是不是|能不能|该不该")) }?.let { r["疑问"] = it }
+        Regex("(?m)^\\s*[-*]?\\s*([^：:\\n]{1,8})[：:]\\s*(.+)$").findAll(t).forEach { m -> canon(m.groupValues[1])?.let { k -> clean(m.groupValues[2]).takeIf { it.isNotEmpty() }?.let { r[k] = it } } }
+        return r
+    }
+
+    fun parse(reply: String, raw: String): CleanResult {
+        val j = CleanParse.lenient(reply)
+        val out = LinkedHashMap<String, String>(); val loose = mutableListOf<String>()
+        if (j != null) walk(j, out, loose)
+        val recommend = j?.optString("recommend").orEmpty().ifBlank { j?.optString("模板").orEmpty() }.trim().trim('「', '」', '"', '《', '》')
+        // 回复里没有分开的三项：从融合段落 / 纯文本回复 / 原文里抽
+        listOf(loose.joinToString("\n"), if (j == null) reply else "", raw).forEach { src -> fromText(src).forEach { (k, v) -> if (out[k].isNullOrEmpty()) out[k] = v } }
+        if (j == null && out.isEmpty() && recommend.isEmpty()) throw CleanParse.BadFormat(reply.take(300))
+        if (out["想写什么"].isNullOrEmpty()) raw.trim().split(Regex("[。！!？?\\n]")).firstOrNull { it.isNotBlank() }?.trim()?.take(40)?.let { out["想写什么"] = it }
+        val values = LinkedHashMap<String, String>(); listOf("想写什么", "观点", "疑问").forEach { k -> out[k]?.takeIf { it.isNotBlank() }?.let { values[k] = it } }
+        return CleanResult("", values, recommend)
+    }
+
+    /** 无论提示词怎么改，都在末尾强调输出格式（三项分开） */
+    const val FORMAT = "\n\n【输出格式，务必遵守】只输出一个 JSON 对象，三项分开写，不要合并成一段：{\"想写什么\": \"一句话\", \"观点\": \"一句话，没有就省略\", \"疑问\": \"一句问句，没有就省略\", \"recommend\": \"模板名称\"}"
+}

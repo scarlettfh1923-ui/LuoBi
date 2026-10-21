@@ -63,6 +63,7 @@ data class Channel(
     fun latest(): Flow<List<Note>>
     @Query("SELECT * FROM notes WHERE id=:id") fun byId(id: Long): Flow<Note?>
     @Query("SELECT * FROM notes WHERE id=:id") suspend fun get(id: Long): Note?
+    @Query("SELECT * FROM notes n WHERE n.version = (SELECT MAX(version) FROM notes m WHERE m.rootId = n.rootId) ORDER BY createdAt DESC LIMIT :n") suspend fun recent(n: Int): List<Note>
     @Query("SELECT * FROM notes WHERE rootId=:root ORDER BY version") fun versions(root: Long): Flow<List<Note>>
     @Query("SELECT MAX(version) FROM notes WHERE rootId=:root") suspend fun maxVersion(root: Long): Int?
     @Insert suspend fun insert(n: Note): Long
@@ -205,8 +206,15 @@ object Defaults {
         db.cleans().all().first().filter { it.builtIn && it.prompt.trim() == CLEAN.trim() }.forEach {
             db.cleans().update(it.copy(name = INTENT_NAME, prompt = INTENT, fields = Vars.DEFAULT_FIELDS.joinToString("\n")))
         }
+        // 1.10：她改过的旧清洗提示词：备份成一条「旧清洗提示词（备份）」，内置这条换成意图提取（不丢她的文字）
+        db.cleans().all().first().filter { it.builtIn && isOldClean(it.prompt) }.forEach {
+            db.cleans().insert(CleanTpl(name = "旧清洗提示词（备份）", prompt = it.prompt, fields = it.fields, builtIn = false, active = false))
+            db.cleans().update(it.copy(name = INTENT_NAME, prompt = INTENT, fields = Vars.DEFAULT_FIELDS.joinToString("\n")))
+        }
         if (db.cleans().active() == null) db.cleans().all().first().firstOrNull { it.builtIn }?.let { db.cleans().activate(it.id) }
     }
+    /** 旧版清洗提示词：要求输出 cleaned / 清洗后文字 */
+    fun isOldClean(p: String) = p.contains("\"cleaned\"") || p.contains("清洗文本") || (p.contains("清洗") && !p.contains("\"想写什么\""))
     fun builtinPrompt(name: String) = templates.firstOrNull { it.name == name }?.prompt
     /** 1.9 迁移：每个模板开头补【你是谁】【用户的意图】，正文逐字节保留；已有头的不动（幂等） */
     suspend fun migrateHeaders(db: AppDb): Int {
@@ -279,6 +287,9 @@ class Settings(val c: Context) {
         Providers.text.filter { key(it.id).isNotBlank() }.map { pr -> ModelRef("p:${pr.id}", pr.name, model(pr.id)) } +
             customs.filter { customKey(it.id).isNotBlank() && it.url.isNotBlank() && it.model.isNotBlank() }.map { ModelRef("c:${it.id}", it.name.ifBlank { "自定义" }, it.model) }
 
+    /** 1.10 灵感：每日选题提示词（空 = 默认）与启用的热榜来源 */
+    var inspirePrompt: String get() = s("inspirePrompt", "").ifBlank { Inspire.DEFAULT_PROMPT }; set(v) = put("inspirePrompt", if (v.trim() == Inspire.DEFAULT_PROMPT.trim()) "" else v)
+    var inspireSources: Set<String> get() = s("inspireSrc", HotSources.all.joinToString(",") { it.id }).split(",").filter { it.isNotBlank() }.toSet(); set(v) = put("inspireSrc", v.joinToString(","))
     var defaultModel get() = s("defaultModel", ""); set(v) = put("defaultModel", v)
     /** 0 短 · 1 中 · 2 长 */
     var length get() = p.getInt("length", 1); set(v) = put("length", v)

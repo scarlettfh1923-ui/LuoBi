@@ -42,8 +42,8 @@ object ChannelIds {
     fun short(id: String, custom: List<Channel>) = def(id, custom)?.name ?: id
     /** 「更多」面板右侧的用途说明 */
     fun note(id: String) = when (id) {
-        "xhs" -> "配图卡片"; "wechat", "qq", "weibo" -> "发长图"; "douyin" -> "复制文案并打开"; "long" -> "存相册"; "html" -> "富文本 + .html 文件"
-        "md" -> "剪贴板"; "copy" -> "剪贴板"; "notion", "yuque", "telegraph" -> "发布"; else -> "发布"
+        "xhs" -> "配图卡片"; "wechat", "qq", "weibo" -> "发长图"; "douyin" -> "复制文案并打开"; "long" -> "存相册"; "html" -> "分享 .html 文件"
+        "md" -> "分享 .md 文件"; "copy" -> "剪贴板"; "notion", "yuque", "telegraph" -> "发布"; else -> "发布"
     }
 }
 
@@ -282,7 +282,7 @@ object Out {
     fun sendImagesTo(ctx: Context, pkg: String?, uris: ArrayList<android.net.Uri>, text: String) {
         if (uris.isEmpty()) return
         val it = (if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0]) else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)).apply {
-            type = "image/*"; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            type = "image/jpeg"; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             clipData = Out.clipOf(uris)
             if (text.isNotBlank()) putExtra(Intent.EXTRA_TEXT, text)
         }

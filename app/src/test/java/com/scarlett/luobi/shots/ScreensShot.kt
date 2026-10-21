@@ -19,7 +19,7 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [34], application = TestApp::class)
 abstract class ShotBase(private val q: String, private val tag: String) {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
-    private val dir = System.getProperty("user.dir") + "/../../screenshots/v1.9/"
+    private val dir = System.getProperty("user.dir") + "/../../screenshots/v1.10/"
     fun shot(name: String) { rule.waitForIdle(); Thread.sleep(300); rule.mainClock.advanceTimeBy(800); rule.onRoot().captureRoboImage("$dir$tag-$name.png") }
     fun tap(t: String) { rule.onAllNodesWithText(t, substring = false).onFirst().performClick(); rule.mainClock.advanceTimeBy(600); rule.waitForIdle() }
     @Test fun screens() {
@@ -38,7 +38,7 @@ abstract class ShotBase(private val q: String, private val tag: String) {
         rule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         rule.waitForIdle()
         runCatching { tap("设定"); shot("06-settings") }
-        for ((i, s) in listOf("模型与密钥", "模板管理", "篇幅", "分享栏", "发布渠道", "图片来源", "出图与默认", "关于落笔").withIndex()) runCatching {
+        for ((i, s) in listOf("模型与密钥", "每日选题提示词", "意图提取提示词", "模板管理", "篇幅", "分享栏", "发布渠道", "图片来源", "出图与默认", "关于落笔").withIndex()) runCatching {
             tap(s); shot("1${i}-set-$s")
             rule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }; rule.waitForIdle()
         }

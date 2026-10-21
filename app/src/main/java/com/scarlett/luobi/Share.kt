@@ -112,6 +112,32 @@ object Share {
         return true
     }
 
+    /**
+     * 1.10：Markdown / HTML 以「文件」分享：写到 cache/share/docs/<标题>.md|.html（UTF-8，先写临时文件再改名，不会留半截），
+     * 再用 FileProvider 的 content:// + 正确 MIME + 读权限弹系统分享。不往用户存储里留任何东西；每次分享前清掉上一次的临时文件。
+     */
+    fun docFile(dir: File, title: String, ext: String, content: String): File {
+        dir.listFiles()?.forEach { it.delete() }   // 清理旧的分享文件
+        dir.mkdirs()
+        val f = File(dir, FileNames.sanitize(title) + "." + ext)
+        val tmp = File(dir, ".${System.nanoTime()}.tmp")
+        try { tmp.writeText(content, Charsets.UTF_8); if (!tmp.renameTo(f)) { f.delete(); if (!tmp.renameTo(f)) throw java.io.IOException("无法写入分享文件") } }
+        finally { if (tmp.exists()) tmp.delete() }
+        return f
+    }
+    fun docsDir(ctx: Context) = File(ctx.cacheDir, "share/docs")
+    fun cleanDocs(ctx: Context) { runCatching { docsDir(ctx).listFiles()?.forEach { it.delete() } } }
+    fun shareDoc(ctx: Context, title: String, ext: String, mime: String, content: String): Boolean {
+        val f = docFile(docsDir(ctx), title, ext, content)
+        val uri = FileProvider.getUriForFile(ctx, "com.scarlett.luobi.files", f)
+        val it = Intent(Intent.ACTION_SEND).apply {
+            type = mime; putExtra(Intent.EXTRA_STREAM, uri); putExtra(Intent.EXTRA_SUBJECT, title)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); clipData = ClipData.newRawUri(f.name, uri)
+        }
+        return try { ctx.startActivity(Intent.createChooser(it, "分享 ${f.name}").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true }
+        catch (_: Exception) { Toast.makeText(ctx, "没有可以接收这个文件的应用", Toast.LENGTH_LONG).show(); false }
+    }
+
     /** 1.7：目标应用不存在 / 被禁用时不再崩溃 */
     fun safeStart(ctx: Context, i: Intent): Boolean = try { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true }
         catch (_: Exception) { Toast.makeText(ctx, "没有可用的应用来完成分享", Toast.LENGTH_LONG).show(); false }
