@@ -255,23 +255,60 @@ object FactCheck {
         .replace("{正文}", body.take(12000))
 
     /**
-     * 完整流程：抽查询 → 搜索 → 二次模型调用（优先与写作不同的已配置模型）→ 解析。
+     * 选定校对用的聊天模型（与「事实检索」独立）。
+     * - factModel 非空且已配置 → 用她在设定里选的
+     * - 否则尽量对齐这篇文章的写作模型（Note.model 是「名称 · 型号」展示串，不是 ref）
+     * - 再否则用默认写作模型 / DeepSeek / 第一个已配置
+     * 绝不「故意换一家」——1.11.0 的 prefer-different 会误选 gpt-5.5 导致 403。
      */
-    suspend fun run(ctx: Context, title: String, body: String, writerModel: String = ""): FactReport = withContext(Dispatchers.IO) {
+    fun resolveCheckModel(s: Settings, writerDisplay: String = ""): ModelRef {
+        val cfg = s.configured()
+        if (cfg.isEmpty()) throw ConfigError("还没有可用的模型。请到「设定 → 模型与密钥」填写 Key。")
+        fun byRef(ref: String) = cfg.firstOrNull { it.ref == ref }
+        s.factModel.takeIf { it.isNotBlank() }?.let { byRef(it) }?.let { return it }
+        // Note.model 形如 "DeepSeek · deepseek-flash" 或 "OpenAI · gpt-5.5"
+        val disp = writerDisplay.trim()
+        if (disp.isNotBlank()) {
+            cfg.firstOrNull { it.label == disp || "${it.label} · ${it.sub}" == disp || disp.startsWith(it.label) && disp.contains(it.sub) }?.let { return it }
+            cfg.firstOrNull { disp.contains(it.sub) && it.sub.isNotBlank() }?.let { return it }
+        }
+        s.defaultModel.takeIf { it.isNotBlank() }?.let { byRef(it) }?.let { return it }
+        byRef("p:deepseek")?.let { return it }
+        return cfg.first()
+    }
+
+    /**
+     * 完整流程：抽查询 → 按「事实检索」搜索 → 用「校对模型」做二次聊天调用 → 解析。
+     * writerDisplay = 文章上记下的模型展示名（可空）。
+     */
+    suspend fun run(ctx: Context, title: String, body: String, writerDisplay: String = ""): FactReport = withContext(Dispatchers.IO) {
         val s = Settings(ctx)
         val qs = queries(title, body)
         val (hits, note) = searchAll(ctx, qs)
         val prompt = buildPrompt(s.factPrompt, title, body, hits)
-        val cfg = s.configured()
-        val prefer = cfg.firstOrNull { it.ref != writerModel && it.ref != "p:deepseek" }
-            ?: cfg.firstOrNull { it.ref != writerModel }
-            ?: cfg.firstOrNull()
-            ?: throw ConfigError("还没有可用的模型。请到「设定 → 模型与密钥」填写 Key。")
-        val target = Ai.target(ctx, prefer.ref)
-        val reply = Ai.chatText(target, "你是事实校对编辑。只输出一个合法 JSON 对象。", prompt, true)
+        val check = resolveCheckModel(s, writerDisplay)
+        val target = Ai.target(ctx, check.ref)
+        val reply = try {
+            Ai.chatText(target, "你是事实校对编辑。只输出一个合法 JSON 对象。", prompt, true)
+        } catch (e: ApiError) {
+            throw refineFactModelError(e, check) ?: e
+        }
         val (issues, skipped) = parse(reply)
-        // 丢掉正文里根本找不到的 span（避免乱高亮）
         val ok = issues.filter { it.span.isBlank() || body.contains(it.span) || title.contains(it.span) }
-        FactReport(ok, skipped, note + " · 校对模型 ${prefer.label}", qs)
+        FactReport(ok, skipped, note + " · 校对模型 ${check.label} · ${check.sub}", qs)
+    }
+
+    /** 403/模型无权时给出可操作的中文提示（点名校对模型） */
+    fun refineFactModelError(e: ApiError, model: ModelRef): ConfigError? {
+        if (e.code != 403 && e.code != 401) return null
+        val raw = (e.raw + " " + Errors.providerMessage(e.raw)).lowercase()
+        val mentionsModel = raw.contains("model") || raw.contains("gpt-") || raw.contains("deepseek") ||
+            raw.contains(model.sub.lowercase()) || raw.contains("not authorized") || raw.contains("无权") ||
+            raw.contains("permission") || raw.contains("does not have access") || raw.contains("token_not_authorized") ||
+            raw.contains("not authorized for model")
+        if (e.code == 403 || mentionsModel) {
+            return ConfigError("校对模型「${model.label} · ${model.sub}」无权访问（HTTP ${e.code}）。请到「设定 → 事实校对 → 校对模型」改成你有权限的模型（例如 DeepSeek）。")
+        }
+        return null
     }
 }

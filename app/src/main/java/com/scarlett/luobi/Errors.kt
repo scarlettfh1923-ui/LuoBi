@@ -109,7 +109,16 @@ object Errors {
             Kind.TIMEOUT -> Friendly("网络连不上或超时", "等了很久服务器都没有回应（超时）。可能是网络慢，也可能是服务商那边正忙。请检查手机网络，或者稍等一会儿再点「重试」。", raw, false, code)
             Kind.SSL -> Friendly("网络连不上或超时", "和服务器建立安全连接失败。常见原因：连的是需要网页登录的公共 Wi-Fi、开了代理，或者手机时间不对。请换个网络（比如切到流量）后再点「重试」。", raw, false, code)
             Kind.BAD_REQUEST -> Friendly("请求参数有误$http", "服务商说这次请求的参数不对。最常见的原因是模型名填错了，或者这个模型在你的账号里还没开通。请到「设定」检查模型名，可以从下拉列表里重新选一个。", raw, true, code)
-            Kind.KEY -> Friendly("API Key 无效、过期或没权限$http", "服务商不认这个 API Key：可能是复制时多了空格或少了字符、Key 已过期或被删除，或者这个 Key 没有使用该模型的权限。请到「设定」重新粘贴一遍 Key；还不行就去服务商后台新建一个 Key。", raw, true, code)
+            Kind.KEY -> {
+                // 1.11.1：403 且点名模型时，引导去改「校对模型」，避免误以为 Key 坏了
+                val low = raw.lowercase()
+                val modelHint = Regex("""(?:model|模型)["'\s:=]*([a-zA-Z0-9._/-]{3,80})""").find(low)?.groupValues?.getOrNull(1)
+                    ?: Regex("gpt-[a-z0-9.-]+|deepseek-[a-z0-9.-]+|claude-[a-z0-9.-]+").find(low)?.value
+                if (code == 403 && (modelHint != null || "not authorized" in low || "token_not_authorized" in low || "无权" in low || "does not have access" in low)) {
+                    val m = modelHint ?: "该模型"
+                    Friendly("校对模型无权访问$http", "服务商拒绝了模型「$m」。常见原因：设定里的「校对模型」选成了你 Key 用不了的型号（例如只有 DeepSeek Key 却选了 gpt-5.5）。请到「设定 → 事实校对 → 校对模型」改成「与写作相同」或 DeepSeek。", raw, true, code)
+                } else Friendly("API Key 无效、过期或没权限$http", "服务商不认这个 API Key：可能是复制时多了空格或少了字符、Key 已过期或被删除，或者这个 Key 没有使用该模型的权限。请到「设定」重新粘贴一遍 Key；还不行就去服务商后台新建一个 Key。", raw, true, code)
+            }
             Kind.NOT_FOUND -> Friendly("接口地址或模型不存在$http", "按现在填的接口地址或模型名，服务商那边找不到。请到「设定」检查模型名是否拼写正确，并在「高级」里点「恢复默认地址」。", raw, true, code)
             Kind.MODEL -> Friendly("模型不存在或没开通$http", "服务商找不到你填的这个模型，或者你的账号还没开通它。请到「设定」从下拉列表里重新选一个模型；如果是豆包等需要开通的服务商，先去它的控制台开通该模型。", raw, true, code)
             Kind.BALANCE -> Friendly("账户余额或额度不足$http", "你在服务商那里的余额或免费额度已经用完，所以这次请求被拒绝了。请登录服务商官网后台充值（或领取额度），然后回来点「重试」。", raw, true, code)

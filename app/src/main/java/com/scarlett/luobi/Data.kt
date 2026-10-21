@@ -293,6 +293,8 @@ class Settings(val c: Context) {
     /** 1.11 事实校对：提示词 + 检索源（deepseek / wiki / bocha）+ 博查 Key */
     var factPrompt: String get() = s("factPrompt", "").ifBlank { FactCheck.DEFAULT_PROMPT }; set(v) = put("factPrompt", if (v.trim() == FactCheck.DEFAULT_PROMPT.trim()) "" else v)
     var factSearch: String get() = s("factSearch", "deepseek"); set(v) = put("factSearch", v)
+    /** 校对用的聊天模型 ref；空 = 与写作相同（默认）。与「事实检索」独立。 */
+    var factModel: String get() = s("factModel", ""); set(v) = put("factModel", v)
     var bochaKey: String get() = Secure.get(c, "bocha_key"); set(v) = Secure.set(c, "bocha_key", v)
     var defaultModel get() = s("defaultModel", ""); set(v) = put("defaultModel", v)
     /** 0 短 · 1 中 · 2 长 */

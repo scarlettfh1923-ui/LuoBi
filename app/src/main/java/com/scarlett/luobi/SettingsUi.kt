@@ -39,7 +39,12 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
         item { RowGroup("创作", listOf(
             { SettingRow(Ic.key, "模型与密钥", "${s.configured().size} 个") { go("models") } },
             { SettingRow(Ic.tpl, "模板管理", "${templates.size} 个") { go("templates") } },
-            { SettingRow(Ic.search, "事实校对", FactCheck.SearchProvider.of(Settings(LocalContext.current).factSearch).label) { go("factcheck") } },
+            { SettingRow(Ic.search, "事实校对", run {
+                val ss = Settings(LocalContext.current)
+                val search = FactCheck.SearchProvider.of(ss.factSearch).label.replace("（推荐）", "")
+                val check = ss.factModel.takeIf { it.isNotBlank() }?.let { ref -> ss.configured().firstOrNull { it.ref == ref } }?.let { "${it.label}校对" } ?: "校对与写作相同"
+                "${search}检索 · $check"
+            }) { go("factcheck") } },
             { SettingRow(Ic.wand, "每日选题提示词", if (Settings(LocalContext.current).inspirePrompt.trim() == Inspire.DEFAULT_PROMPT.trim()) "默认" else "已修改") { go("inspire") } },
             { SettingRow(Ic.wand, "意图提取提示词", if (active?.prompt?.trim() == Defaults.INTENT.trim()) "默认" else "已修改") { go("cleans") } },
             { SettingRow(Ic.ruler, "篇幅", Lengths.NAMES[s.length.coerceIn(0, 2)] + " · " + s.lengthRange().let { "${it.first}–${it.second}" }) { go("length") } })) }
@@ -274,11 +279,13 @@ fun FactCheckPage(back: () -> Unit) {
     var prompt by remember { mutableStateOf(TextFieldValue(s.factPrompt)) }
     var saved by remember { mutableStateOf(s.factPrompt) }
     var provider by remember { mutableStateOf(s.factSearch) }
+    var checkModel by remember { mutableStateOf(s.factModel) }
     var bocha by remember { mutableStateOf(s.bochaKey) }
     val hasDs = remember { s.key("deepseek").isNotBlank() }
+    val configured = remember { s.configured() }
     Page("事实校对", back) {
-        item { Text("核对文章里的硬事实：片名、情节、作者名、引用来源等。不做语法或文笔润色。", Modifier.padding(bottom = 10.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
-        item { GroupLabel("事实检索") }
+        item { Text("核对文章里的硬事实：片名、情节、作者名、引用来源等。不做语法或文笔润色。\n「事实检索」决定去哪搜资料；「校对模型」决定用哪个 AI 判断对错——这两项是分开的。", Modifier.padding(bottom = 10.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
+        item { GroupLabel("事实检索 · 去哪搜资料") }
         item {
             Card(pad = 0.dp) {
                 FactCheck.SearchProvider.entries.forEachIndexed { i, p ->
@@ -288,7 +295,7 @@ fun FactCheckPage(back: () -> Unit) {
                         Column(Modifier.weight(1f).padding(start = 4.dp)) {
                             Text(p.label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
                             Text(when (p) {
-                                FactCheck.SearchProvider.DEEPSEEK -> "用已有的 DeepSeek Key 调官方 /v1/tools/search" + if (hasDs) " · 已配置" else " · 还没填 Key"
+                                FactCheck.SearchProvider.DEEPSEEK -> "用 DeepSeek Key 调官方 /v1/tools/search" + if (hasDs) " · Key 已配置" else " · 还没填 Key"
                                 FactCheck.SearchProvider.WIKI -> "免 Key，适合片名、作者、作品基本信息"
                                 FactCheck.SearchProvider.BOCHA -> "第三方网页搜索，需单独填写博查 Key"
                             }, fontSize = 12.sp, color = P3.text2, lineHeight = 17.sp)
@@ -296,16 +303,39 @@ fun FactCheckPage(back: () -> Unit) {
                     }
                 }
             }
-            Text("选中的源不可用时（没 Key 或出错），会自动换下一个，并在结果里说明。", Modifier.padding(top = 8.dp, start = 4.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp)
+            Text("选中的检索源不可用时会自动换下一个，并在结果里说明。这只影响「搜资料」，不会改下面的校对模型。", Modifier.padding(top = 8.dp, start = 4.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp)
         }
         if (provider == "bocha" || bocha.isNotBlank()) item {
             GroupLabel("博查 API Key")
             InputBox(bocha, { bocha = it.trim(); s.bochaKey = bocha }, "粘贴博查 Key，加密存在本机", singleLine = true, secret = true, mono = true)
         }
+        item { GroupLabel("校对模型 · 用哪个 AI 判断对错") }
+        item {
+            Card(pad = 0.dp) {
+                Row(Modifier.fillMaxWidth().clickable { checkModel = ""; s.factModel = "" }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(checkModel.isBlank(), { checkModel = ""; s.factModel = "" }, colors = RadioButtonDefaults.colors(selectedColor = P3.accent))
+                    Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                        Text("与写作相同（默认）", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
+                        Text("用这篇文章生成时的模型；没有记录时用默认写作模型", fontSize = 12.sp, color = P3.text2, lineHeight = 17.sp)
+                    }
+                }
+                configured.forEach { m ->
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = Dp.Hairline, color = P3.border)
+                    Row(Modifier.fillMaxWidth().clickable { checkModel = m.ref; s.factModel = m.ref }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(checkModel == m.ref, { checkModel = m.ref; s.factModel = m.ref }, colors = RadioButtonDefaults.colors(selectedColor = P3.accent))
+                        Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                            Text("${m.label} · ${m.sub}", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
+                            if (m.ref == "p:deepseek") Text("与事实检索的 DeepSeek Key 是同一把", fontSize = 12.sp, color = P3.text2)
+                        }
+                    }
+                }
+            }
+            Text("请只选你 Key 有权限的模型。选了 OpenAI 却只有 DeepSeek Key，会报 403。", Modifier.padding(top = 8.dp, start = 4.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp)
+        }
         item { GroupLabel("校对提示词") }
         item {
             Card {
-                BasicTextField(prompt, { prompt = it }, Modifier.fillMaxWidth().heightIn(min = 220.dp), textStyle = TextStyle(fontSize = 14.sp, lineHeight = 23.sp, color = P3.text),
+                BasicTextField(prompt, { prompt = it }, Modifier.fillMaxWidth().heightIn(min = 200.dp), textStyle = TextStyle(fontSize = 14.sp, lineHeight = 23.sp, color = P3.text),
                     cursorBrush = SolidColor(P3.accent), visualTransformation = VarHighlight(setOf("搜索结果", "标题", "正文")))
             }
             if (!prompt.text.contains("{搜索结果}")) WarnBox("提示词里没有 {搜索结果}，模型看不到参考资料。", Modifier.padding(top = 8.dp))
