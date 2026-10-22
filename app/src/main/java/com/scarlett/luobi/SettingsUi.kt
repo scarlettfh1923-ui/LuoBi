@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -498,8 +499,42 @@ private fun ProviderForm(p: Provider, s: Settings, changed: () -> Unit) {
             InputBox(url, { url = it.trim(); s.setUrl(p.id, url) }, p.url, singleLine = true, mono = true, fontSize = 13)
             TextAction("恢复默认地址", P3.text2) { url = p.url; s.setUrl(p.id, p.url) }
         }
+        if (p.id == "deepseek") DsGenBox(s)
         TestRow { Ai.test(Ai.target(ctx, "p:${p.id}")).let { (ms, m) -> "$m · ${ms}ms" } }
     }
+}
+
+/** 1.16.2：DeepSeek 写文案时的深度思考 + 温度 */
+@Composable
+fun DsGenBox(s: Settings) {
+    var think by remember { mutableStateOf(s.dsThink) }
+    var temp by remember { mutableFloatStateOf(s.dsTemp) }
+    FieldLabel("写文案时")
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(P3.accent.copy(alpha = .05f)).border(Dp.Hairline, P3.border, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("深度思考", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
+                Text("先想再写，更严密；会慢一些，思考也计费", fontSize = 12.sp, color = P3.text3, lineHeight = 17.sp)
+            }
+            Switch(think, { think = it; s.dsThink = it }, colors = SwitchDefaults.colors(checkedTrackColor = P3.accent))
+        }
+        HorizontalDivider(Modifier.padding(vertical = 10.dp), thickness = Dp.Hairline, color = P3.border)
+        val a = if (think) .38f else 1f
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("温度", Modifier.alpha(a), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
+            Spacer(Modifier.weight(1f))
+            Text(String.format(java.util.Locale.US, "%.1f", temp), Modifier.alpha(a), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.accent)
+        }
+        Box(Modifier.fillMaxWidth().alpha(a).padding(vertical = 4.dp)) {
+            SoftSlider(temp, { if (!think) temp = Math.round(it * 10) / 10f }, 0f..2f, 0.1f, P3.accent, P3.border, Color.White, Modifier.fillMaxWidth(), onChangeFinished = { if (!think) s.dsTemp = temp })
+        }
+        Row(Modifier.alpha(a)) {
+            Text("稳定 0", fontSize = 11.sp, color = P3.text3); Spacer(Modifier.weight(1f))
+            Text("发散 2.0", fontSize = 11.sp, color = P3.text3)
+        }
+        Text(if (think) "思考模式下温度不生效" else "越低越稳，越高越有变化；0.7 读起来更自然", Modifier.padding(top = 6.dp), fontSize = 12.sp, color = if (think) P3.text2 else P3.text3, lineHeight = 17.sp)
+    }
+    Text("只影响生成和改写文案；事实校对与测试连接不受影响", Modifier.padding(top = 6.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 17.sp)
 }
 
 @Composable

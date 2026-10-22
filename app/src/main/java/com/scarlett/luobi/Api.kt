@@ -66,11 +66,26 @@ object Ai {
         b.put("max_completion_tokens", maxOf(maxTokens ?: KIMI_DEFAULT_TOKENS, KIMI_MIN_TOKENS))
         return b
     }
-    private fun chatBody(pid: String, model: String, msgs: JSONArray, json: Boolean, maxTokens: Int?, plain: Boolean = false): JSONObject {
+    /** 1.16.2 文案生成用的 DeepSeek 设置：深度思考开关 + 温度 */
+    data class DsGen(val think: Boolean, val temp: Double)
+    const val DS_THINK_TOKENS = 32768
+    fun dsGen(ctx: Context) = Settings(ctx).let { DsGen(it.dsThink, it.dsTemp.toDouble()) }
+    fun chatBody(pid: String, model: String, msgs: JSONArray, json: Boolean, maxTokens: Int?, plain: Boolean = false, ds: DsGen? = null): JSONObject {
         if (pid == "kimi") return kimiBody(model, msgs, json && !plain, maxTokens, quick = maxTokens != null && maxTokens < 1000)
         val b = JSONObject().put("model", model).put("messages", msgs)
         if (plain) { if (maxTokens != null) b.put(if (pid == "openai") "max_completion_tokens" else "max_tokens", maxTokens); return b }
         if (json) b.put("response_format", JSONObject().put("type", "json_object"))
+        if (pid == "deepseek" && ds != null) {
+            if (ds.think) {
+                // 官方：thinking enabled + reasoning_effort；思考模式不支持 temperature（传了也无效），不传
+                b.put("thinking", JSONObject().put("type", "enabled")).put("reasoning_effort", "high")
+                b.put("max_tokens", maxOf(maxTokens ?: 0, DS_THINK_TOKENS))
+            } else {
+                b.put("thinking", JSONObject().put("type", "disabled")).put("temperature", Math.round(ds.temp.coerceIn(0.0, 2.0) * 10) / 10.0)
+                if (maxTokens != null) b.put("max_tokens", maxTokens)
+            }
+            return b
+        }
         when (pid) {
             "deepseek" -> b.put("thinking", JSONObject().put("type", "disabled"))
             "qwen" -> b.put("enable_thinking", false)
@@ -101,12 +116,12 @@ object Ai {
     }
 
     /** OpenAI 兼容 chat/completions，返回文本 */
-    suspend fun chatText(t: Target, system: String?, user: String, json: Boolean, maxTokens: Int? = null): String = withContext(Dispatchers.IO) {
+    suspend fun chatText(t: Target, system: String?, user: String, json: Boolean, maxTokens: Int? = null, ds: DsGen? = null): String = withContext(Dispatchers.IO) {
         val msgs = JSONArray()
         if (system != null) msgs.put(JSONObject().put("role", "system").put("content", system))
         msgs.put(JSONObject().put("role", "user").put("content", user))
         val r = try {
-            try { http("POST", t.url + "/chat/completions", t.key, chatBody(t.pid, t.model, msgs, json, maxTokens, plain = t.pid == "custom" && !json)) }
+            try { http("POST", t.url + "/chat/completions", t.key, chatBody(t.pid, t.model, msgs, json, maxTokens, plain = t.pid == "custom" && !json, ds = ds)) }
             catch (e: ApiError) { if (e.code == 400) http("POST", t.url + "/chat/completions", t.key, chatBody(t.pid, t.model, msgs, false, maxTokens, true)) else throw e }
         } catch (e: Exception) {
             if (t.pid == "custom") Relay.explain(e, t)?.let { throw ConfigError(it) }
@@ -184,7 +199,7 @@ object Ai {
         val t = target(ctx, d.model)
         // 1.4：每次（含失败重试）都按「当前」模板重新拼提示词，不用排队时存下的旧快照
         val prompt = current(ctx, d) ?: d.finalPrompt
-        val txt = chatText(t, "你是专业的中文写作者。$OUT_RULE", prompt, true)
+        val txt = chatText(t, "你是专业的中文写作者。$OUT_RULE", prompt, true, ds = dsGen(ctx))
         val a = ArticleParse.parse(txt, d.cleaned.take(20))
         if (a.body.isBlank()) throw AiFormatError("缺少正文", txt.take(200))
         val db = AppDb.get(ctx)
@@ -201,7 +216,7 @@ object Ai {
         val ref = modelRef.ifBlank { Settings(ctx).defaultModel.ifBlank { Settings(ctx).configured().firstOrNull()?.ref ?: "p:deepseek" } }
         val t = target(ctx, ref)
         val prompt = "下面是一篇文章，请按要求修改。\n修改要求：$instruction\n保持事实和观点不变，不要添加原文没有的信息。\n\n标题：${n.title}\n\n正文：\n${n.body}\n\n标签：${n.tagList().joinToString(" ")}"
-        val txt = chatText(t, "你是专业的中文编辑。$OUT_RULE", prompt, true)
+        val txt = chatText(t, "你是专业的中文编辑。$OUT_RULE", prompt, true, ds = dsGen(ctx))
         val a = ArticleParse.parse(txt, n.title)
         val v = (db.notes().maxVersion(n.root) ?: n.version) + 1
         return db.notes().insert(n.copy(id = 0, createdAt = System.currentTimeMillis(), title = a.title, body = a.body,

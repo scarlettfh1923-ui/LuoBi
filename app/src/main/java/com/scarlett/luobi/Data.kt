@@ -338,6 +338,9 @@ class Settings(val c: Context) {
     var picMax get() = p.getInt("picMax", 3); set(v) = put("picMax", v)
     /** any / landscape / portrait */
     var picOrient get() = s("picOrient", "any"); set(v) = put("picOrient", v)
+    /** 1.16.2 DeepSeek 文案生成：深度思考（默认关）+ 温度（默认 0.7，范围 0–2，新键，老用户自然落到 0.7） */
+    var dsThink get() = p.getBoolean("dsThink", false); set(v) = put("dsThink", v)
+    var dsTemp: Float get() = p.getFloat("dsTemp", 0.7f).coerceIn(0f, 2f); set(v) = put("dsTemp", (Math.round(v.coerceIn(0f, 2f) * 10) / 10f))
     var attachRaw get() = p.getBoolean("attachRaw", true); set(v) = put("attachRaw", v)
 
     // ----- 阅读 / 出图 -----
