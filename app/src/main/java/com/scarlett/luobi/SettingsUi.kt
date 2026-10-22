@@ -282,6 +282,9 @@ fun FactCheckPage(back: () -> Unit) {
     var kimi by remember { mutableStateOf(s.key("kimi")) }
     var checkModel by remember { mutableStateOf(s.factModel) }
     var bocha by remember { mutableStateOf(s.bochaKey) }
+    var wsa by remember { mutableStateOf(s.wsaKey) }
+    var wsaMsg by remember { mutableStateOf("") }; var wsaBusy by remember { mutableStateOf(false) }
+    val wsaScope = rememberCoroutineScope()
     val hasDs = remember { s.key("deepseek").isNotBlank() }
     val configured = remember { s.configured() }
     Page("事实校对", back) {
@@ -303,6 +306,7 @@ fun FactCheckPage(back: () -> Unit) {
                                 FactCheck.SearchProvider.KIMI -> "Kimi 联网搜索 + 网页抓取（情节核对会读作品页全文，约 ¥0.01/次）" + if (kimi.isNotBlank()) " · Key 已配置" else " · 还没填 Key"
                                 FactCheck.SearchProvider.WIKI -> "免 Key，适合片名、作者、作品基本信息"
                                 FactCheck.SearchProvider.BOCHA -> "第三方网页搜索，需单独填写博查 Key"
+                                FactCheck.SearchProvider.YUANBAO -> "腾讯元宝搜索，中文资料优先走它；每月 2000 次免费" + if (wsa.isNotBlank()) " · Key 已配置" else " · 还没填 Key"
                             }, fontSize = 12.sp, color = P3.text2, lineHeight = 17.sp)
                         }
                     }
@@ -313,6 +317,18 @@ fun FactCheckPage(back: () -> Unit) {
         if (FactCheck.SearchProvider.KIMI in provider || kimi.isNotBlank()) item {
             GroupLabel("Kimi API Key")
             InputBox(kimi, { kimi = it.trim(); s.setKey("kimi", kimi) }, "粘贴 Moonshot Key，加密存在本机（与 Kimi 写作模型共用）", singleLine = true, secret = true, mono = true)
+        }
+        if (FactCheck.SearchProvider.YUANBAO in provider || wsa.isNotBlank()) item {
+            GroupLabel("元宝搜索 API Key")
+            InputBox(wsa, { wsa = it.trim(); s.wsaKey = wsa }, "粘贴元宝搜索（WSA）API Key，加密存在本机", singleLine = true, secret = true, mono = true)
+            Row(Modifier.padding(top = 6.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                val used = Yuanbao.Usage.label(ctx); val near = Yuanbao.Usage.nearLimit(ctx)
+                Text(used + if (near) " · 快到每月免费额度了" else " · 每月 2000 次免费", Modifier.weight(1f), fontSize = 12.sp, color = if (near) Color(0xFFC0392B) else P3.text3)
+                TextAction(if (wsaBusy) "测试中…" else "测试连接", enabled = wsa.isNotBlank() && !wsaBusy) {
+                    wsaBusy = true; wsaScope.launch { wsaMsg = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Yuanbao.resetSession(); Yuanbao.test(ctx, wsa) }; wsaBusy = false }
+                }
+            }
+            if (wsaMsg.isNotBlank()) Text(wsaMsg, Modifier.padding(start = 4.dp, top = 2.dp), fontSize = 12.sp, color = P3.text2)
         }
         if (FactCheck.SearchProvider.BOCHA in provider || bocha.isNotBlank()) item {
             GroupLabel("博查 API Key")

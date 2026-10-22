@@ -65,6 +65,7 @@ object Corner {
  * 所以 1.7 不再在任何自定义路径上画阴影或描边。Squircle 类保留但不再被界面使用。
  */
 object Sq {
+    val card26 = RoundedCornerShape(26.dp)
     val xs = RoundedCornerShape(10.dp); val s = RoundedCornerShape(14.dp); val m = RoundedCornerShape(18.dp); val l = RoundedCornerShape(22.dp); val xl = RoundedCornerShape(24.dp)
     val full = RoundedCornerShape(50)
     val rightS = RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp)

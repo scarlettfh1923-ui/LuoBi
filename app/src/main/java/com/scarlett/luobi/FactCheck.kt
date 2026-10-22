@@ -91,7 +91,7 @@ object FactCheck {
    "note":"可选说明"}
 ],"skipped":["跳过的评价性句子…"]}"""
 
-    private const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36 LuoBi/1.12"
+    const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36 LuoBi/1.12"
     private val nameLike = Regex("[《「\"“]([^》」\"”]{1,40})[》」\"”]|([\\p{IsHan}]{2,8}(?:电影|电视剧|小说|导演|主演|作者))")
     private val yearLike = Regex("(19|20)\\d{2}年")
 
@@ -161,7 +161,7 @@ object FactCheck {
 
     /** 可选检索源（设定里选；失败时按序兜底） */
     enum class SearchProvider(val id: String, val label: String) {
-        DEEPSEEK("deepseek", "DeepSeek（推荐）"), KIMI("kimi", "Kimi"), WIKI("wiki", "维基百科"), BOCHA("bocha", "博查");
+        DEEPSEEK("deepseek", "DeepSeek（推荐）"), KIMI("kimi", "Kimi"), WIKI("wiki", "维基百科"), BOCHA("bocha", "博查"), YUANBAO("yuanbao", "元宝搜索");
         val short get() = label.replace("（推荐）", "").let { if (this == DEEPSEEK) "DeepSeek 搜索" else it }
         companion object {
             fun of(id: String) = entries.firstOrNull { it.id == id } ?: DEEPSEEK
@@ -210,11 +210,11 @@ object FactCheck {
     }
 
     /** 1.15.1 检索结果 */
-    data class Gathered(val hits: List<FactHit>, val note: String, val queries: List<String>, val modelOnly: Boolean, val fetches: Int)
+    data class Gathered(val hits: List<FactHit>, val note: String, val queries: List<String>, val modelOnly: Boolean, val fetches: Int, val quotes: List<FactQuotes.Trail> = emptyList())
 
     suspend fun searchAll(ctx: Context, title: String, body: String): Gathered = withContext(Dispatchers.IO) {
         val s = Settings(ctx)
-        gather(SearchProvider.many(s.factSearch), { p -> when (p) { SearchProvider.DEEPSEEK -> s.key("deepseek"); SearchProvider.KIMI -> s.key("kimi"); SearchProvider.BOCHA -> s.bochaKey; else -> "" } }, title, body)
+        gather(SearchProvider.many(s.factSearch), { p -> when (p) { SearchProvider.DEEPSEEK -> s.key("deepseek"); SearchProvider.KIMI -> s.key("kimi"); SearchProvider.BOCHA -> s.bochaKey; SearchProvider.YUANBAO -> s.wsaKey; else -> "" } }, title, body, ctx)
     }
 
     /**
@@ -223,13 +223,17 @@ object FactCheck {
      * 2. 每个选中的源跑同一组查询（去重合并后最多 4–5 条）；一个源失败不影响其它源；
      * 3. 情节项抓全文：维基全文、Kimi 搜索带正文、Kimi 抓取权威页（维基/百度百科/豆瓣）；每项 ≤3 次、每次运行 ≤15 次；裁剪到相关段落。
      */
-    fun gather(sel: List<SearchProvider>, keyOf: (SearchProvider) -> String, title: String, body: String): Gathered {
+    fun gather(sel: List<SearchProvider>, keyOf: (SearchProvider) -> String, title: String, body: String, ctx: Context? = null): Gathered {
+        Yuanbao.resetSession()
+        var ybLeft = Yuanbao.BUDGET_PER_ARTICLE
         val plots = FactEvidence.plotItems(title, body)
         val qs = FactEvidence.dedupe(plots.map { FactEvidence.plotQuery(it) } + queries(title, body, 8), FactEvidence.MAX_QUERIES + plots.size.coerceAtMost(1))
         val hits = mutableListOf<FactHit>()
         val fails = LinkedHashMap<SearchProvider, String>()
         val used = mutableListOf<SearchProvider>()
-        for (p in sel) {
+        // 1.16：元宝搜索开着时排第一（中文说法优先走它）
+        val order = if (SearchProvider.YUANBAO in sel) listOf(SearchProvider.YUANBAO) + (sel - SearchProvider.YUANBAO) else sel
+        for (p in order) {
             val key = keyOf(p)
             if (p != SearchProvider.WIKI && key.isBlank()) { fails[p] = FactNet.plain(p.short, FactNet.MissingKey()); continue }
             var got = 0
@@ -240,9 +244,10 @@ object FactCheck {
                         SearchProvider.KIMI -> FactSources.kimiSearch(key, q)
                         SearchProvider.WIKI -> FactSources.wikiSearch(q)
                         SearchProvider.BOCHA -> FactSources.bocha(key, q)
+                        SearchProvider.YUANBAO -> if (ybLeft-- > 0) Yuanbao.search(key, q, ctx = ctx).map(Yuanbao::toHit) else emptyList()
                     }
                 }
-                if (r.isFailure) { if (got == 0) fails[p] = FactNet.plain(p.short, r.exceptionOrNull()); break }  // 重试后仍失败：这个源不再继续打
+                if (r.isFailure) { if (got == 0) fails[p] = (r.exceptionOrNull() as? Yuanbao.Err)?.message ?: FactNet.plain(p.short, r.exceptionOrNull()); break }  // 重试后仍失败：这个源不再继续打
                 r.getOrThrow().forEach { hits += it; got++ }
             }
             if (got > 0) used += p
@@ -257,6 +262,18 @@ object FactCheck {
             fun take(t: String, u: String, via: String, raw: String) {
                 val trimmed = FactEvidence.trim(raw, keys)
                 if (trimmed.isNotBlank()) hits += FactHit(t, u, trimmed.take(200), t, via, text = trimmed)
+            }
+            // 1.16：元宝按站点定向（百度百科 / 豆瓣电影 / 中文维基），取 passage+content 当原文证据
+            val ybKey = if (SearchProvider.YUANBAO in sel) keyOf(SearchProvider.YUANBAO) else ""
+            if (ybKey.isNotBlank()) for (site in listOf("baike.baidu.com", "movie.douban.com", "zh.wikipedia.org")) {
+                if (ybLeft <= 0) break
+                ybLeft--
+                val r = runCatching { Yuanbao.search(ybKey, FactEvidence.plotQuery(item), site = site, ctx = ctx) }
+                r.onFailure { if (SearchProvider.YUANBAO !in fails) fails[SearchProvider.YUANBAO] = it.message ?: "元宝搜索暂时不可用" }
+                val got = r.getOrNull().orEmpty().take(2)
+                got.forEach { pg -> val h = Yuanbao.toHit(pg); take(h.title, h.url, "元宝", h.text) }
+                if (r.isFailure) break
+                if (got.isNotEmpty()) break
             }
             if (wikiOk && per < FactEvidence.MAX_FETCH_PER_ITEM && budget > 0) {
                 val wt = hits.firstOrNull { it.url.contains("wikipedia.org") && it.title.contains(item.work) }?.title ?: item.work
@@ -278,6 +295,9 @@ object FactCheck {
                 }
             }
         }
+        // 1.16：引语出处专门检索（短查询 + 原文语言 + 兜底链）
+        val trails = FactQuotes.resolve(FactQuotes.items(title, body), FactQuotes.chain(sel, keyOf, ctx) { ybLeft-- > 0 })
+        hits += FactQuotes.evidence(trails)
         // 合并去重（同一链接保留带全文的那条；via 合并用于计数）
         val merged = LinkedHashMap<String, FactHit>()
         for (h in hits) {
@@ -288,7 +308,9 @@ object FactCheck {
         var total = 0
         val capped = merged.values.map { h -> if (h.text.isBlank()) h else { val room = (FactEvidence.TOTAL_CAP - total).coerceAtLeast(0); total += minOf(room, h.text.length); h.copy(text = h.text.take(room)) } }
         val modelOnly = capped.isEmpty()
-        return Gathered(capped, searchNote(sel, used, fails, modelOnly), qs, modelOnly, fetches)
+        val ybNote = if (ctx != null && SearchProvider.YUANBAO in sel && Yuanbao.Usage.nearLimit(ctx)) " · 元宝搜索" + Yuanbao.Usage.label(ctx) + "，快到免费额度" else ""
+        val qNote = ybNote + if (trails.isEmpty()) "" else " · 引语出处 " + trails.count { it.found != null } + "/" + trails.size + " 找到"
+        return Gathered(capped, searchNote(sel, used, fails, modelOnly) + qNote, qs + trails.flatMap { FactQuotes.queries(it.item).let { (a, b) -> a + b } }, modelOnly, fetches, trails)
     }
 
     /** 人话版检索说明：「检索：DeepSeek 搜索、Kimi · 维基百科请求太频繁，被暂时限流；博查未填写 Key」 */
@@ -490,7 +512,7 @@ object FactCheck {
             throw refineFactModelError(e, check) ?: e
         }
         val (issues, skipped) = parse(reply)
-        val ok = attachEvidence(issues.filter { it.span.isBlank() || body.contains(it.span) || title.contains(it.span) }, hits)
+        val ok = FactQuotes.annotate(attachEvidence(issues.filter { it.span.isBlank() || body.contains(it.span) || title.contains(it.span) }, hits), g.quotes)
         FactReport(ok, skipped, note + " · 校对模型 ${check.label} · ${check.sub}", qs)
     }
 

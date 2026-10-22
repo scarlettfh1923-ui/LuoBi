@@ -1,6 +1,8 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 package com.scarlett.luobi
 
+import androidx.compose.ui.graphics.graphicsLayer
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
@@ -119,7 +121,7 @@ fun LibraryScreen(
                 } else {
                     Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
                         Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
-                            Text("案头", fontSize = 24.sp, fontWeight = FontWeight.Bold, lineHeight = 30.sp, color = P3.text)
+                            Text("案头", fontSize = 32.sp, fontWeight = FontWeight.Bold, lineHeight = 38.sp, color = P3.text)
                             Text("${all.size} 篇", Modifier.padding(start = 10.dp, bottom = 3.dp), fontSize = 13.sp, color = P3.text2)
                         }
                         Text("管理", Modifier.clip(Sq.s).clickable {
@@ -129,34 +131,34 @@ fun LibraryScreen(
                 }
             }
             item {
-                Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(42.dp).clip(Sq.full).background(P3.surface).hairline(Sq.full, P3.border).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SvgIcon(Ic.search, t3(), 18.dp); Spacer(Modifier.width(8.dp))
+                // 1.16 方案 C：搜索框里放「全部分类 ⌄」和排序；白底胶囊（内容层不用玻璃）
+                Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(44.dp).clip(Sq.full).background(P3.surface).padding(start = 14.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SvgIcon(Ic.search, t3(), 17.dp); Spacer(Modifier.width(8.dp))
                     Box(Modifier.weight(1f)) {
                         BasicTextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true, textStyle = TextStyle(fontSize = 15.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary))
-                        if (q.isEmpty()) Text("搜索标题、正文、标签", fontSize = 15.sp, color = t3())
+                        if (q.isEmpty()) Text("搜索", fontSize = 15.sp, color = t3())
                     }
                     if (q.isNotEmpty()) Box(Modifier.size(28.dp).clip(Sq.full).clickable { q = "" }, contentAlignment = Alignment.Center) { SvgIcon(Ic.close, t3(), 16.dp, desc = "清空") }
-                }
-                // 1.15.1：一行紧凑工具条——左「全部分类 ⌄」（强调色、无底），右「最新 ⇅」（灰）；左右边距与卡片对齐
-                if (!managing) Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) {
-                        CategoryMenuButton(if (catFilter.isBlank()) "全部分类" else "$catFilter · ${shown.size}") { catMenu = true }
-                        CategoryMenu(catMenu, Desk.counts(match), catFilter, bottom, onPick = { catFilter = it; catMenu = false }) { catMenu = false }
-                    }
-                    Box {
-                        Row(Modifier.clip(Sq.s).clickable { sortMenu = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(SortLabels[sort], fontSize = 14.sp, color = t3())
-                            Spacer(Modifier.width(3.dp)); SvgIcon(Ic.swap, t3(), 14.dp)
+                    if (!managing) {
+                        Box {
+                            CategoryMenuButton(if (catFilter.isBlank()) "全部分类" else catFilter, hidden = catMenu) { catMenu = true }
+                            CategoryMenu(catMenu, Desk.counts(match), catFilter, bottom, onPick = { catFilter = it; catMenu = false }) { catMenu = false }
                         }
-                        DropdownMenu(sortMenu, { sortMenu = false }, shape = Sq.m) {
-                            SortLabels.forEachIndexed { i, l ->
-                                DropdownMenuItem(
-                                    text = { Text(l, fontWeight = if (i == sort) FontWeight.Bold else FontWeight.Normal, color = if (i == sort) cs.primary else cs.onSurface) },
-                                    onClick = { sort = i; s.libSort = i; sortMenu = false })
+                        Box(Modifier.padding(horizontal = 6.dp).width(Dp.Hairline).height(22.dp).background(P3.borderStrong))
+                        Box {
+                            Box(Modifier.size(36.dp).clip(Sq.full).clickable { sortMenu = true }, contentAlignment = Alignment.Center) { SvgIcon(Ic.swap, P3.accent, 17.dp, desc = "排序：" + SortLabels[sort]) }
+                            DropdownMenu(sortMenu, { sortMenu = false }, shape = Sq.m) {
+                                SortLabels.forEachIndexed { i, l ->
+                                    DropdownMenuItem(
+                                        text = { Text(l, fontWeight = if (i == sort) FontWeight.Bold else FontWeight.Normal, color = if (i == sort) cs.primary else cs.onSurface) },
+                                        onClick = { sort = i; s.libSort = i; sortMenu = false })
+                                }
                             }
                         }
                     }
                 }
+                if (!managing && (catFilter.isNotBlank() || sort != 0)) Text(listOfNotNull(catFilter.takeIf { it.isNotBlank() }?.let { "$it · ${shown.size} 篇" }, SortLabels[sort].takeIf { sort != 0 }?.let { "按$it" }).joinToString(" · "),
+                    Modifier.padding(start = 28.dp, top = 8.dp), fontSize = 12.sp, color = t3())
             }
             item {
                 val names = emptyList<String>()
@@ -265,9 +267,13 @@ private fun NoteTitleBlock(n: Note, showHeart: Boolean, onToggleFav: () -> Unit 
     if (n.category.isNotBlank()) Text(n.category, Modifier.padding(bottom = 3.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = P3.accent, maxLines = 1)
     Text(n.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = P3.text)
     Row(Modifier.padding(top = 4.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(listOf(java.text.SimpleDateFormat("M月d日", java.util.Locale.CHINA).format(java.util.Date(n.createdAt)), "%,d".format(n.body.length) + " 字", if (n.version > 1) "第 ${n.version} 版" else "").filter { it.isNotBlank() }.joinToString(" · "), Modifier.weight(1f), fontSize = 12.sp, color = t3(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(listOf(java.text.SimpleDateFormat("M月d日", java.util.Locale.CHINA).format(java.util.Date(n.createdAt)), "%,d".format(n.body.length) + " 字", if (n.version > 1) "第 ${n.version} 版" else "").filter { it.isNotBlank() }.joinToString(" · ") + n.tagList().take(2).joinToString("") { "  #$it" }, Modifier.weight(1f), fontSize = 12.sp, color = t3(), maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (showHeart) Box(Modifier.size(32.dp).clip(Sq.full).clickable { onToggleFav() }, contentAlignment = Alignment.Center) {
-            SvgIcon(Ic.heart, if (n.favorite) P3.accent else t3(), 18.dp, if (n.favorite) P3.accent else null, "收藏")
+            // 1.16：收藏心形轻弹（蓝色），缩放回弹不闪烁
+            val pop = remember { androidx.compose.animation.core.Animatable(1f) }
+            var last by remember { mutableStateOf(n.favorite) }
+            LaunchedEffect(n.favorite) { if (n.favorite && !last && !Motion.reduced) { pop.snapTo(.7f); pop.animateTo(1f, Motion.bounce()) }; last = n.favorite }
+            Box(Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value }) { SvgIcon(Ic.heart, if (n.favorite) P3.accent else t3(), 18.dp, if (n.favorite) P3.accent else null, "收藏") }
         }
     }
 }

@@ -60,6 +60,21 @@ object Render {
         return sb.toString()
     }
     private fun prepTitle(t: String) = kinsoku(t)
+    const val HEAD_MULT = 1.15f
+    /** 小标题上 / 下额外留白（px）。上方再叠加前一段的段距和行距尾，下方只有这一点 */
+    fun headGaps(sizePx: Float): Pair<Int, Int> = (sizePx * 0.9f).toInt() to (sizePx * 0.2f).toInt()
+    /** 测试用：渲染后小标题「视觉」上 / 下空白（前段末行字底到标题字顶、标题字底到下段字顶） */
+    fun visualHeadGaps(sizePx: Float, spacing: Float, tf: Typeface = Typeface.DEFAULT): Pair<Float, Float> {
+        val bodyP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx; typeface = tf }
+        val headP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 1.25f; typeface = tf; letterSpacing = 0.04f }
+        val b = layoutRaw("正文一行", bodyP, 900, spacing); val h = layoutRaw("小标题", headP, 900, HEAD_MULT)
+        val (bh, ah) = headGaps(sizePx); val bodyGap = (sizePx * 0.22f).toInt()
+        val bodyTrail = b.height - b.getLineBaseline(0) - bodyP.descent()
+        val headLead = h.getLineBaseline(0) + headP.ascent()
+        val headTrail = h.height - h.getLineBaseline(0) - headP.descent()
+        val nextLead = b.getLineBaseline(0) + bodyP.ascent()
+        return (bodyTrail + bodyGap + bh + headLead) to (headTrail + ah + nextLead)
+    }
     private fun layoutRaw(t: CharSequence, p: TextPaint, w: Int, mult: Float): StaticLayout =
         StaticLayout.Builder.obtain(t, 0, t.length, p, w).setLineSpacing(0f, mult)
             .setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)
@@ -116,8 +131,9 @@ object Render {
         val bodyP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx; typeface = tf; color = st.text; letterSpacing = 0.03f }
         val headP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = headPx; typeface = boldTf; color = st.text; letterSpacing = 0.04f }
         // 小标题上方 > 下方；正文段间距偏紧
-        val beforeHead = (sizePx * 0.55f).toInt()
-        val afterHead = (sizePx * 0.28f).toInt()
+        // 1.16：小标题上大下小（和阅读页一致：上 0.9×字号、下 0.5×字号，小标题自身用紧行距），
+        // 这样小标题贴住它引出的那一段，而不是上下等距悬在中间
+        val (beforeHead, afterHead) = headGaps(sizePx)
         val bodyGap = (sizePx * 0.22f).toInt()
         // 孤儿保护：小标题下至少能放下约一行正文
         val oneBodyLine = (sizePx * spacing * 1.15f).toInt().coerceAtLeast(sizePx.toInt())
@@ -132,7 +148,7 @@ object Render {
             pageList.add(cur); cur = mutableListOf(); used = 0
         }
         fun placeHead(text: String) {
-            val lay = layout(text, headP, contentW, spacing) // 折行同行距
+            val lay = layout(text, headP, contentW, HEAD_MULT) // 1.16：小标题紧行距，避免尾部行距把下方撑大
             fun headBlock(withBefore: Boolean) = Block(lay, true, if (withBefore) beforeHead else 0, afterHead)
             // 小标题整块保留；若本页放不下「标题 + 约一行正文」，整组挪到下一页
             if (cur.isNotEmpty()) {

@@ -20,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -68,11 +69,12 @@ fun CategorySheet(current: String, aiPick: String, onPick: (String) -> Unit, onD
 
 /** 1.15 案头方案 A：白底圆角按钮「全部分类 ⌄」 */
 @Composable
-fun CategoryMenuButton(label: String, onClick: () -> Unit) {
-    // 1.15.1：无底色，强调色文字 + ⌄；纵向留出点按区域，横向不加内边距以便与卡片左缘对齐
-    Row(Modifier.clip(Sq.s).clickable(onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.accent, maxLines = 1)
-        Spacer(Modifier.width(4.dp)); SvgIcon(Ic.chevronDown, P3.accent, 16.dp)
+fun CategoryMenuButton(label: String, hidden: Boolean = false, onClick: () -> Unit) {
+    // 1.16：在搜索框里；菜单展开时按钮淡出（菜单从按钮处长出来）
+    val a by androidx.compose.animation.core.animateFloatAsState(if (hidden) 0f else 1f, Motion.enter(Motion.SHORT), label = "catBtn")
+    Row(Modifier.graphicsLayer { alpha = a }.clip(Sq.full).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = P3.accent, maxLines = 1, modifier = Modifier.widthIn(max = 120.dp), overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        Spacer(Modifier.width(3.dp)); SvgIcon(Ic.chevronDown, P3.accent, 14.dp)
     }
 }
 
@@ -87,11 +89,12 @@ fun CategoryMenu(open: Boolean, counts: List<Pair<String, Int>>, current: String
     if (!vis.currentState && !vis.targetState) return
     val screenH = LocalConfiguration.current.screenHeightDp.dp
     // 工具条下沿约在 190dp；预留底部 tab 栏 + 16dp
-    val maxH = (screenH - 190.dp - bottomBar - 16.dp).coerceAtLeast(200.dp)
-    Popup(offset = androidx.compose.ui.unit.IntOffset(0, 0), onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
-        AnimatedVisibility(vis, enter = fadeIn(Motion.enter(Motion.SHORT)) + scaleIn(Motion.enter(), initialScale = .92f, transformOrigin = TransformOrigin(0f, 0f)),
-            exit = fadeOut(Motion.exit()) + scaleOut(Motion.exit(), targetScale = .92f, transformOrigin = TransformOrigin(0f, 0f))) {
-            Column(Modifier.padding(top = 40.dp).width(310.dp).heightIn(max = maxH).shadowCard().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.borderStrong).verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
+    val maxH = (screenH - 200.dp - bottomBar - 16.dp).coerceAtLeast(200.dp)
+    // 1.16：按钮原地「长成」菜单——从按钮右上角弹簧展开，收起时缩回按钮
+    Popup(alignment = Alignment.TopEnd, offset = androidx.compose.ui.unit.IntOffset(0, 0), onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
+        AnimatedVisibility(vis, enter = fadeIn(Motion.enter(Motion.SHORT)) + androidx.compose.animation.expandIn(Motion.soft(), expandFrom = Alignment.TopEnd) { androidx.compose.ui.unit.IntSize(it.width / 3, it.height / 12) },
+            exit = fadeOut(Motion.exit()) + androidx.compose.animation.shrinkOut(Motion.soft(), shrinkTowards = Alignment.TopEnd) { androidx.compose.ui.unit.IntSize(it.width / 3, it.height / 12) }) {
+            Column(Modifier.padding(top = 2.dp).width(230.dp).heightIn(max = maxH).shadowCard().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.borderStrong).verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
                 counts.forEachIndexed { i, (c, n) ->
                     if (i > 0) HorizontalDivider(Modifier.padding(start = 42.dp, end = 10.dp), thickness = Dp.Hairline, color = P3.border)
                     val sel = c == current

@@ -1,5 +1,13 @@
 package com.scarlett.luobi
 
+import androidx.compose.animation.core.animateFloat
+
+import androidx.compose.runtime.getValue
+
+import androidx.compose.ui.focus.onFocusChanged
+
+import androidx.compose.ui.graphics.graphicsLayer
+
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.activity.compose.BackHandler
@@ -99,11 +107,21 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGen
         LazyColumnFill(bottom) {
             item { Text("今天写什么", Modifier.padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 14.dp), fontSize = 32.sp, fontWeight = FontWeight.Bold, lineHeight = 40.sp, color = P3.text) }
             item {
-                Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                    Box(Modifier.fillMaxWidth().heightIn(min = 140.dp)) {
-                        if (ws.raw.isEmpty()) Text("粘贴你的口播 / 想说的话 / 疑问", fontSize = 16.sp, lineHeight = 27.sp, color = P3.text3)
-                        BasicTextField(ws.raw, { ws.raw = it; ws.saveRaw() }, Modifier.fillMaxWidth(),
-                            textStyle = TextStyle(fontSize = 16.sp, lineHeight = 27.sp, color = P3.text), cursorBrush = SolidColor(P3.accent))
+                // 1.16：呼吸感输入框 + 占位文字打字轮播；点进去原地展开成写作面板
+                var focused by remember { mutableStateOf(false) }
+                val breathe = if (Motion.reduced || focused || ws.raw.isNotEmpty()) 0f else {
+                    val inf = androidx.compose.animation.core.rememberInfiniteTransition(label = "breathe")
+                    inf.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(1600, easing = androidx.compose.animation.core.FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "b").value
+                }
+                val minH by androidx.compose.animation.core.animateDpAsState(if (focused || ws.raw.length > 60) 260.dp else 150.dp, Motion.springDp(), label = "expand")
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth()
+                    .graphicsLayer { val s = 1f + breathe * 0.006f; scaleX = s; scaleY = s }
+                    .softShadow(Sq.card26, (6 + breathe * 6).dp).clip(Sq.card26).background(Color.White.copy(alpha = if (focused) .97f else .82f))
+                    .hairline(Sq.card26, if (focused) P3.accent.copy(alpha = .35f) else Glass.rim).padding(horizontal = 18.dp, vertical = 16.dp)) {
+                    Box(Modifier.fillMaxWidth().heightIn(min = minH)) {
+                        if (ws.raw.isEmpty()) TypewriterPlaceholder(focused)
+                        BasicTextField(ws.raw, { ws.raw = it; ws.saveRaw() }, Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
+                            textStyle = TextStyle(fontSize = 17.sp, lineHeight = 27.sp, color = P3.text), cursorBrush = SolidColor(P3.accent))
                     }
                     HorizontalDivider(Modifier.padding(top = 8.dp), thickness = Dp.Hairline, color = P3.border)
                     Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -279,5 +297,34 @@ private fun SheetRow(label: String, value: String, onClick: () -> Unit) {
         Text(label, Modifier.weight(1f), fontSize = 15.sp, color = P3.text2)
         Text(value, fontSize = 15.sp, color = P3.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text("  ›", fontSize = 15.sp, color = P3.text3)
+    }
+}
+
+
+/** 1.16：占位「把想说的话，留在这里」，停一会儿后删掉、打出两条示例、再回到它（16 字/秒打、34 字/秒删）。聚焦或「移除动画」时固定显示 */
+const val WRITE_PLACEHOLDER = "把想说的话，留在这里"
+val PLACEHOLDER_EXAMPLES = listOf("短剧为什么越来越“降智”？", "《甜蜜蜜》里，婚约之外的爱情")
+@Composable
+fun TypewriterPlaceholder(focused: Boolean) {
+    var shown by remember { mutableStateOf(WRITE_PLACEHOLDER) }
+    if (!focused && !Motion.reduced) LaunchedEffect(Unit) {
+        val seq = listOf(WRITE_PLACEHOLDER) + PLACEHOLDER_EXAMPLES
+        var i = 0
+        while (true) {
+            kotlinx.coroutines.delay(if (i % seq.size == 0) 2600 else 1400)
+            val cur = seq[i % seq.size]; val next = seq[(i + 1) % seq.size]
+            for (k in cur.length downTo 0) { shown = cur.take(k); kotlinx.coroutines.delay(30) }
+            kotlinx.coroutines.delay(200)
+            for (k in 0..next.length) { shown = next.take(k); kotlinx.coroutines.delay(62) }
+            i++
+        }
+    } else LaunchedEffect(focused) { shown = WRITE_PLACEHOLDER }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(shown, fontSize = 17.sp, lineHeight = 27.sp, color = P3.text3, maxLines = 1)
+        if (!focused) {
+            val blink = if (Motion.reduced) 1f else androidx.compose.animation.core.rememberInfiniteTransition(label = "caret").animateFloat(1f, .15f,
+                androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(450), androidx.compose.animation.core.RepeatMode.Reverse), label = "c").value
+            Box(Modifier.padding(start = 2.dp).width(2.dp).height(20.dp).graphicsLayer { alpha = blink }.background(P3.accent))
+        }
     }
 }

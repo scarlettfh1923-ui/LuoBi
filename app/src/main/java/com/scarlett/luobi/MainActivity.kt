@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         if (savedInstanceState == null) take(intent)
         Share.cleanDocs(this) // 1.10：启动时清理上次分享留下的临时文件
+        Motion.init(this); Glass.init(this)
         setContent { AppTheme { App() } }
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); take(intent) }
@@ -154,8 +155,8 @@ fun App() {
             Box(Modifier.fillMaxSize().background(Color(0x55000000)).clickable(enabled = false) {}, contentAlignment = Alignment.Center) {
                 Column(Modifier.padding(32.dp).clip(Sq.xl).background(P3.surface).padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = 12.dp).widthIn(max = 280.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(strokeWidth = 3.dp, color = P3.accent)
-                    Spacer(Modifier.height(18.dp))
+                    GeneratingNib()
+                    Spacer(Modifier.height(16.dp))
                     Text(if (GenJob.parse(genPrefs.getString("job", "{}") ?: "{}").kind == "rewrite") "正在改写…" else "正在写文章…", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
                     Text("通常 15–60 秒。可以切出去，写好会通知你", Modifier.padding(top = 6.dp), fontSize = 12.sp, color = P3.text3, textAlign = TextAlign.Center)
                     TextButton(onClick = { CopyWorker.cancel(ctx) }, Modifier.padding(top = 4.dp), shape = Sq.full) { Text("取消", color = P3.text2) }

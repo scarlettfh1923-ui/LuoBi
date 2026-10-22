@@ -15,7 +15,7 @@ android {
   compileSdk = 35
   defaultConfig {
     applicationId = "com.scarlett.luobi"
-    minSdk = 29; targetSdk = 35; versionCode = 18; versionName = "1.15.1"
+    minSdk = 29; targetSdk = 35; versionCode = 19; versionName = "1.16.0"
   }
   signingConfigs {
     if (signProps.isNotEmpty()) create("release") {
@@ -43,6 +43,7 @@ dependencies {
   implementation("androidx.compose.material3:material3")
   implementation("androidx.compose.ui:ui")
   implementation("androidx.compose.foundation:foundation")
+  implementation("dev.chrisbanes.haze:haze:1.1.1")
   implementation("androidx.activity:activity-compose:1.9.2")
   implementation("androidx.core:core-ktx:1.13.1")
   implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.5")

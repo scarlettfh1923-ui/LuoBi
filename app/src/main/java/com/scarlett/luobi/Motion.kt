@@ -11,11 +11,21 @@ import androidx.compose.ui.unit.IntOffset
  * - 弹层与可拖动元素：临界阻尼弹簧（无回弹）
  */
 object Motion {
+    /** 1.16：系统「移除动画」（动画时长缩放 = 0）时关闭动效 */
+    var reduced: Boolean = false
+    fun init(ctx: android.content.Context) {
+        reduced = runCatching { android.provider.Settings.Global.getFloat(ctx.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }.getOrDefault(false)
+    }
+    /** 轻弹簧（约 0.35 秒，阻尼 0.75）；减少动画时直接到位 */
+    fun <T> soft(): FiniteAnimationSpec<T> = if (reduced) snap() else spring(dampingRatio = 0.75f, stiffness = 420f)
+    fun springDp(): FiniteAnimationSpec<androidx.compose.ui.unit.Dp> = soft()
+    /** 心形 / 红点这种「弹一下」 */
+    fun <T> bounce(): FiniteAnimationSpec<T> = if (reduced) snap() else spring(dampingRatio = 0.45f, stiffness = 500f)
     const val SHORT = 180; const val MEDIUM = 280; const val LONG = 380
     val Standard = CubicBezierEasing(0.2f, 0f, 0f, 1f)
     val Exit = CubicBezierEasing(0.3f, 0f, 1f, 1f)
-    fun <T> enter(ms: Int = MEDIUM) = tween<T>(ms, easing = Standard)
-    fun <T> exit(ms: Int = SHORT) = tween<T>(ms, easing = Exit)
+    fun <T> enter(ms: Int = MEDIUM) = tween<T>(if (reduced) 0 else ms, easing = Standard)
+    fun <T> exit(ms: Int = SHORT) = tween<T>(if (reduced) 0 else ms, easing = Exit)
     val sheetSpring = spring<IntOffset>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 420f)
     val dragSpring = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
 

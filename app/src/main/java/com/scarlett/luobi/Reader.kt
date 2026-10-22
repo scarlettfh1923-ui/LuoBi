@@ -1,6 +1,12 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 package com.scarlett.luobi
 
+import androidx.compose.ui.focus.focusProperties
+
+import androidx.compose.ui.graphics.graphicsLayer
+
+import androidx.compose.ui.composed
+
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.snapshotFlow
@@ -204,7 +210,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 // 分享栏：所选渠道（1–5）+ 固定最右「更多」；detail.png 网格；选中态只换颜色
                 val bar = remember(barTick) { s.shareBar }
                 (bar.mapNotNull { ChannelIds.def(it, channels) } + ChannelIds.more).forEach { d ->
-                    GridCell(d.icon, d.name, d.id == "xhs", if (pal.dark) pal.text else NavInk, if (pal.dark) pal.sub else NavInk, busy = act.busy == d.name) { if (d.id == ShareBar.MORE) panel = true else act.run(d.id, channels) }
+                    GridCell(d.icon, d.name, false /* 1.16：分享栏是动作按钮，永不显示选中态（之前把小红书硬编码成选中） */, if (pal.dark) pal.text else NavInk, if (pal.dark) pal.sub else NavInk, busy = act.busy == d.name) { if (d.id == ShareBar.MORE) panel = true else act.run(d.id, channels) }
                 }
         }
     }) { pad ->
@@ -213,6 +219,9 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 if (t == 0) Box(Modifier.fillMaxSize()) {
                     ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding() + 16.dp, top = pad.calculateTopPadding(), openVersions = { verMenu = true }, onTags = { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } }, il = il, editCaption = { capEdit = it },
                         highlights = emptyList() /* 1.15.1：阅读优先，不在正文上画黄色高亮 */, focusSpan = factFocus, onCategory = { catSheet = true })
+                    // 1.16：正文铺满全屏，状态栏下一道柔和渐隐
+                    Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(with(androidx.compose.ui.platform.LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() } + 28.dp)
+                        .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(pal.bg, pal.bg.copy(alpha = .85f), pal.bg.copy(alpha = 0f)))))
                     FactProgressChip(factBusy, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp))
                 }
                 else Box(Modifier.padding(top = pad.calculateTopPadding())) { Gallery(imgs, style, { style = it; s.style = it }, spacing, { spacing = it; s.cardSpacing = it }, ratio, { ratio = it; s.cardRatio = it }, s.imgOn, bgBusy, aiBg != null, pal, pad.calculateBottomPadding(),
@@ -284,6 +293,8 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
     val showCredit = remember { Settings(ctx).showCredit }
     var paraMenu by remember { mutableStateOf(-1) }
     val scroll = rememberScrollState()
+    // 1.16：刚生成好的文章，段落依次淡入上浮（0.38s 间隔、上浮 10px）；平时打开不动
+    val fresh = remember(n.id) { System.currentTimeMillis() - n.createdAt < 90_000 && !Motion.reduced }
     val bringers = remember(paras.size) { List(paras.size) { BringIntoViewRequester() } }
     LaunchedEffect(focusSpan) {
         val span = focusSpan ?: return@LaunchedEffect
@@ -322,7 +333,7 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
         paras.forEachIndexed { i, p ->
           val hit = highlights.firstOrNull { it.isNotBlank() && p.contains(it) }
           val focused = focusSpan != null && focusSpan.isNotBlank() && p.contains(focusSpan)
-          Box(Modifier.fillMaxWidth().bringIntoViewRequester(bringers[i]).clip(Sq.s)
+          Box(Modifier.fillMaxWidth().riseIn(i, fresh).bringIntoViewRequester(bringers[i]).clip(Sq.s)
               .background(when { focused || hit != null -> Color(0xFFFFF3CD); paraMenu == i -> pal.soft; else -> Color.Transparent })
               .combinedClickable(onClick = {}, onLongClick = { paraMenu = i }).padding(vertical = if (hit != null) 4.dp else 0.dp)) {
            Column {
@@ -483,9 +494,7 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
             Text("${ps.currentPage + 1} / ${imgs.size}  ·  ${if (ps.currentPage == 0) "封面" else "正文"}  ·  ${CardRatio.fromIndex(ratio).label}", fontFamily = Mono, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = pal.sub, fontSize = 12.sp)
         }
         Column(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            OutlinedButton(onClick = save, enabled = imgs.isNotEmpty(), shape = Sq.full, border = null, modifier = Modifier.hairline(Sq.full, pal.border)) {
-                SvgIcon(Ic.download, pal.accent, 18.dp); Spacer(Modifier.width(6.dp)); Text("保存到相册", color = pal.text)
-            }
+            // 1.16：「保存到相册」已在底部操作栏（存相册），这里不再重复，避免从底栏下面露出来
             if (imgOn) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = onAiBg, enabled = !bgBusy, shape = Sq.full) { SvgIcon(Ic.wand, pal.accent, 16.dp); Spacer(Modifier.width(4.dp)); Text(if (bgBusy) "生成中…" else if (hasBg) "换一张背景" else "AI 生成封面背景", color = pal.accent) }
                 if (hasBg) TextButton(onClick = clearBg, shape = Sq.full) { Text("去掉背景", color = pal.sub) }
@@ -501,6 +510,7 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
     var t by remember { mutableStateOf(n.title) }; var b by remember { mutableStateOf(n.body) }; var g by remember { mutableStateOf(n.tagList()) }
     val changed = t != n.title || b != n.body || g != n.tagList()
     var confirm by remember { mutableStateOf(false) }
+    var armed by remember { mutableStateOf(false) }
     // 1.15.1：进入时不弹键盘；点空白 / 返回 / 保存都收起键盘
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
     val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -517,8 +527,12 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
             (dv.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.setSoftInputMode(
                 android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
+        // 1.16：新版 Compose 的 Dialog 打开时会把初始焦点给第一个输入框，进来就清掉（不弹键盘）
+        LaunchedEffect(Unit) { focus.clearFocus(force = true); kb?.hide() }
         Surface(Modifier.fillMaxSize(), color = cs.background) {
+            // 1.16：用户第一次按下屏幕之前，输入框不可获得焦点（挡住 Dialog 的自动初始焦点）
             Column(Modifier.fillMaxSize().statusBarsPadding().imePadding().navigationBarsPadding()
+                .pointerInput(Unit) { awaitPointerEventScope { while (true) { val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial); if (e.changes.any { it.pressed }) armed = true } } }
                 .pointerInput(Unit) { detectTapGestures { hideKb() } }) {
                 Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { hideKb(); close() }) { SvgIcon(Ic.close, cs.onSurface, desc = "关闭") }
@@ -527,7 +541,7 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
                         contentPadding = PaddingValues(horizontal = 18.dp), modifier = Modifier.padding(end = 8.dp).height(36.dp)) { Text("保存", fontSize = 15.sp) }
                 }
                 Column(Modifier.padding(horizontal = 20.dp).weight(1f)) {
-                    BasicTextField(t, { t = it.replace("\n", "") }, Modifier.fillMaxWidth().padding(top = 8.dp),
+                    BasicTextField(t, { t = it.replace("\n", "") }, Modifier.fillMaxWidth().padding(top = 8.dp).focusProperties { canFocus = armed },
                         textStyle = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 31.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary),
                         decorationBox = { inner -> Box { if (t.isEmpty()) Text("标题", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = t3()); inner() } })
                     HorizontalDivider(Modifier.padding(vertical = 12.dp), thickness = Dp.Hairline, color = cs.outlineVariant)
@@ -536,7 +550,7 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
                     // 正文自己滚动：开始拖动时收起键盘（像系统备忘录）
                     val bodyScroll = rememberScrollState()
                     LaunchedEffect(bodyScroll) { snapshotFlow { bodyScroll.isScrollInProgress }.collect { if (it) hideKb() } }
-                    BasicTextField(b, { b = it }, Modifier.fillMaxWidth().weight(1f).verticalScroll(bodyScroll),
+                    BasicTextField(b, { b = it }, Modifier.fillMaxWidth().weight(1f).verticalScroll(bodyScroll).focusProperties { canFocus = armed },
                         textStyle = TextStyle(fontSize = 16.sp, lineHeight = 27.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary),
                         decorationBox = { inner -> Box { if (b.isEmpty()) Text("正文", fontSize = 16.sp, color = t3()); inner() } })
                     Text("正文 ${b.length} 字" + if (changed) " · 未保存" else "", Modifier.fillMaxWidth().padding(vertical = 8.dp), textAlign = TextAlign.End, fontSize = 12.sp, color = t3())
@@ -577,4 +591,12 @@ fun ArticleBlock(ml: MdLine, next: MdKind?, font: Float, pal: ReadPalette, famil
         }
         MdKind.P -> Text(mdAnnotated(ml.text), Modifier.padding(bottom = paraGap), style = body)
     }
+}
+
+
+/** 1.16：段落依次淡入上浮 */
+fun Modifier.riseIn(i: Int, on: Boolean): Modifier = if (!on || i > 12) this else composed {
+    val a = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(380L * i); a.animateTo(1f, androidx.compose.animation.core.tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+    graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 10f * density }
 }

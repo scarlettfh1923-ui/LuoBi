@@ -319,6 +319,8 @@ class Settings(val c: Context) {
     /** 校对用的聊天模型 ref；空 = 与写作相同（默认）。与「事实检索」独立。 */
     var factModel: String get() = s("factModel", ""); set(v) = put("factModel", v)
     var bochaKey: String get() = Secure.get(c, "bocha_key"); set(v) = Secure.set(c, "bocha_key", v)
+    /** 1.16 元宝搜索（WSA）API Key，加密存本机 */
+    var wsaKey: String get() = Secure.get(c, "wsa_key"); set(v) = Secure.set(c, "wsa_key", v)
     var defaultModel get() = s("defaultModel", ""); set(v) = put("defaultModel", v)
     /** 0 短 · 1 中 · 2 长 */
     var length get() = p.getInt("length", 1); set(v) = put("length", v)

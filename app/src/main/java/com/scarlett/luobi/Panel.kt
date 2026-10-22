@@ -72,10 +72,11 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
     private fun makeLong(save: Boolean): ArrayList<Uri> {
         val fid = if (Fonts.ready(ctx, fontId)) fontId else "sans"
         val reg = Fonts.typeface(ctx, fid, false); val bold = Fonts.typeface(ctx, fid, true)
-        val uris = ArrayList<Uri>(); val stamp = System.currentTimeMillis()
+        Share.cleanShare(ctx); val uris = ArrayList<Uri>(); val stamp = System.currentTimeMillis()
         val show = Settings(ctx).showCredit
         Render.longImage(title, n.body, tags, reg, bold, pal.long(), PicCache.bitmaps(ctx, n.pics(), Export.paras(n.body).size, show)) { bmp, i, _ ->
-            try { if (save) Share.saveOne(ctx, bmp, "long_${stamp}_${i + 1}.jpg"); uris += Share.cacheJpeg(ctx, bmp, "long_${stamp}_${i + 1}.jpg") } finally { bmp.recycle() }
+            // 1.16：只编码一次（无损 PNG），存相册和分享用同一个文件
+            try { val f = Share.writePng(ctx, bmp, "long_${stamp}_${i + 1}.png"); if (save) Share.saveFile(ctx, f); uris += Share.uriOf(ctx, f) } finally { bmp.recycle() }
         }
         return uris
     }
