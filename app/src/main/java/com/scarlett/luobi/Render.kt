@@ -60,26 +60,43 @@ object Render {
         return sb.toString()
     }
     private fun prepTitle(t: String) = kinsoku(t)
-    const val HEAD_MULT = 1.15f
-    /** 小标题上 / 下额外留白（px）。上方再叠加前一段的段距和行距尾，下方只有这一点 */
-    fun headGaps(sizePx: Float): Pair<Int, Int> = (sizePx * 0.9f).toInt() to (sizePx * 0.2f).toInt()
-    /** 测试用：渲染后小标题「视觉」上 / 下空白（前段末行字底到标题字顶、标题字底到下段字顶） */
-    fun visualHeadGaps(sizePx: Float, spacing: Float, tf: Typeface = Typeface.DEFAULT): Pair<Float, Float> {
-        val bodyP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx; typeface = tf }
-        val headP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 1.25f; typeface = tf; letterSpacing = 0.04f }
-        val b = layoutRaw("正文一行", bodyP, 900, spacing); val h = layoutRaw("小标题", headP, 900, HEAD_MULT)
-        val (bh, ah) = headGaps(sizePx); val bodyGap = (sizePx * 0.22f).toInt()
-        val bodyTrail = b.height - b.getLineBaseline(0) - bodyP.descent()
-        val headLead = h.getLineBaseline(0) + headP.ascent()
-        val headTrail = h.height - h.getLineBaseline(0) - headP.descent()
-        val nextLead = b.getLineBaseline(0) + bodyP.ascent()
-        return (bodyTrail + bodyGap + bh + headLead) to (headTrail + ah + nextLead)
+    const val HEAD_MULT = 1.25f
+    /** 1.16.1 配图行距：滑杆 1.4–2.0，默认 1.7（中文正文舒适区间） */
+    const val LINE_MIN = 1.4f; const val LINE_MAX = 2.0f; const val LINE_DEFAULT = 1.7f
+    /**
+     * 1.16.1 配图节奏（全部按「字迹框」之间的可见空白计算，不依赖 includePad / 行距尾巴）：
+     * 行内空白 = L − 字高；段距 = 行内空白 + 0.7L；小标题上方 = 2 × 段距；小标题下方 = 0.45L（明显小于段距）。
+     * L = 字号 × 行距，随滑杆一起缩放。
+     */
+    data class Rhythm(val line: Float, val inner: Float, val para: Float, val aboveHead: Float, val belowHead: Float, val mult: Float)
+    /**
+     * L = 字号 × 行距（真实行距，按实测行高换算 StaticLayout 倍数，CJK 回退字体的行高比字号大很多）。
+     * 可见空白（像素）：行内 V = L − 字号；段距 = V + 0.7L；小标题下 = 0.45L；小标题上 = 2 × 段距。
+     * 排版用字体框（ascent/descent）定位，框比字迹上下多出约 0.17 字号，换算时扣掉。
+     */
+    fun rhythm(sizePx: Float, spacing: Float, p: TextPaint): Rhythm {
+        val probe = StaticLayout.Builder.obtain("中中", 0, 2, p, (p.measureText("中") * 1.3f).toInt().coerceAtLeast(1)).setLineSpacing(0f, 1f)
+            .setIncludePad(false).setUseLineSpacingFromFallbacks(true).build()
+        val pitch1 = if (probe.lineCount > 1) (probe.getLineBaseline(1) - probe.getLineBaseline(0)).toFloat() else (p.descent() - p.ascent())
+        val L = sizePx * spacing
+        val mult = L / pitch1
+        val boxExtra = (p.descent() - p.ascent()) - sizePx
+        val v = L - sizePx
+        val paraVis = v + 0.7f * L
+        return Rhythm(L, v, paraVis - boxExtra, 2f * paraVis - boxExtra, 0.45f * L - boxExtra, mult)
     }
+    fun headGaps(sizePx: Float, mult: Float = LINE_DEFAULT): Pair<Int, Int> {
+        val r = rhythm(sizePx, mult, TextPaint().apply { textSize = sizePx }); return r.aboveHead.toInt() to r.belowHead.toInt()
+    }
+    /** 测试用：可见空白（上 = 前段字底到标题字顶，下 = 标题字底到下段字顶） */
+    fun visualHeadGaps(sizePx: Float, spacing: Float, tf: Typeface = Typeface.DEFAULT): Pair<Float, Float> = headGaps(sizePx, spacing).let { it.first.toFloat() to it.second.toFloat() }
+    /** 旧设定（1.0–1.3 倍，1.0 是最紧）迁移到新区间：1.0 → 默认 1.7；其余线性映射 */
+    fun migrateSpacing(old: Float): Float = if (old <= 1.0f) LINE_DEFAULT else (LINE_MIN + (old - 1f) * 2f).coerceIn(LINE_MIN, LINE_MAX)
     private fun layoutRaw(t: CharSequence, p: TextPaint, w: Int, mult: Float): StaticLayout =
         StaticLayout.Builder.obtain(t, 0, t.length, p, w).setLineSpacing(0f, mult)
             .setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)
             .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
-            .setIncludePad(true).setUseLineSpacingFromFallbacks(true).build()
+            .setIncludePad(false).setUseLineSpacingFromFallbacks(true).build()
     private fun layout(t: CharSequence, p: TextPaint, w: Int, mult: Float): StaticLayout =
         layoutRaw(kinsoku(t.toString()), p, w, mult)
 
@@ -123,111 +140,127 @@ object Render {
         return b
     }
 
-    fun pages(title: String, body: String, st: CardStyle, tf: Typeface = Typeface.DEFAULT, sizePx: Float = 46f, spacing: Float = 1.7f, boldTf: Typeface = Typeface.create(Typeface.DEFAULT, 700, false), width: Int = W, height: Int = H): List<Bitmap> {
+    /**
+     * 1.16.1 方案 A：文中配图按原位置排进正文页（内容宽、圆角、可带图注）；放不下就整张移到下一页页首（不打乱文章顺序）。
+     * 封面 + 正文页最多 18 张：超出时从后往前丢掉文中配图，丢了几张记在 [lastDroppedPics]。
+     */
+    fun pages(title: String, body: String, st: CardStyle, tf: Typeface = Typeface.DEFAULT, sizePx: Float = 46f, spacing: Float = 1.7f, boldTf: Typeface = Typeface.create(Typeface.DEFAULT, 700, false), width: Int = W, height: Int = H,
+              pics: Map<Int, List<Pair<Bitmap, String>>> = emptyMap(), maxTotal: Int = 18): List<Bitmap> {
+        val all = pics.toSortedMap().flatMap { (k, l) -> l.map { k to it } }
+        var keep = all.size
+        while (true) {
+            val use = all.take(keep).groupBy({ it.first }, { it.second })
+            val n = runCatching { pagesInner(title, body, st, tf, sizePx, spacing, boldTf, width, height, use, countOnly = true).size }.getOrElse { if (keep == 0) throw it else Int.MAX_VALUE }
+            if (n + 1 <= maxTotal || keep == 0) { lastDroppedPics = all.size - keep; return pagesInner(title, body, st, tf, sizePx, spacing, boldTf, width, height, use, countOnly = false) }
+            keep--
+        }
+    }
+    @Volatile var lastDroppedPics = 0
+    private val DUMMY: Bitmap by lazy { Bitmap.createBitmap(1, 1, Bitmap.Config.ALPHA_8) }
+    /** 圆角、居中裁切、高质量缩放（原图分辨率 → 内容宽） */
+    private fun drawPic(c: Canvas, b: Bitmap, x: Float, y: Float, w: Int, h: Int, cap: StaticLayout?) {
+        val scale = maxOf(w.toFloat() / b.width, h.toFloat() / b.height)
+        val sw = w / scale; val sh = h / scale
+        val src = android.graphics.Rect(((b.width - sw) / 2).toInt(), ((b.height - sh) / 2).toInt(), ((b.width + sw) / 2).toInt(), ((b.height + sh) / 2).toInt())
+        val dst = android.graphics.RectF(x, y, x + w, y + h)
+        c.save()
+        c.clipPath(android.graphics.Path().apply { addRoundRect(dst, 28f, 28f, android.graphics.Path.Direction.CW) })
+        c.drawBitmap(b, src, dst, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { isDither = true })
+        c.restore()
+        cap?.let { c.save(); c.translate(x, y + h + 14f); it.draw(c); c.restore() }
+    }
+
+    private fun pagesInner(title: String, body: String, st: CardStyle, tf: Typeface, sizePx: Float, spacing: Float, boldTf: Typeface, width: Int, height: Int,
+                           pics: Map<Int, List<Pair<Bitmap, String>>>, countOnly: Boolean): List<Bitmap> {
         val m = 100; val top = 230; val bottom = height - 170; val avail = bottom - top
         val contentW = width - 2 * m
         val paras = body.replace("\r", "").split(Regex("\n+")).map { it.trim() }.filter { it.isNotEmpty() }
         val headPx = sizePx * 1.25f
         val bodyP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx; typeface = tf; color = st.text; letterSpacing = 0.03f }
         val headP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = headPx; typeface = boldTf; color = st.text; letterSpacing = 0.04f }
-        // 小标题上方 > 下方；正文段间距偏紧
-        // 1.16：小标题上大下小（和阅读页一致：上 0.9×字号、下 0.5×字号，小标题自身用紧行距），
-        // 这样小标题贴住它引出的那一段，而不是上下等距悬在中间
-        val (beforeHead, afterHead) = headGaps(sizePx)
-        val bodyGap = (sizePx * 0.22f).toInt()
-        // 孤儿保护：小标题下至少能放下约一行正文
-        val oneBodyLine = (sizePx * spacing * 1.15f).toInt().coerceAtLeast(sizePx.toInt())
-        data class Block(val layout: StaticLayout, val head: Boolean, val padTop: Int, val padBottom: Int) {
-            val height get() = padTop + layout.height + padBottom
+        val rh = rhythm(sizePx, spacing.coerceIn(1.0f, LINE_MAX), bodyP)
+        val bodyMult = rh.mult
+        /** 一块 = 一段 / 一个小标题；gap = 与上一块字迹之间的可见空白；页首 gap = 0 */
+        class Block(val layout: StaticLayout, val head: Boolean, val gap: Int, val img: Bitmap? = null, val imgH: Int = 0, val cap: StaticLayout? = null) {
+            val inkTop get() = if (img != null) 0 else (layout.getLineBaseline(0) + layout.paint.ascent()).toInt()
+            val inkBottom get() = if (img != null) imgH + (cap?.let { 14 + it.height } ?: 0) else (layout.getLineBaseline(layout.lineCount - 1) + layout.paint.descent()).toInt()
+            val height get() = gap + inkBottom - inkTop
+            fun atTop() = Block(layout, head, 0, img, imgH, cap)
+            fun withGap(g: Int) = Block(layout, head, g, img, imgH, cap)
         }
-        fun asPageStart(b: Block) = if (b.padTop == 0) b else Block(b.layout, b.head, 0, b.padBottom)
+        val capP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 0.56f; typeface = tf; color = st.text; alpha = 130 }
+        val emptyLay = layoutRaw(" ", bodyP, contentW, 1f)
         val pageList = mutableListOf<MutableList<Block>>()
         var cur = mutableListOf<Block>(); var used = 0
-        fun flush() {
-            if (cur.isEmpty()) return
-            pageList.add(cur); cur = mutableListOf(); used = 0
+        fun flush() { if (cur.isEmpty()) return; pageList.add(cur); cur = mutableListOf(); used = 0 }
+        fun gapFor(head: Boolean): Int = when {
+            cur.isEmpty() -> 0
+            head -> rh.aboveHead.toInt()
+            cur.last().head -> rh.belowHead.toInt()
+            else -> rh.para.toInt()
         }
-        fun placeHead(text: String) {
-            val lay = layout(text, headP, contentW, HEAD_MULT) // 1.16：小标题紧行距，避免尾部行距把下方撑大
-            fun headBlock(withBefore: Boolean) = Block(lay, true, if (withBefore) beforeHead else 0, afterHead)
-            // 小标题整块保留；若本页放不下「标题 + 约一行正文」，整组挪到下一页
-            if (cur.isNotEmpty()) {
-                val trial = headBlock(true)
-                if (used + trial.height + oneBodyLine > avail) flush()
-                else if (used + trial.height > avail) flush()
-            }
-            val blk = headBlock(cur.isNotEmpty())
+        fun placeImage(b: Bitmap, caption: String) {
+            // 内容宽；过高的图裁到不超过可用高度的 62%（居中裁切）
+            val h = (contentW.toFloat() * b.height / b.width).toInt().coerceAtMost((avail * 0.62f).toInt()).coerceAtLeast(1)
+            val cap = caption.takeIf { it.isNotBlank() }?.let { layoutRaw(it, capP, contentW, 1.3f) }
+            var blk = Block(emptyLay, false, gapFor(false), b, h, cap)
+            if (cur.isNotEmpty() && used + blk.height > avail) { flush(); blk = blk.atTop() }  // 放不下：整张移到下一页页首
             cur.add(blk); used += blk.height
+        }
+        val oneBodyLine = rh.line.toInt()
+        fun placeHead(text: String) {
+            val lay = layout(text, headP, contentW, HEAD_MULT)
+            if (cur.isNotEmpty() && used + Block(lay, true, gapFor(true)).height + rh.belowHead.toInt() + oneBodyLine > avail) flush()
+            val blk = Block(lay, true, gapFor(true)); cur.add(blk); used += blk.height
         }
         fun placeBody(text: String) {
             var left: CharSequence = kinsoku(text)
             while (left.isNotEmpty()) {
-                if (used >= avail && cur.isNotEmpty()) flush()
-                val full = layoutRaw(left, bodyP, contentW, spacing)
+                val full = layoutRaw(left, bodyP, contentW, bodyMult)
+                val g = gapFor(false)
                 val room = avail - used
-                // 整段（剩余）能放下：按行填满后加段间距
-                if (full.height <= room) {
-                    val blk = Block(full, false, 0, bodyGap)
-                    cur.add(blk); used += blk.height
-                    return
-                }
-                // 按 StaticLayout 行切：能塞几行就塞几行
+                val whole = Block(full, false, g)
+                if (whole.height <= room) { cur.add(whole); used += whole.height; return }
                 var fit = 0
                 for (line in 0 until full.lineCount) {
-                    val h = full.getLineBottom(line) - full.getLineTop(0)
+                    val h = g + (full.getLineBaseline(line) + bodyP.descent() - whole.inkTop).toInt()
                     if (h <= room) fit = line + 1 else break
                 }
                 if (fit == 0) {
-                    // 本页塞不下哪怕一行
-                    if (cur.isNotEmpty() && cur.last().head) {
-                        // 避免小标题孤零零停在页底：连同小标题一起带走
-                        val moved = cur.removeAt(cur.lastIndex)
-                        used = cur.sumOf { it.height }
-                        flush()
-                        val orphan = asPageStart(moved)
-                        cur.add(orphan); used = orphan.height
-                        continue
+                    if (cur.isNotEmpty() && cur.last().head) {  // 小标题别孤零零留在页底
+                        val moved = cur.removeAt(cur.lastIndex); flush(); val o = moved.atTop(); cur.add(o); used = o.height; continue
                     }
-                    if (cur.isNotEmpty()) {
-                        flush()
-                        continue
-                    }
-                    // 空白页也至少放一行，避免死循环
+                    if (cur.isNotEmpty()) { flush(); continue }
                     fit = 1
                 }
-                if (fit >= full.lineCount) {
-                    val blk = Block(full, false, 0, bodyGap)
-                    cur.add(blk); used += blk.height
-                    return
-                }
-                val end = full.getLineEnd(fit - 1)
-                val next = full.getLineStart(fit)
-                val part = full.text.subSequence(0, end)
-                val partLay = layoutRaw(part, bodyP, contentW, spacing)
-                val blk = Block(partLay, false, 0, 0) // 跨页切开：本页不加段间距
-                cur.add(blk); used += blk.height
-                left = full.text.subSequence(next, full.text.length)
+                if (fit >= full.lineCount) { cur.add(whole); used += whole.height; return }
+                val part = layoutRaw(full.text.subSequence(0, full.getLineEnd(fit - 1)), bodyP, contentW, bodyMult)
+                val blk = Block(part, false, g); cur.add(blk); used += blk.height
+                left = full.text.subSequence(full.getLineStart(fit), full.text.length)
                 flush()
             }
         }
-        for (p in paras) {
+        for ((pi, p) in paras.withIndex()) {
             val ml = Md.line(p, paras.size)
             when (ml.kind) { MdKind.H2, MdKind.H3 -> placeHead(Md.strip(ml.text)); MdKind.HR -> {}; else -> placeBody(Md.plainLine(ml)) }
+            pics[pi]?.forEach { (b, c) -> placeImage(b, c) }
         }
         if (cur.isNotEmpty()) pageList.add(cur)
-        // 收尾：任意页末仍是小标题且后面还有页，把小标题挪到下一页开头（去掉上方段距）
         var pi = 0
         while (pi < pageList.size - 1) {
             val page = pageList[pi]
             if (page.isNotEmpty() && page.last().head) {
-                val orphan = asPageStart(page.removeAt(page.lastIndex))
+                val orphan = page.removeAt(page.lastIndex).atTop()
                 if (page.isEmpty()) pageList.removeAt(pi) else pi++
-                pageList[pi].add(0, orphan)
+                val nx = pageList[pi]; if (nx.isNotEmpty()) nx[0] = nx[0].withGap(rh.belowHead.toInt())
+                nx.add(0, orphan)
             } else pi++
         }
         if (pageList.isEmpty()) pageList.add(mutableListOf())
+        lastGeometry = pageList.map { pg -> pg.map { Triple(it.head, it.gap, it.inkBottom - it.inkTop) } }
         // 超长保护：先算页数再画图，避免一次性申请几十张大图导致闪退
         if (pageList.size > MAX_PAGES) throw TooLongError("按现在的字号和行距，这篇文章需要 ${pageList.size} 张配图，超过了上限 $MAX_PAGES 张（小红书单篇最多 18 张）。建议调小字号或行距，或者把文章拆成两篇。")
+        if (countOnly) return pageList.map { DUMMY }
         val n = pageList.size.coerceAtLeast(1)
         val heads = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 34f; color = st.accent; typeface = boldTf }
         val foot = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 32f; color = st.text; alpha = 140 }
@@ -240,7 +273,8 @@ object Render {
             c.drawRect(m.toFloat(), 172f, width - m.toFloat(), 174f, Paint().apply { color = st.text; alpha = 40 })
             var y = top.toFloat()
             for (blk in blks) {
-                c.save(); c.translate(m.toFloat(), y + blk.padTop); blk.layout.draw(c); c.restore()
+                if (blk.img != null) drawPic(c, blk.img, m.toFloat(), y + blk.gap, contentW, blk.imgH, blk.cap)
+                else { c.save(); c.translate(m.toFloat(), y + blk.gap - blk.inkTop); blk.layout.draw(c); c.restore() }
                 y += blk.height
             }
             val pn = "${idx + 1} / $n"
@@ -250,6 +284,8 @@ object Render {
         }
     }
 
+    /** 测试用：最近一次分页的 (是否小标题, 上方可见空白, 字迹高度) */
+    @Volatile var lastGeometry: List<List<Triple<Boolean, Int, Int>>> = emptyList()
     const val MAX_PAGES = 40
     /** 单张长图最大高度；超过就按行拆成多张 */
     const val LONG_MAX_H = 16000

@@ -21,7 +21,7 @@ object Fonts {
         ReadFont("serif", "思源宋体", 0, emptyList()),
         ReadFont("wenkai", "霞鹜文楷", 24, cdn("npm/@fontpkg/lxgw-wen-kai@1.520.0/LXGWWenKai-Regular.ttf") +
             "https://registry.npmmirror.com/@fontpkg/lxgw-wen-kai/1.520.0/files/LXGWWenKai-Regular.ttf" + "https://unpkg.com/@fontpkg/lxgw-wen-kai@1.520.0/LXGWWenKai-Regular.ttf"),
-        ReadFont("puhui", "阿里巴巴普惠体", 8, cdn("npm/alibabapuhuiti-3-55-regular@1.0.0/AlibabaPuHuiTi-3-55-Regular.ttf") +
+        ReadFont("puhui", "阿里普惠", 8, cdn("npm/alibabapuhuiti-3-55-regular@1.0.0/AlibabaPuHuiTi-3-55-Regular.ttf") +
             "https://registry.npmmirror.com/alibabapuhuiti-3-55-regular/1.0.0/files/AlibabaPuHuiTi-3-55-Regular.ttf" + "https://unpkg.com/alibabapuhuiti-3-55-regular@1.0.0/AlibabaPuHuiTi-3-55-Regular.ttf"),
     )
     /** 下载进度 0..1；-1 表示失败 */

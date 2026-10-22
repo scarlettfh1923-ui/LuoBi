@@ -57,6 +57,8 @@ fun snackErr(e: Throwable, prefix: String = "", action: String? = null, onAction
 }
 
 /** 提示样式 A：底部深色条 + 白字 + 浅蓝动作 */
+val TAG_LH = 18.sp
+
 @Composable
 fun SoftSnackbar(d: SnackbarData) {
     val m = d.visuals as? SnackMsg
@@ -149,7 +151,7 @@ fun TagEditor(tags: List<String>, onTags: (List<String>) -> Unit, accent: Color,
         show.forEach { t ->
             // 1.4：轻量标签——平时是纯蓝字，进入编辑（点「编辑」）才显示删除
             Row(Modifier.heightIn(min = 28.dp).clip(Sq.full).then(if (editTags) Modifier.background(chipBg) else Modifier).padding(start = if (editTags) 10.dp else 2.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("#$t", fontSize = 13.sp, color = accent)
+                Text("#$t", fontSize = 13.sp, lineHeight = TAG_LH, color = accent, maxLines = 1)
                 if (editTags) Box(Modifier.size(26.dp).clip(Sq.full).clickable { onTags(tags - t) }, contentAlignment = Alignment.Center) { Ico(R.drawable.ic_x, accent, 12, "删除标签") }
             }
         }
@@ -166,7 +168,10 @@ fun TagEditor(tags: List<String>, onTags: (List<String>) -> Unit, accent: Color,
                 Box(Modifier.padding(start = 4.dp).size(22.dp).clip(Sq.full).background(accent).clickable { commit(); adding = false }, contentAlignment = Alignment.Center) { Ico(R.drawable.ic_enter, Color.White, 14, "添加") }
             }
         } else if (!editTags) {
-            Text("编辑", Modifier.heightIn(min = 28.dp).clip(Sq.full).clickable { editTags = true }.padding(horizontal = 6.dp, vertical = 5.dp), fontSize = 13.sp, color = text.copy(alpha = .45f))
+            // 1.16.1：和标签同字号、同行高、同一 28dp 行内垂直居中（以前 Text 顶对齐 + 上下 5dp 内边距，看起来比标签低）
+            Row(Modifier.heightIn(min = 28.dp).clip(Sq.full).clickable { editTags = true }.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("编辑", fontSize = 13.sp, lineHeight = TAG_LH, color = text.copy(alpha = .45f), maxLines = 1)
+            }
         } else {
             Row(Modifier.heightIn(min = 28.dp).clip(Sq.full).hairline(Sq.full, accent.copy(alpha = .6f)).clickable { adding = true }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Ico(R.drawable.ic_plus, accent, 13); Spacer(Modifier.width(3.dp)); Text("添加标签", fontSize = 12.sp, color = accent)

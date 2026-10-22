@@ -342,9 +342,23 @@ class Settings(val c: Context) {
 
     // ----- 阅读 / 出图 -----
     var fontSize get() = p.getFloat("fontSize", 17f); set(v) = put("fontSize", v)
-    var readMode get() = p.getInt("readMode", 0); set(v) = put("readMode", v)
+    var readMode: Int
+        get() {
+            if (!p.getBoolean("readModeV2", false)) { val nv = migrateReadMode(p.getInt("readMode", 0)); p.edit().putInt("readMode", nv).putBoolean("readModeV2", true).apply() }
+            return p.getInt("readMode", 0).coerceIn(0, readPalettes.lastIndex)
+        }
+        set(v) { p.edit().putInt("readMode", v).putBoolean("readModeV2", true).apply() }
     var readFont get() = s("readFont", "sans"); set(v) = put("readFont", v)
-    var cardSpacing get() = p.getFloat("cardSpacing", 1.1f).coerceIn(1.0f, 1.3f); set(v) = put("cardSpacing", v.coerceIn(1.0f, 1.3f))
+    /** 1.16.1：配图行距改为真实倍数 1.4–2.0（默认 1.7）；旧值（1.0–1.3）迁移一次 */
+    var cardSpacing: Float
+        get() {
+            if (!p.getBoolean("cardLineMigrated", false)) {
+                val nv = if (p.contains("cardSpacing")) Render.migrateSpacing(p.getFloat("cardSpacing", 1.0f)) else Render.LINE_DEFAULT
+                p.edit().putFloat("cardLine", nv).putBoolean("cardLineMigrated", true).apply()
+            }
+            return p.getFloat("cardLine", Render.LINE_DEFAULT).coerceIn(Render.LINE_MIN, Render.LINE_MAX)
+        }
+        set(v) { p.edit().putFloat("cardLine", v.coerceIn(Render.LINE_MIN, Render.LINE_MAX)).putBoolean("cardLineMigrated", true).apply() }
     var style get() = p.getInt("style", 0); set(v) = put("style", v)
     var cardRatio get() = p.getInt("cardRatio", 0); set(v) = put("cardRatio", v)
     var libSort get() = p.getInt("libSort", 0); set(v) = put("libSort", v)

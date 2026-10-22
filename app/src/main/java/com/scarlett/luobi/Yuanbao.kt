@@ -19,21 +19,37 @@ object Yuanbao {
     /** 每篇文章最多打几次元宝（约 6–8） */
     const val BUDGET_PER_ARTICLE = 8
 
-    class Err(val code: String, msg: String) : java.io.IOException(msg)
+    /** code = 腾讯云错误码（如 InvalidParameter.xxx），raw = 服务端原始提示（不含 Key） */
+    class Err(val code: String, val raw: String = "") : java.io.IOException(plain(code, raw))
     data class Page(val title: String, val url: String, val date: String, val passage: String, val content: String, val site: String, val score: Double, val authority: Int)
+    /** 这个账号的版本不支持 Site / Industry 时，本次运行后面都只发 Query */
+    @Volatile var bareOnly = false
 
     private var session: String? = null
     private var nextId = 1
 
-    /** 错误码 → 人话 */
-    fun plain(code: String): String = when {
-        code.contains("UnauthorizedOperation") -> "元宝搜索 Key 不对（或已被删除），请到元宝搜索控制台检查"
-        code.contains("ResourceNotFound") -> "元宝搜索服务未开通（开通后要等几分钟才生效）"
-        code.contains("ResourceUnavailable") -> "元宝搜索账号欠费，服务暂不可用"
-        code.contains("RequestLimitExceeded") || code == "429" -> "元宝搜索请求太频繁，被暂时限流"
-        code.contains("InvalidParameter") -> "元宝搜索参数不对"
-        code == "401" || code == "403" -> "元宝搜索 Key 不对"
-        else -> "元宝搜索暂时不可用"
+    /** 错误码 → 人话：只有 UnauthorizedOperation 才说 Key 不对；其它一律带上真实错误码和原始提示 */
+    fun plain(code: String, raw: String = ""): String {
+        val tail = " [$code" + (raw.trim().take(120).takeIf { it.isNotBlank() }?.let { "：$it" } ?: "") + "]"
+        return when {
+            code.startsWith("UnauthorizedOperation") -> "元宝搜索 Key 不对（或已被删除）$tail"
+            code.startsWith("ResourceNotFound") -> "元宝搜索服务未开通（开通后要等几分钟才生效）$tail"
+            code.startsWith("ResourceUnavailable") -> "元宝搜索账号欠费，服务暂不可用$tail"
+            code.startsWith("RequestLimitExceeded") || code == "HTTP429" -> "元宝搜索请求太频繁，被暂时限流$tail"
+            code.startsWith("InvalidParameter") -> "元宝搜索参数不被支持$tail"
+            else -> "元宝搜索出错$tail"
+        }
+    }
+
+    /** 从任意错误文本里取出错误码和提示：{"Code":"X","Message":"Y"} / [X] Y / 已知码 */
+    fun parseErr(text: String, http: Int): Err {
+        val code = Regex("\"Code\"\\s*:\\s*\"([A-Za-z.]+)\"").find(text)?.groupValues?.get(1)
+            ?: Regex("\\[?([A-Z][a-zA-Z]+(?:\\.[A-Za-z]+)?)\\]?").findAll(text).map { it.groupValues[1] }.firstOrNull { c -> codes.any { c.startsWith(it) } }
+            ?: if (http !in 200..299) "HTTP$http" else "Unknown"
+        val msg = Regex("\"Message\"\\s*:\\s*\"([^\"]*)\"").find(text)?.groupValues?.get(1)
+            ?: Regex("\"message\"\\s*:\\s*\"([^\"]*)\"").find(text)?.groupValues?.get(1)
+            ?: text.replace(Regex("\\s+"), " ").take(120)
+        return Err(code, msg.replace(Regex("Bearer\\s+\\S+"), "Bearer ***"))
     }
 
     private fun headers(key: String) = buildMap {
@@ -83,14 +99,37 @@ object Yuanbao {
 
     private fun checkErr(r: FactNet.Resp, j: JSONObject?) {
         val e = j?.optJSONObject("error")
-        val text = e?.toString() ?: if (r.code !in 200..299) r.body else ""
-        if (e != null || r.code !in 200..299) throw Err(codeIn(text).ifBlank { r.code.toString() }, plain(codeIn(text).ifBlank { r.code.toString() }))
+        if (e != null) throw parseErr(e.toString(), r.code)
+        if (r.code !in 200..299) throw parseErr(r.body, r.code)
     }
-    private val codes = listOf("UnauthorizedOperation", "ResourceNotFound", "ResourceUnavailable", "RequestLimitExceeded", "InvalidParameter", "InternalError")
-    private fun codeIn(s: String) = codes.firstOrNull { s.contains(it) }.orEmpty()
+    private val codes = listOf("UnauthorizedOperation", "ResourceNotFound", "ResourceUnavailable", "RequestLimitExceeded", "InvalidParameter", "InternalError", "FailedOperation", "LimitExceeded", "AuthFailure", "MissingParameter", "UnsupportedOperation")
 
-    /** SearchPro。site / industry 可空；Cnt 不传（极速版不支持） */
+    /**
+     * SearchPro。site / industry 可空；Cnt / Mode 从不发送（极速版不支持）。
+     * 带了可选参数却返回 InvalidParameter / UnauthorizedOperation / UnsupportedOperation 时，去掉可选参数原样重试一次，
+     * 并在本次运行里改为只发 Query（不同版本支持的参数不同）。RequestLimitExceeded 退避后重试。
+     */
     fun search(key: String, query: String, site: String = "", industry: String = "", ctx: Context? = null): List<Page> {
+        val extras = !bareOnly && (site.isNotBlank() || industry.isNotBlank())
+        return try { searchOnce(key, query, if (extras) site else "", if (extras) industry else "", ctx) }
+        catch (e: Err) {
+            val paramLike = e.code.startsWith("InvalidParameter") || e.code.startsWith("UnauthorizedOperation") || e.code.startsWith("UnsupportedOperation")
+            if (extras && paramLike) { bareOnly = true; searchOnce(key, query, "", "", ctx) } else throw e
+        }
+    }
+
+    private fun searchOnce(key: String, query: String, site: String, industry: String, ctx: Context?): List<Page> {
+        var attempt = 0
+        while (true) {
+            try { return callSearch(key, query, site, industry, ctx) }
+            catch (e: Err) {
+                if (!e.code.startsWith("RequestLimitExceeded") || attempt >= 2) throw e
+                FactNet.sleep(1000L shl attempt); attempt++
+            }
+        }
+    }
+
+    private fun callSearch(key: String, query: String, site: String, industry: String, ctx: Context?): List<Page> {
         val args = JSONObject().put("Query", clip(query))
         if (site.isNotBlank()) args.put("Site", site)
         if (industry.isNotBlank()) args.put("Industry", industry)
@@ -101,10 +140,10 @@ object Yuanbao {
         checkErr(r, j)
         val res = j?.optJSONObject("result") ?: return emptyList()
         val text = res.optJSONArray("content")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) }.filter { it.optString("type") == "text" }.joinToString("") { it.optString("text") } }.orEmpty()
-        if (res.optBoolean("isError")) { val c = codeIn(text); throw Err(c.ifBlank { "error" }, plain(c)) }
+        if (res.optBoolean("isError")) throw parseErr(text, r.code)
         val payload = res.optJSONObject("structuredContent") ?: runCatching { JSONObject(text) }.getOrNull() ?: return emptyList()
         val body = payload.optJSONObject("Response") ?: payload
-        body.optJSONObject("Error")?.let { val c = it.optString("Code"); throw Err(c, plain(c)) }
+        body.optJSONObject("Error")?.let { throw Err(it.optString("Code").ifBlank { "Unknown" }, it.optString("Message")) }
         return pages(body.optJSONArray("Pages") ?: JSONArray())
     }
 
@@ -125,7 +164,14 @@ object Yuanbao {
         "连接成功，返回 $n 条结果"
     } catch (e: Err) { e.message ?: "连接失败" } catch (e: Exception) { "连接失败：网络不可用" }
 
-    fun resetSession() { session = null }
+    /** 测试连接也走「带站点参数」的真实路径，避免按钮通过、校对失败 */
+    fun testReal(ctx: Context, key: String): String = try {
+        bareOnly = false
+        val a = search(key, "百年孤独 开头", site = "baike.baidu.com", ctx = ctx).size
+        "连接成功，返回 $a 条结果" + if (bareOnly) "（当前版本不支持站点 / 领域参数，已自动改为普通搜索）" else ""
+    } catch (e: Err) { e.message ?: "连接失败" } catch (e: Exception) { "连接失败：网络不可用" }
+
+    fun resetSession() { session = null; bareOnly = false }
 
     /** 本机按月计数（不硬拦，接近上限时提醒） */
     object Usage {

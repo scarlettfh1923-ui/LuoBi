@@ -65,9 +65,12 @@ fun AppTheme(content: @Composable () -> Unit) {
 data class ReadPalette(val name: String, val bg: Color, val text: Color, val sub: Color, val accent: Color, val surface: Color, val border: Color, val dark: Boolean, val soft: Color) {
     fun long() = LongPalette(bg.toArgb(), text.toArgb(), sub.toArgb(), accent.toArgb(), soft.toArgb(), if (dark) text.toArgb() else 0xFF1A3FA0.toInt())
 }
+/** 1.16.1 方案 A：四种阅读模式（只作用于阅读页和它的玻璃栏，不影响分享图） */
 val readPalettes = listOf(
-    ReadPalette("冷白", P3.bg, P3.text, P3.text3, P3.accent, P3.surface, P3.border, false, P3.accentSoft),
-    ReadPalette("白底", Color.White, P3.text, P3.text3, P3.accent, P3.bg, P3.border, false, P3.accentSoft),
-    ReadPalette("纸张", Color(0xFFF7F3EA), Color(0xFF2A2620), Color(0xFF8C8273), P3.accent, Color(0xFFFFFCF6), Color(0xFFE9E2D4), false, P3.accentSoft),
-    ReadPalette("石墨", Color(0xFF1B1F27), Color(0xFFE6E9EE), Color(0xFF8A94A6), Color(0xFF6F9BFF), Color(0xFF232833), Color(0x1FFFFFFF), true, Color(0xFF2A3550)),
+    ReadPalette("素白", Color(0xFFFFFFFF), Color(0xFF1F2329), Color(0xFF6B7280), Color(0xFF2F6BFF), Color(0xFFF5F6F8), Color(0xFFE5E7EB), false, Color(0xFFE6EEFF)),
+    ReadPalette("纸张", Color(0xFFF4ECDD), Color(0xFF3A3128), Color(0xFF8A7C69), Color(0xFF2F5FD0), Color(0xFFFAF5EA), Color(0xFFE3D8C3), false, Color(0xFFE3E8F5)),
+    ReadPalette("抹茶", Color(0xFFE3ECDF), Color(0xFF26332A), Color(0xFF6E7F70), Color(0xFF2D62E6), Color(0xFFEEF3EB), Color(0xFFCCD9C6), false, Color(0xFFDDE6F6)),
+    ReadPalette("夜读", Color(0xFF17181B), Color(0xFFD4CCBF), Color(0xFF8C877E), Color(0xFF7FA2FF), Color(0xFF212226), Color(0x1FFFFFFF), true, Color(0xFF263252)),
 )
+/** 旧模式下标（0 冷白 / 1 白底 / 2 纸张 / 3 石墨）→ 新下标（0 素白 / 1 纸张 / 2 抹茶 / 3 夜读） */
+fun migrateReadMode(old: Int): Int = when (old) { 0, 1 -> 0; 2 -> 1; 3 -> 3; else -> 0 }

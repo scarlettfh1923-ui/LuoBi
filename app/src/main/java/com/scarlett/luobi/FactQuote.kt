@@ -30,6 +30,22 @@ object FactQuotes {
         "麦克卢汉" to Known(listOf("Marshall McLuhan"), mapOf("理解媒介" to "Understanding Media"), mapOf("媒介即讯息" to "the medium is the message")),
     )
 
+    /** 常被引用开头 / 结尾的名著：中文名 → (作者, 英文书名, 原文关键句) */
+    private data class Book(val author: String, val enAuthor: String, val en: String, val lines: Map<String, String>)
+    private val books = mapOf(
+        "百年孤独" to Book("马尔克斯", "Gabriel García Márquez", "One Hundred Years of Solitude", mapOf("行刑队" to "Many years later, as he faced the firing squad", "冰块" to "discover ice", "多年以后" to "Many years later, as he faced the firing squad")),
+        "了不起的盖茨比" to Book("菲茨杰拉德", "F. Scott Fitzgerald", "The Great Gatsby", mapOf("逆流" to "boats against the current", "绿光" to "the green light", "往前划" to "boats against the current")),
+        "双城记" to Book("狄更斯", "Charles Dickens", "A Tale of Two Cities", mapOf("最好的时代" to "It was the best of times, it was the worst of times")),
+        "安娜·卡列尼娜" to Book("托尔斯泰", "Leo Tolstoy", "Anna Karenina", mapOf("幸福的家庭" to "Happy families are all alike")),
+        "傲慢与偏见" to Book("简·奥斯汀", "Jane Austen", "Pride and Prejudice", mapOf("单身汉" to "a single man in possession of a good fortune")),
+        "局外人" to Book("加缪", "Albert Camus", "The Stranger", mapOf("妈妈死了" to "Mother died today")),
+        "1984" to Book("奥威尔", "George Orwell", "Nineteen Eighty-Four", mapOf("十三下" to "the clocks were striking thirteen", "老大哥" to "Big Brother is watching you")),
+        "小王子" to Book("圣埃克苏佩里", "Antoine de Saint-Exupéry", "The Little Prince", mapOf("眼睛是看不见" to "what is essential is invisible to the eye")),
+        "红楼梦" to Book("曹雪芹", "", "", emptyMap()), "围城" to Book("钱锺书", "", "", emptyMap()), "活着" to Book("余华", "", "", emptyMap()),
+    )
+    /** 「《书》的开头 / 结尾 / 第一句 / 写道：“……”」这类书中原句 */
+    private val bookLineRe = Regex("《([^》]{1,30})》[^“「。！？\\n]{0,16}?(?:开头|开篇|第一句|首句|结尾|结局|最后一句|末句|写道|写到|里写|中写|有一句|说)[^“「。！？\\n]{0,8}?[：:，,]?\\s*[“「]([^”」]{4,120})[”」]")
+
     private val verbs = "(?:曾经说过|曾说过|曾说|说过|说|写道|写到|指出|认为|所言|提出|有言|有一句话|讲过)"
     private val quoteRe = Regex("([\\p{IsHan}·]{2,8})(?:（([A-Za-z. ]{3,40})）)?[^。！？\\n“「]{0,16}?$verbs[：:，,]?\\s*[“「]([^”」]{4,90})[”」]")
     private val dashRe = Regex("[“「]([^”」]{4,90})[”」]\\s*[——-]{1,2}\\s*([\\p{IsHan}·]{2,8})")
@@ -53,7 +69,17 @@ object FactQuotes {
             val enBook = k?.books?.entries?.firstOrNull { book.contains(it.key) || claim.contains(it.key) }?.value ?: k?.books?.values?.firstOrNull().orEmpty()
             val enTerms = k?.terms?.entries?.filter { claim.contains(it.key) }?.map { it.value }.orEmpty()
             Item(sp, claim, book, enNames, enBook, enTerms, keyTerms(claim))
-        }.distinctBy { it.speaker + it.claim }.take(3)
+        }.let { quoted ->
+            // 书中原句：说话人 = 作者（已知时）或书名本身
+            val lines = bookLineRe.findAll(text).mapNotNull { m ->
+                val book = m.groupValues[1]; val claim = m.groupValues[2]
+                if (quoted.any { it.claim == claim }) return@mapNotNull null
+                val b = books[book]
+                Item(b?.author?.takeIf { it.isNotBlank() } ?: book, claim, book, listOfNotNull(b?.enAuthor?.takeIf { it.isNotBlank() }), b?.en.orEmpty(),
+                    b?.lines?.entries?.filter { claim.contains(it.key) }?.map { it.value }.orEmpty().distinct(), keyTerms(claim))
+            }.toList()
+            (lines + quoted)
+        }.distinctBy { it.speaker + it.claim }.take(5)
     }
     private fun String.trimSpeaker() = replace(Regex("^(?:正如|就像|如|哲学家|历史学家|作家|学者|英国|法国|德国|美国|意大利)+"), "")
 
@@ -68,8 +94,9 @@ object FactQuotes {
     fun queries(it: Item): Pair<List<String>, List<String>> {
         val zh = FactEvidence.dedupe(listOfNotNull(
             it.keys.take(2).takeIf { k -> k.isNotEmpty() }?.let { k -> (listOf(it.speaker) + k).joinToString(" ") },
-            it.book.takeIf { b -> b.isNotBlank() }?.let { b -> "${it.speaker} 《$b》" },
-            "${it.speaker} 名言",
+            it.book.takeIf { b -> b.isNotBlank() }?.let { b -> (listOf("《$b》") + it.keys.take(2)).joinToString(" ") },
+            it.book.takeIf { b -> b.isNotBlank() }?.let { b -> if (it.speaker == b) "《$b》 原文" else "${it.speaker} 《$b》" },
+            if (it.book.isBlank()) "${it.speaker} 名言" else null,
         ), 3)
         val name = it.enNames.firstOrNull { n -> n.contains(' ') } ?: it.enNames.firstOrNull()
         val surname = it.enNames.lastOrNull()
@@ -81,9 +108,9 @@ object FactQuotes {
     /** 资料与这条引语相关：提到说话人（中/外文名）且命中关键词、原文短语或书名 */
     fun relevant(h: FactHit, it: Item): Boolean {
         val t = (h.title + " " + h.snippet + " " + h.text).lowercase()
-        val who = t.contains(it.speaker) || it.enNames.any { n -> t.contains(n.lowercase().substringAfterLast(' ')) }
+        val who = t.contains(it.speaker) || (it.book.isNotBlank() && t.contains(it.book)) || (it.enBook.isNotBlank() && t.contains(it.enBook.lowercase())) || it.enNames.any { n -> t.contains(n.lowercase().substringAfterLast(' ')) }
         val what = it.keys.any { k -> t.contains(k) } || it.enTerms.any { e -> t.contains(e.lowercase().take(18)) } ||
-            (it.book.isNotBlank() && t.contains(it.book)) || (it.enBook.isNotBlank() && t.contains(it.enBook.lowercase()))
+            (it.speaker != it.book && it.book.isNotBlank() && t.contains(it.book)) || (it.enBook.isNotBlank() && t.contains(it.enBook.lowercase()) && it.enTerms.isEmpty())
         return who && what
     }
 
@@ -173,7 +200,7 @@ object FactQuotes {
     /** 引语核对结果写回：无资料的标「无法核实」并列出试过的源 */
     fun annotate(issues: List<FactIssue>, trails: List<Trail>): List<FactIssue> {
         val out = issues.map { iss ->
-            val t = trails.firstOrNull { tr -> iss.span.contains(tr.item.speaker) || tr.item.claim.take(6).let { iss.span.contains(it) || iss.claim.contains(it) } } ?: return@map iss
+            val t = trails.firstOrNull { tr -> tr.item.claim.take(6).let { iss.span.contains(it) || iss.claim.contains(it) } || iss.span.contains(tr.item.speaker) } ?: return@map iss
             if (t.found == null) iss.copy(verdict = "无法核实", correction = "", note = "没有找到出处。已尝试：" + t.tried.joinToString("、") + "。")
             else iss.copy(links = (listOf(FactLink(t.found.title, t.found.url, t.found.via)) + iss.links).distinctBy { it.url },
                 quote = iss.quote.ifBlank { t.found.text.take(200) }, corroboration = iss.corroboration.coerceAtLeast(1))

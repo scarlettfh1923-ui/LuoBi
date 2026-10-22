@@ -269,7 +269,8 @@ object FactCheck {
                 if (ybLeft <= 0) break
                 ybLeft--
                 val r = runCatching { Yuanbao.search(ybKey, FactEvidence.plotQuery(item), site = site, ctx = ctx) }
-                r.onFailure { if (SearchProvider.YUANBAO !in fails) fails[SearchProvider.YUANBAO] = it.message ?: "元宝搜索暂时不可用" }
+                r.onFailure { if (SearchProvider.YUANBAO !in fails && SearchProvider.YUANBAO !in used) fails[SearchProvider.YUANBAO] = it.message ?: "元宝搜索暂时不可用" }
+                r.onSuccess { if (SearchProvider.YUANBAO !in used) used += SearchProvider.YUANBAO; fails.remove(SearchProvider.YUANBAO) }
                 val got = r.getOrNull().orEmpty().take(2)
                 got.forEach { pg -> val h = Yuanbao.toHit(pg); take(h.title, h.url, "元宝", h.text) }
                 if (r.isFailure) break

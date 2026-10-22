@@ -325,7 +325,7 @@ fun FactCheckPage(back: () -> Unit) {
                 val used = Yuanbao.Usage.label(ctx); val near = Yuanbao.Usage.nearLimit(ctx)
                 Text(used + if (near) " · 快到每月免费额度了" else " · 每月 2000 次免费", Modifier.weight(1f), fontSize = 12.sp, color = if (near) Color(0xFFC0392B) else P3.text3)
                 TextAction(if (wsaBusy) "测试中…" else "测试连接", enabled = wsa.isNotBlank() && !wsaBusy) {
-                    wsaBusy = true; wsaScope.launch { wsaMsg = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Yuanbao.resetSession(); Yuanbao.test(ctx, wsa) }; wsaBusy = false }
+                    wsaBusy = true; wsaScope.launch { wsaMsg = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Yuanbao.resetSession(); Yuanbao.testReal(ctx, wsa) }; wsaBusy = false }
                 }
             }
             if (wsaMsg.isNotBlank()) Text(wsaMsg, Modifier.padding(start = 4.dp, top = 2.dp), fontSize = 12.sp, color = P3.text2)

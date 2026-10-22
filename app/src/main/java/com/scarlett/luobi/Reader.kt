@@ -1,6 +1,16 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 package com.scarlett.luobi
 
+import androidx.compose.ui.semantics.contentDescription
+
+import androidx.compose.ui.semantics.semantics
+
+import androidx.compose.ui.semantics.selected
+
+import androidx.compose.ui.graphics.toArgb
+
+import androidx.compose.ui.graphics.nativeCanvas
+
 import androidx.compose.ui.focus.focusProperties
 
 import androidx.compose.ui.graphics.graphicsLayer
@@ -88,7 +98,8 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 val reg = Fonts.typeface(ctx, fid, false); val bold = Fonts.typeface(ctx, fid, true)
                 val r = CardRatio.fromIndex(ratio)
                 listOf(Render.cover(n.title, n.tagList(), Render.styles[style], aiBg, bold, r.w, r.h)) +
-                    Render.pages(n.title, n.body, Render.styles[style], reg, font * 46f / 18f, spacing, bold, r.w, r.h)
+                    Render.pages(n.title, n.body, Render.styles[style], reg, font * 46f / 18f, spacing, bold, r.w, r.h,
+                        pics = PicCache.bitmaps(ctx, n.pics(), Export.paras(n.body).size, Settings(ctx).showCredit, maxPx = 2048)).also { CardHint.dropped = Render.lastDroppedPics }
             }
         } catch (_: kotlinx.coroutines.CancellationException) {
         } catch (e: OutOfMemoryError) {
@@ -409,7 +420,7 @@ fun AaPanel(font: Float, setFont: (Float) -> Unit, fontId: String, setFontId: (S
             Fonts.list.forEach { f ->
                 val sel = f.id == fontId; val ready = Fonts.ready(ctx, f.id); val prog = Fonts.progress[f.id]
                 val fam = remember(f.id, ready, prog) { Fonts.family(ctx, f.id) }
-                Column(Modifier.weight(1f).clip(Sq.m).background(if (sel) pal.accent.copy(alpha = .12f) else pal.bg)
+                Column(Modifier.weight(1f).height(78.dp).clip(Sq.m).background(if (sel) pal.accent.copy(alpha = .12f) else pal.bg)
                     .hairline(Sq.m, if (sel) pal.accent else pal.border, if (sel) 2.dp else 1.dp)
                     .clickable {
                         if (ready) setFontId(f.id)
@@ -417,9 +428,11 @@ fun AaPanel(font: Float, setFont: (Float) -> Unit, fontId: String, setFontId: (S
                             try { Fonts.download(ctx, f); setFontId(f.id); snack("${f.name} 已下载") } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Throwable) { snackErr(e, "字体下载失败：") }
                         }
                     }, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("永和", Modifier.padding(top = 8.dp), fontFamily = fam ?: FontFamily.Default, fontSize = 22.sp, color = pal.text.copy(alpha = if (fam == null) .45f else 1f))
+                    // 1.16.1：「永和」按实测字形边界居中（各字体字面框不同，按行高居中会上下偏）
+                    val tf = remember(f.id, ready, prog) { if (ready) runCatching { Fonts.typeface(ctx, f.id, false) }.getOrNull() else null }
+                    GlyphCentered("永和", tf, 22.sp, (if (sel) pal.accent else pal.text).copy(alpha = if (tf == null) .45f else 1f), Modifier.fillMaxWidth().weight(1f))
                     val label = when { ready -> f.name; prog != null && prog >= 0f -> "${(prog * 100).toInt()}%"; prog != null -> "失败·重试"; else -> "下载 ${f.sizeMb}MB" }
-                    Text(label, Modifier.padding(bottom = 8.dp), fontSize = 12.sp, maxLines = 1, color = if (sel) pal.accent else pal.sub)
+                    Text(label, Modifier.padding(bottom = 8.dp), fontSize = 11.sp, maxLines = 1, color = if (sel) pal.accent else pal.sub)
                     if (prog != null && prog >= 0f) LinearProgressIndicator({ prog }, Modifier.fillMaxWidth().height(3.dp), color = pal.accent, trackColor = pal.sub.copy(alpha = .2f))
                 }
             }
@@ -427,9 +440,17 @@ fun AaPanel(font: Float, setFont: (Float) -> Unit, fontId: String, setFontId: (S
         Text("阅读模式", fontSize = 12.sp, color = pal.sub, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             readPalettes.forEachIndexed { i, p ->
-                Box(Modifier.weight(1f).height(36.dp).clip(Sq.full).background(p.bg)
-                    .hairline(Sq.full, if (mode == i) pal.accent else pal.border, if (mode == i) 2.dp else 1.dp)
-                    .clickable { setMode(i) }, contentAlignment = Alignment.Center) { Text(p.name, color = p.text, fontSize = 13.sp) }
+                // 1.16.1 方案 A：色卡（Aa + 两道色条），选中描边主色
+                Column(Modifier.weight(1f).semantics { selected = mode == i }.clickable { setMode(i) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.fillMaxWidth().height(56.dp).clip(Sq.m).background(p.bg).hairline(Sq.m, if (mode == i) pal.accent else p.border, if (mode == i) 2.dp else 1.dp).padding(horizontal = 10.dp, vertical = 8.dp)) {
+                        Text("Aa", color = p.text, fontSize = 16.sp, fontFamily = FontFamily.Serif, lineHeight = 18.sp)
+                        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.width(18.dp).height(3.dp).clip(Sq.full).background(p.accent)); Spacer(Modifier.width(4.dp))
+                            Box(Modifier.width(12.dp).height(3.dp).clip(Sq.full).background(p.sub))
+                        }
+                    }
+                    Text(p.name, Modifier.padding(top = 4.dp), color = if (mode == i) pal.accent else pal.sub, fontSize = 11.sp)
+                }
             }
         }
     }
@@ -471,11 +492,11 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
                 }
             }
             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("行距 ${"%.1f".format(liveSpacing)}", fontSize = 12.sp, color = pal.sub, modifier = Modifier.width(56.dp))
-                SoftSlider(liveSpacing, { liveSpacing = it }, 1.0f..1.3f, 0.05f, pal.accent, pal.sub.copy(alpha = .25f), pal.surface, Modifier.weight(1f),
+                Text("行距 ${when { liveSpacing < 1.55f -> "紧凑"; liveSpacing < 1.85f -> "标准"; else -> "宽松" }}", fontSize = 12.sp, color = pal.sub, modifier = Modifier.width(64.dp))
+                SoftSlider(liveSpacing, { liveSpacing = it }, Render.LINE_MIN..Render.LINE_MAX, 0.1f, pal.accent, pal.sub.copy(alpha = .25f), pal.surface, Modifier.weight(1f),
                     onChangeFinished = { setSpacing(it) })
             }
-            Text(if (imgs.size > 18) "小红书单篇最多 18 张，可调小行距或字号" else "换比例后封面与正文图会重新分页", fontSize = 12.sp, color = if (imgs.size > 18) Color(0xFFC0392B) else pal.sub)
+            Text(if (imgs.size > 18) "小红书单篇最多 18 张，可调小行距或字号" else if (CardHint.dropped > 0) "小红书单篇最多 18 张，已省略后面 ${CardHint.dropped} 张文中配图" else "换比例后封面与正文图会重新分页", fontSize = 12.sp, color = if (imgs.size > 18) Color(0xFFC0392B) else pal.sub)
         }
         Spacer(Modifier.height(14.dp))
         if (imgs.isEmpty()) Box(Modifier.fillMaxWidth().height(400.dp), contentAlignment = Alignment.Center) {
@@ -599,4 +620,22 @@ fun Modifier.riseIn(i: Int, on: Boolean): Modifier = if (!on || i > 12) this els
     val a = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(380L * i); a.animateTo(1f, androidx.compose.animation.core.tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
     graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 10f * density }
+}
+
+
+/** 1.16.1：配图页提示（省略了几张文中配图） */
+object CardHint { var dropped by mutableStateOf(0) }
+
+
+/** 按字形实测边界（Paint.getTextBounds）把文字放在正中 */
+@Composable
+fun GlyphCentered(text: String, tf: android.graphics.Typeface?, size: androidx.compose.ui.unit.TextUnit, color: Color, modifier: Modifier = Modifier) {
+    val d = androidx.compose.ui.platform.LocalDensity.current
+    val px = with(d) { size.toPx() }
+    androidx.compose.foundation.Canvas(modifier.semantics { contentDescription = text }) {
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = px; typeface = tf ?: android.graphics.Typeface.DEFAULT; this.color = color.toArgb() }
+        val r = android.graphics.Rect(); paint.getTextBounds(text, 0, text.length, r)
+        val x = this.size.width / 2f - r.exactCenterX(); val y = this.size.height / 2f - r.exactCenterY()
+        drawContext.canvas.nativeCanvas.drawText(text, x, y, paint)
+    }
 }

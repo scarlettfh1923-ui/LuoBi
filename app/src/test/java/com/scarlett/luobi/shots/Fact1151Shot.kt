@@ -45,7 +45,7 @@ class Fact1151Shot {
         val body = "《甜蜜蜜》1996年上映，由王家卫执导，张曼玉和黎明主演。\n\n两人最后在纽约街头重逢。漂泊比爱情更动人。"
         runBlocking {
             val d = AppDb.get(ctx).notes()
-            val n = Note(title = "甜蜜蜜：漂泊比爱情更动人", body = body, tags = "影评", templateName = "影评", model = "DeepSeek · deepseek-flash", category = "电影", factReportJson = FactCheck.encodeReport(report))
+            val n = Note(title = "甜蜜蜜：漂泊比爱情更动人", body = body, tags = "影评", templateName = "影评", model = "DeepSeek · deepseek-flash", category = "电影", factReportJson = FactCheck.encodeReport(report), createdAt = System.currentTimeMillis() + 3_600_000L)
             val id = d.insert(n); d.update(n.copy(id = id, rootId = id))
         }
         rule.mainClock.advanceTimeBy(800); rule.waitForIdle()
@@ -85,7 +85,7 @@ class Fact1151Shot {
     }
     @Test fun editPageKeyboard() {
         val ctx = RuntimeEnvironment.getApplication()
-        runBlocking { val d = AppDb.get(ctx).notes(); val n = Note(title = "编辑页测试", body = "第一段正文。\n\n第二段正文。", tags = "a b", category = "电影")
+        runBlocking { val d = AppDb.get(ctx).notes(); val n = Note(title = "编辑页测试", body = "第一段正文。\n\n第二段正文。", tags = "a b", category = "电影", createdAt = System.currentTimeMillis() + 3_600_000L)
             val id = d.insert(n); d.update(n.copy(id = id, rootId = id)) }
         rule.mainClock.advanceTimeBy(800); rule.waitForIdle()
         rule.onAllNodesWithText("案头", substring = false).onFirst().performClick()

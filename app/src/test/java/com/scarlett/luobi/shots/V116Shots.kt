@@ -18,7 +18,7 @@ import org.robolectric.annotation.GraphicsMode
 
 abstract class V116Base(private val w: String) {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
-    private val dir = System.getProperty("user.dir") + "/../../screenshots/v1.16.0/"
+    private val dir = System.getProperty("user.dir") + "/../../screenshots/v1.16.1/"
     private fun step(ms: Long = 900) { rule.mainClock.advanceTimeBy(ms); rule.waitForIdle() }
     private fun shot(name: String) { step(); Thread.sleep(200); captureScreenRoboImage("$dir$w-$name.png") }
 
@@ -30,7 +30,7 @@ abstract class V116Base(private val w: String) {
             val d = AppDb.get(ctx).notes()
             listOf("电影", "社会学与现代性", "文学", "").forEachIndexed { i, c ->
                 val n = Note(title = "第${i + 1}篇：短剧为什么越来越“降智”？", body = "## 一、注意力经济\n" + "短剧的节奏越来越快，观众的耐心越来越少。".repeat(12) + "\n## 二、算法\n" + "推荐算法奖励的是三秒钟内的刺激。".repeat(10),
-                    tags = "短剧 注意力经济", templateName = "通用", model = "m", category = c, favorite = i == 0, createdAt = now + 60_000L - i * 3 * day)
+                    tags = "短剧 注意力经济", templateName = "通用", model = "m", category = c, favorite = i == 0, createdAt = now + 600_000L - i * 3 * day)
                 val id = d.insert(n); d.update(n.copy(id = id, rootId = id))
             }
         }
@@ -48,6 +48,9 @@ abstract class V116Base(private val w: String) {
         assertTrue("分享栏有按钮显示成选中：${shareSel.size}", shareSel.isEmpty())
         rule.onAllNodesWithText("小红书", substring = true).onFirst().assertExists()
         shot("reader")
+        rule.onAllNodesWithContentDescription("阅读设置", substring = true).onFirst().performClick()
+        step(1200)
+        shot("reader-aa")
     }
 }
 

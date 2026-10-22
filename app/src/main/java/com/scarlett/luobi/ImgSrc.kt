@@ -124,6 +124,6 @@ object PicCache {
     } catch (_: Exception) { null }
     fun thumb(ctx: Context, url: String): Bitmap? = try { decode(fetch(ctx, url), 400) } catch (_: Exception) { null }
     /** 长图用：段落号 → (图, 图注+来源) */
-    fun bitmaps(ctx: Context, pics: List<Pic>, paraCount: Int, showCredit: Boolean = true): Map<Int, List<Pair<Bitmap, String>>> =
-        Pics.byPara(pics, paraCount).mapValues { (_, l) -> l.mapNotNull { p -> load(ctx, p, 1400)?.let { it to p.captionLine(showCredit) } } }
+    fun bitmaps(ctx: Context, pics: List<Pic>, paraCount: Int, showCredit: Boolean = true, maxPx: Int = 1400): Map<Int, List<Pair<Bitmap, String>>> =
+        Pics.byPara(pics, paraCount).mapValues { (_, l) -> l.mapNotNull { p -> load(ctx, p, maxPx)?.let { it to p.captionLine(showCredit) } } }
 }
