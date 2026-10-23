@@ -64,7 +64,7 @@ class WriteState(ctx: Context) {
 }
 
 @Composable
-fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGenErr: () -> Unit, goModels: () -> Unit) {
+fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGenErr: () -> Unit, goModels: () -> Unit, genProg: GenProgress? = null, onCancelGen: () -> Unit = {}, onOpenNote: (Long) -> Unit = {}) {
     val ctx = LocalContext.current; val scope = rememberCoroutineScope()
 
     fun extract() {
@@ -146,13 +146,15 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGen
                 }
             }
             if (ws.extracted && !ws.sheet) item(key = "done") {
-                Row(Modifier.animateItem().padding(horizontal = 24.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade()).padding(horizontal = 24.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("意图已提取：" + (ws.values["想写什么"]?.takeIf { it.isNotBlank() } ?: "（未填写想写什么）"), Modifier.weight(1f), fontSize = 13.sp, color = P3.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     TextAction(if (ws.extracting) "提取中…" else "重新提取", enabled = !ws.extracting) { extract() }
                 }
             }
-            ws.err?.let { e -> item(key = "err") { Box(Modifier.animateItem().padding(vertical = 2.dp)) { ErrorCard(e, { extract() }, if (e.settings) goModels else null) { ws.err = null } } } }
-            if (genErr != null) item(key = "genErr") { Box(Modifier.animateItem().padding(vertical = 2.dp)) { ErrorCard(genErr.f, { clearGenErr(); genErr.retry() }, if (genErr.f.settings) goModels else null) { clearGenErr() } } }
+            ws.err?.let { e -> item(key = "err") { Box(Modifier.animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade()).padding(vertical = 2.dp)) { ErrorCard(e, { extract() }, if (e.settings) goModels else null) { ws.err = null } } } }
+            if (genErr != null) item(key = "genErr") { Box(Modifier.animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade()).padding(vertical = 2.dp)) { ErrorCard(genErr.f, { clearGenErr(); genErr.retry() }, if (genErr.f.settings) goModels else null) { clearGenErr() } } }
+            // 1.18：后台生成卡（方案 C），在「灵感」正上方；收起时整项高度动画，灵感平滑上移
+            item(key = "genCard") { GenCardSlot(genProg, onCancelGen, onOpenNote) }
             // ---- 灵感 ----
             item(key = "inspHead") {
                 Row(Modifier.padding(start = 24.dp, end = 20.dp, top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
@@ -162,10 +164,10 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGen
                     Text(if (inspBusy) "刷新中…" else "刷新", Modifier.clip(Sq.s).clickable(enabled = !inspBusy) { loadInspire(true) }.padding(4.dp), fontSize = 12.sp, color = P3.accent)
                 }
             }
-            inspErr?.let { e -> item(key = "inspErr") { Box(Modifier.animateItem()) { ErrorCard(e, { loadInspire(true) }, if (e.settings) goModels else null) { inspErr = null } } } }
+            inspErr?.let { e -> item(key = "inspErr") { Box(Modifier.animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade())) { ErrorCard(e, { loadInspire(true) }, if (e.settings) goModels else null) { inspErr = null } } } }
             val r = insp
             if (r == null && inspBusy) item(key = "inspLoading") {
-                Card(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).animateItem()) {
+                Card(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade())) {
                     repeat(4) { i -> if (i > 0) Spacer(Modifier.height(14.dp)); Box(Modifier.fillMaxWidth(if (i % 2 == 0) .85f else .6f).height(14.dp).clip(Sq.full).background(P3.surface2)) }
                 }
             }
@@ -175,7 +177,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGen
                         Modifier.padding(horizontal = 24.dp, vertical = 2.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp)
                 }
                 item(key = "inspList") {
-                    Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).animateItem(), pad = 0.dp) {
+                    Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade()), pad = 0.dp) {
                         r.topics.forEachIndexed { i, t ->
                             if (i > 0) HorizontalDivider(Modifier.padding(start = 48.dp), thickness = Dp.Hairline, color = P3.border)
                             Row(Modifier.fillMaxWidth().clickable { ws.raw = Inspire.fillText(t); ws.saveRaw(); snack("已填入选题，可以修改后提取意图") }.padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {

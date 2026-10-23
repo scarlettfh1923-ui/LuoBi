@@ -97,7 +97,12 @@ fun App() {
     val infos by remember { wm.getWorkInfosForUniqueWorkFlow(CopyWorker.NAME) }.collectAsState(initial = emptyList())
     val info = infos.firstOrNull { !it.state.isFinished } ?: infos.lastOrNull()
     val running = info != null && !info.state.isFinished
-    val startGen: (GenJob) -> Unit = { j -> genErr = null; if (!running) CopyWorker.start(ctx, j) }
+    val runningKind = remember(info?.id) { if (running) (try { GenJob.parse(genPrefs.getString("job", "{}") ?: "{}").kind } catch (_: Exception) { "write" }) else "" }
+    // 1.18：不再弹全屏遮罩；写作的进度在创作页卡片里，改写用底部进行中提示
+    val genProg = if (running && runningKind != "rewrite") CopyWorker.progressOf(info!!.progress) else null
+    LaunchedEffect(running, runningKind) { if (running && runningKind == "rewrite") snackBusy("正在改写…可以先做别的，改好会提醒你") }
+    LaunchedEffect(Unit) { GenCard.load(ctx) }
+    val startGen: (GenJob) -> Unit = { j -> genErr = null; if (running) snack("正在写一篇，写完再开始下一篇", false) else CopyWorker.start(ctx, j) }
     LaunchedEffect(info?.id, info?.state) {
         val i = info ?: return@LaunchedEffect
         if (!i.state.isFinished) return@LaunchedEffect
@@ -106,10 +111,12 @@ fun App() {
         genPrefs.edit().putString("seen", wid).apply()
         when (i.state) {
             androidx.work.WorkInfo.State.SUCCEEDED -> {
-                CopyWorker.clearDoneNotice(ctx)
                 val id = i.outputData.getLong(CopyWorker.K_NOTE, 0L)
                 val rewrite = i.outputData.getString(CopyWorker.K_KIND) == "rewrite"
-                if (id > 0) { if (rewrite && route is Route.Read) route = Route.Read(id) else { if (!rewrite) ws.reset(); go(Route.Read(id)) }; if (rewrite) snack("已改写，存为新版本，可以在版本里退回") }
+                // 1.18：写作完成不跳转——卡片变成「已写好」+ 通知；只有改写还在阅读页时切到新版本
+                if (rewrite) { CopyWorker.clearDoneNotice(ctx); if (id > 0 && route is Route.Read) route = Route.Read(id); snack("已改写，存为新版本，可以在版本里退回") }
+                else { val job = try { GenJob.parse(genPrefs.getString("job", "{}") ?: "{}") } catch (_: Exception) { null }
+                    if (job != null && ws.raw.trim() == job.raw.trim()) ws.reset() }
             }
             androidx.work.WorkInfo.State.FAILED -> {
                 CopyWorker.clearDoneNotice(ctx)
@@ -138,7 +145,7 @@ fun App() {
                     Box(Modifier.fillMaxSize().backdropSource(bd).padding(top = pad.calculateTopPadding())) {
                         val bottom = pad.calculateBottomPadding()
                         when (r.i) {
-                            0 -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) })
+                            0 -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) }, genProg, { CopyWorker.cancel(ctx) }) { go(Route.Read(it)) }
                             1 -> LibraryScreen(db, bottom, { tab(0) }, libManaging, { libManaging = it }) { go(Route.Read(it)) }
                             else -> SettingsHome(db, bottom) { go(Route.Sub(it)) }
                         }
@@ -149,20 +156,8 @@ fun App() {
             }
         }
         // 1.9：意图卡底部弹层画在最外层（不在 Scaffold 里），键盘留白只算一次
-        if (route == Route.Tab(0) && !running) IntentSheet(db, ws, { go(Route.Sub("models")) }, { go(Route.Sub("length")) }, { go(Route.Sub("template:$it")) }) { j -> ws.sheet = false; startGen(j) }
+        if (route == Route.Tab(0)) IntentSheet(db, ws, { go(Route.Sub("models")) }, { go(Route.Sub("length")) }, { go(Route.Sub("template:$it")) }) { j -> ws.sheet = false; startGen(j) }
         SnackbarHost(host, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = 96.dp)) { SoftSnackbar(it) }
-        AnimatedVisibility(running, enter = Motion.fadeIn, exit = Motion.fadeOut) {
-            Box(Modifier.fillMaxSize().background(Color(0x55000000)).clickable(enabled = false) {}, contentAlignment = Alignment.Center) {
-                Column(Modifier.padding(32.dp).clip(Sq.xl).background(P3.surface).padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = 12.dp).widthIn(max = 280.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally) {
-                    GeneratingNib()
-                    Spacer(Modifier.height(16.dp))
-                    Text(if (GenJob.parse(genPrefs.getString("job", "{}") ?: "{}").kind == "rewrite") "正在改写…" else "正在写文章…", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text)
-                    Text("通常 15–60 秒。可以切出去，写好会通知你", Modifier.padding(top = 6.dp), fontSize = 12.sp, color = P3.text3, textAlign = TextAlign.Center)
-                    TextButton(onClick = { CopyWorker.cancel(ctx) }, Modifier.padding(top = 4.dp), shape = Sq.full) { Text("取消", color = P3.text2) }
-                }
-            }
-        }
     }
 }
 

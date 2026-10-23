@@ -195,7 +195,7 @@ fun SkeletonCard(widths: Pair<Float, Float>) {
 
 @Composable
 fun ErrorCard(f: Friendly, onRetry: (() -> Unit)?, onSettings: (() -> Unit)?, onClose: () -> Unit) {
-    val red = Color(0xFFA23A2C)
+    val red = P3.danger
     val title = f.title; val detail = f.detail
     var rawOpen by remember(f) { mutableStateOf(false) }
     Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(Sq.xl).background(Color(0xFFFDF1EE)).hairline(Sq.xl, Color(0xFFF2C9C0)).padding(14.dp)) {
@@ -221,7 +221,7 @@ fun EmptyState(icon: Int, title: String, sub: String, button: String?, onClick: 
         Ico(icon, MaterialTheme.colorScheme.outline, 56)
         Text(title, Modifier.padding(top = 10.dp), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
         Text(sub, Modifier.padding(top = 4.dp), fontSize = 13.sp, color = t3(), textAlign = TextAlign.Center, lineHeight = 19.sp)
-        if (button != null) Button(onClick, Modifier.padding(top = 14.dp), shape = Sq.full) { Text(button) }
+        if (button != null) FilledButton(onClick, Modifier.padding(top = 14.dp), shape = Sq.full) { Text(button) }
     }
 }
 

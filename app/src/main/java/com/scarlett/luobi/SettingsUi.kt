@@ -324,7 +324,7 @@ fun FactCheckPage(back: () -> Unit) {
             InputBox(wsa, { wsa = it.trim(); s.wsaKey = wsa }, "粘贴元宝搜索（WSA）API Key，加密存在本机", singleLine = true, secret = true, mono = true)
             Row(Modifier.padding(top = 6.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 val used = Yuanbao.Usage.label(ctx); val near = Yuanbao.Usage.nearLimit(ctx)
-                Text(used + if (near) " · 快到每月免费额度了" else " · 每月 2000 次免费", Modifier.weight(1f), fontSize = 12.sp, color = if (near) Color(0xFFC0392B) else P3.text3)
+                Text(used + if (near) " · 快到每月免费额度了" else " · 每月 2000 次免费", Modifier.weight(1f), fontSize = 12.sp, color = if (near) P3.danger else P3.text3)
                 TextAction(if (wsaBusy) "测试中…" else "测试连接", enabled = wsa.isNotBlank() && !wsaBusy) {
                     wsaBusy = true; wsaScope.launch { wsaMsg = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Yuanbao.resetSession(); Yuanbao.testReal(ctx, wsa) }; wsaBusy = false }
                 }
@@ -465,7 +465,7 @@ fun TestRow(test: suspend () -> String) {
     var busy by remember { mutableStateOf(false) }
     var res by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = {
+        OutlineButton(onClick = {
             busy = true; res = null
             scope.launch { res = try { true to test() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: ConfigError) { false to (e.message ?: "") } catch (e: PublishError) { false to (e.message ?: "") } catch (e: Throwable) { false to Errors.explain(e).text }; busy = false }
         }, enabled = !busy, shape = Sq.full, border = null, modifier = Modifier.hairline(Sq.full, P3.borderStrong)) {
@@ -510,7 +510,7 @@ fun DsGenBox(s: Settings) {
     var think by remember { mutableStateOf(s.dsThink) }
     var temp by remember { mutableFloatStateOf(s.dsTemp) }
     FieldLabel("写文案时")
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(P3.accent.copy(alpha = .05f)).border(Dp.Hairline, P3.border, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 10.dp)) {
+    Column(Modifier.fillMaxWidth().clip(Sq.s).background(P3.accent.copy(alpha = .05f)).border(Dp.Hairline, P3.border, Sq.s).padding(horizontal = 14.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
                 Text("深度思考", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text)

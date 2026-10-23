@@ -26,6 +26,65 @@ object AppState {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 }
 
+/**
+ * 1.18：创作页「灵感」上方的进度卡状态（方案 C）。写完后存在 prefs 里，App 被杀也还在；
+ * 看过这篇（阅读页打开过）→ viewed；回到创作页时卡片先淡出再收起高度，然后 clear。
+ */
+data class GenCardState(val noteId: Long, val title: String, val words: Int, val viewed: Boolean = false)
+object GenCard {
+    val state = MutableStateFlow<GenCardState?>(null)
+    private fun p(c: Context) = c.getSharedPreferences("gen", Context.MODE_PRIVATE)
+    fun load(c: Context) {
+        val j = p(c).getString("card", null)
+        state.value = if (j == null) null else try { JSONObject(j).let { GenCardState(it.getLong("id"), it.optString("t"), it.optInt("w"), it.optBoolean("v")) } } catch (_: Exception) { null }
+    }
+    private fun save(c: Context, s: GenCardState?) {
+        state.value = s
+        p(c).edit().apply { if (s == null) remove("card") else putString("card", JSONObject().put("id", s.noteId).put("t", s.title).put("w", s.words).put("v", s.viewed).toString()) }.apply()
+    }
+    fun done(c: Context, id: Long, title: String, words: Int) = save(c, GenCardState(id, title, words))
+    /** 阅读页打开了这篇 */
+    fun markViewed(c: Context, id: Long) { val s = state.value ?: return; if (s.noteId == id && !s.viewed) save(c, s.copy(viewed = true)) }
+    fun clear(c: Context) = save(c, null)
+}
+
+/** 生成进度（Worker → UI）：第几步、已写字数、标题、正在打的那一行 */
+data class GenProgress(val step: Int = 1, val words: Int = 0, val title: String = "", val line: String = "")
+object StreamPeek {
+    /** 从还没写完的 JSON 里取出某个字符串字段（容忍截断、转义） */
+    fun field(acc: String, name: String): String? {
+        val key = "\"" + name + "\""
+        var k = acc.indexOf(key); if (k < 0) return null
+        k += key.length
+        while (k < acc.length && (acc[k].isWhitespace() || acc[k] == ':')) k++
+        if (k >= acc.length || acc[k] != '"') return if (k >= acc.length) "" else null
+        val sb = StringBuilder(); var i = k + 1
+        while (i < acc.length) {
+            val ch = acc[i]
+            if (ch == '"') break
+            if (ch == '\\') {
+                if (i + 1 >= acc.length) break
+                when (val e = acc[i + 1]) {
+                    'n' -> sb.append('\n'); 't' -> sb.append('\t'); 'r' -> {}
+                    'u' -> { if (i + 5 < acc.length) { acc.substring(i + 2, i + 6).toIntOrNull(16)?.let { sb.append(it.toChar()) }; i += 4 } else break }
+                    else -> sb.append(e)
+                }
+                i += 2; continue
+            }
+            sb.append(ch); i++
+        }
+        return sb.toString()
+    }
+    /** 正文最后一行（去掉 Markdown 记号），用于卡片里的打字行 */
+    fun lastLine(body: String): String = body.trimEnd().substringAfterLast('\n').trimStart('#', '>', '-', '*', ' ').replace("**", "").trim()
+    /** 字数：不算空白与 Markdown 记号 */
+    fun words(body: String): Int = body.count { !it.isWhitespace() && it !in "#*>-" }
+    fun progress(acc: String): GenProgress {
+        val body = field(acc, "body")
+        return GenProgress(if (body == null) 1 else 2, body?.let(::words) ?: 0, field(acc, "title").orEmpty(), body?.let(::lastLine).orEmpty())
+    }
+}
+
 /** 一次生成任务（写作或改写）。内容可能很长，存在 SharedPreferences 里，Worker 只拿类型 */
 data class GenJob(
     val kind: String = "write", val raw: String = "", val cleaned: String = "", val values: Map<String, String> = emptyMap(),
@@ -63,9 +122,22 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
         val ctx = applicationContext
         val job = try { GenJob.parse(ctx.getSharedPreferences("gen", Context.MODE_PRIVATE).getString("job", "{}") ?: "{}") } catch (e: Exception) { return Result.failure() }
         return try {
-            val id = if (job.kind == "rewrite") Ai.rewrite(ctx, job.noteId, job.instruction, job.model) else Ai.write(ctx, job)
-            val title = AppDb.get(ctx).notes().get(id)?.title ?: ""
-            if (AppState.visible <= 0) notify(ctx, "文章已写好：$title", "点开查看全文，已自动放到案头", id)
+            if (job.kind != "rewrite") { GenCard.clear(ctx); report(GenProgress(1)) }
+            var last = 0L
+            val id = if (job.kind == "rewrite") Ai.rewrite(ctx, job.noteId, job.instruction, job.model) else Ai.write(ctx, job) { acc ->
+                // 约每秒 4 次把进度交给界面
+                val now = System.currentTimeMillis()
+                if (now - last >= 250) { last = now; val pr = StreamPeek.progress(acc); kotlinx.coroutines.runBlocking { report(pr) } }
+            }
+            val note = AppDb.get(ctx).notes().get(id)
+            val title = note?.title ?: ""
+            if (job.kind == "rewrite") { if (AppState.visible <= 0) notify(ctx, "改写好了", "《$title》已存为新版本", id) }
+            else {
+                val w = StreamPeek.words(note?.body.orEmpty())
+                report(GenProgress(3, w, title))
+                GenCard.done(ctx, id, title, w)
+                notify(ctx, DONE_TITLE, doneText(title, w), id)
+            }
             Result.success(workDataOf(K_NOTE to id, K_KIND to job.kind))
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -76,7 +148,14 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
         }
     }
 
+    private suspend fun report(p: GenProgress) = try { setProgress(workDataOf(P_STEP to p.step, P_WORDS to p.words, P_TITLE to p.title, P_LINE to p.line.takeLast(60))) } catch (_: Exception) {}
+
     companion object {
+        const val P_STEP = "ps"; const val P_WORDS = "pw"; const val P_TITLE = "pt"; const val P_LINE = "pl"
+        const val DONE_TITLE = "文章写好了"
+        fun doneText(title: String, w: Int) = "《$title》${fmtWords(w)} 字，已放进案头"
+        fun progressOf(d: Data) = GenProgress(d.getInt(P_STEP, 1), d.getInt(P_WORDS, 0), d.getString(P_TITLE).orEmpty(), d.getString(P_LINE).orEmpty())
+        fun fmtWords(n: Int) = String.format(java.util.Locale.US, "%,d", n)
         const val NAME = "copy"
         const val K_LABEL = "label"; const val K_NOTE = "note"; const val K_KIND = "kind"
         const val K_ERR_TITLE = "et"; const val K_ERR_DETAIL = "ed"; const val K_ERR_RAW = "er"; const val K_ERR_SET = "es"

@@ -20,13 +20,13 @@ object P3 {
     val text = Color(0xFF111827)
     val text2 = Color(0xFF5B6576)
     val text3 = Color(0xFF8A94A6)
-    val accent = Color(0xFF2F6BFF)
+    val accent = DS.accent
     val accentSoft = Color(0xFFE6EEFF)
     val onAccentSoft = Color(0xFF1A3FA0)
     val warnText = Color(0xFFB45309)
     val warnBg = Color(0xFFFFF8EB)
     val warnBorder = Color(0xFFF5D49A)
-    val danger = Color(0xFFC0392B)
+    val danger = DS.danger
 }
 val Terracotta = P3.accent
 val Mono = FontFamily.Monospace
@@ -55,7 +55,11 @@ fun AppTheme(content: @Composable () -> Unit) {
             bodyMedium = base.bodyMedium.copy(lineHeight = 22.sp),
         ),
         shapes = Shapes(extraSmall = RoundedCornerShape(Corner.xs), small = RoundedCornerShape(Corner.s), medium = RoundedCornerShape(Corner.l), large = RoundedCornerShape(Corner.xl), extraLarge = RoundedCornerShape(Corner.xl)),  // 仅作兜底；所有组件都显式传 Squircle
-        content = content,
+        content = {
+            // 1.18：全局统一按压反馈（压暗），去掉 Material 水波纹（与玻璃 / 苹果式界面冲突）
+            @OptIn(ExperimentalMaterial3Api::class)
+            androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalIndication provides SoftPress, LocalRippleConfiguration provides null, content = content)
+        },
     )
 }
 

@@ -457,6 +457,21 @@ object Out {
         try { ctx.startActivity((if (ok) x!! else Intent.createChooser(it, "分享到")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         catch (_: Exception) { Share.safeStart(ctx, Intent.createChooser(it, "分享到")) }
     }
+    /** 1.18：以「文件」交给指定 APP（微信按文件发送，不压缩）；该 APP 不接受时退回系统菜单 */
+    const val FILE_MIME = "application/octet-stream"
+    fun fileIntent(uris: ArrayList<android.net.Uri>): Intent =
+        (if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0]) else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)).apply {
+            type = FILE_MIME; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); clipData = Out.clipOf(uris)
+        }
+    fun sendFilesTo(ctx: Context, pkg: String, uris: ArrayList<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        val it = fileIntent(uris)
+        val x = Intent(it).setPackage(pkg)
+        val ok = ctx.packageManager.queryIntentActivities(x, 0).isNotEmpty()
+        if (!ok) toast(ctx, "未检测到微信，请选择分享方式")
+        try { ctx.startActivity((if (ok) x else Intent.createChooser(it, "分享到")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        catch (_: Exception) { Share.safeStart(ctx, Intent.createChooser(it, "分享到")) }
+    }
     /** 指定包名分享图片；失败时弹系统菜单。单图只放 EXTRA_STREAM + 同一 ClipData 项，不重复 */
     fun sendImagesTo(ctx: Context, pkg: String?, uris: ArrayList<android.net.Uri>, text: String) {
         if (uris.isEmpty()) return

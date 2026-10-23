@@ -83,7 +83,7 @@ fun BigTitle(title: String, sub: String = "") {
 @Composable
 fun SubBar(title: String, back: () -> Unit, action: (@Composable RowScope.() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = back) { SvgIcon(Ic.back, P3.text, desc = "返回") }
+        IconTap(onClick = back) { SvgIcon(Ic.back, P3.text, desc = "返回") }
         Text(title, Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = P3.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (action != null) Row(verticalAlignment = Alignment.CenterVertically, content = action)
     }
@@ -97,7 +97,7 @@ fun GroupLabel(t: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, busy: Boolean = false, onClick: () -> Unit) {
-    Button(onClick, modifier.fillMaxWidth().height(52.dp), enabled = enabled && !busy, shape = Sq.full,
+    FilledButton(onClick, modifier.fillMaxWidth().height(52.dp), enabled = enabled && !busy, shape = Sq.full,
         colors = ButtonDefaults.buttonColors(containerColor = P3.accent, contentColor = Color.White, disabledContainerColor = Color(0xFFE5E7EB), disabledContentColor = Color(0xFF6B7280))) {
         if (busy) { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = P3.accent); Spacer(Modifier.width(8.dp)) }
         Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
@@ -181,12 +181,10 @@ fun TextAction(t: String, color: Color = P3.accent, enabled: Boolean = true, onC
     Text(t, Modifier.clip(Sq.s).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp), color = if (enabled) color else P3.text3, fontSize = 14.sp, fontWeight = FontWeight.Medium)
 }
 
+/** 1.18：所有确认框都走 GlassAlert（方案 B）；danger = 删除类（红色按钮） */
 @Composable
-fun ConfirmDialog(title: String, text: String, ok: String, danger: Boolean = false, onOk: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(shape = Sq.xl, onDismissRequest = onDismiss, containerColor = P3.surface, title = { Text(title, fontSize = 18.sp) }, text = { Text(text, color = P3.text2) },
-        confirmButton = { TextButton(onClick = { onDismiss(); onOk() }, shape = Sq.full) { Text(ok, color = if (danger) P3.danger else P3.accent) } },
-        dismissButton = { TextButton(onClick = onDismiss, shape = Sq.full) { Text("取消", color = P3.text2) } })
-}
+fun ConfirmDialog(title: String, text: String, ok: String, danger: Boolean = false, onOk: () -> Unit, onDismiss: () -> Unit) =
+    GlassAlert(title, text, listOf(AlertAction(ok, if (danger) AlertAction.Role.Destructive else AlertAction.Role.Default, onOk), AlertAction("取消", AlertAction.Role.Cancel) {}), onDismiss)
 
 @Composable
 fun Dot(color: Color, size: Dp = 7.dp) = Box(Modifier.size(size).clip(Sq.full).background(color))

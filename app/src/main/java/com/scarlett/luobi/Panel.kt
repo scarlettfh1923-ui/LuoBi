@@ -27,6 +27,8 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
     /** 打开独立配图页（卡片预览 + 比例 / 配色 + 分享到小红书） */
     var openCards: () -> Unit = {}
     var busy by mutableStateOf<String?>(null)
+    /** 1.18：微信发图方式选择框 */
+    var askWechat by mutableStateOf(false)
     private val title get() = n.title
     private val tags get() = n.tagList()
     private val ui = kotlinx.coroutines.CoroutineScope(Dispatchers.Main)
@@ -50,7 +52,7 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
     fun run(id: String, custom: List<Channel>) {
         when (id) {
             "xhs" -> openCards()
-            "wechat" -> sendLong("com.tencent.mm", "微信")
+            "wechat" -> askWechat = true  // 1.18：二选一（文件发原图 / 存相册再去微信勾原图）
             "qq" -> sendLong("com.tencent.mobileqq", "QQ")
             "weibo" -> sendLong("com.sina.weibo", "微博")
             "douyin" -> douyin()
@@ -109,6 +111,39 @@ class ChannelActions(private val ctx: Context, private val n: Note, private val 
             finally { busy = null }
         }
     }
+    /**
+     * 1.18 微信方式一：把无损 PNG 以「文件」交给微信（MIME 用 application/octet-stream），
+     * 微信按文件发送，不走聊天图片压缩；对方收到的就是原图。
+     */
+    fun wechatFile() {
+        if (busy != null) { snack("正在处理「$busy」，请稍候"); return }
+        busy = "微信"; snackBusy("正在生成长图…")
+        ui.launch {
+            try {
+                val u = withContext(Dispatchers.Default) { makeLong(false) }
+                Out.sendFilesTo(ctx, WECHAT, u)
+                snack("长图已生成，以文件发到微信（原图不压缩）")
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: OutOfMemoryError) { snack("文章太长，图片生成不了", false) }
+            catch (e: Throwable) { snackErr(e, "分享到微信失败：") }
+            finally { busy = null }
+        }
+    }
+    /** 1.18 微信方式二：存相册 → 打开微信；在聊天里点＋选图并勾「原图」 */
+    fun wechatSaveOpen() {
+        if (busy != null) { snack("正在处理「$busy」，请稍候"); return }
+        busy = "微信"; snackBusy("正在生成长图…")
+        ui.launch {
+            try {
+                withContext(Dispatchers.Default) { makeLong(true) }
+                if (Out.launch(ctx, WECHAT)) toast(ctx, WECHAT_TIP) else snack("已存相册，但未检测到微信", false)
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: OutOfMemoryError) { snack("文章太长，图片生成不了", false) }
+            catch (e: Throwable) { snackErr(e, "存相册失败：") }
+            finally { busy = null }
+        }
+    }
+    companion object { const val WECHAT = "com.tencent.mm"; const val WECHAT_TIP = "已存相册，在聊天里点＋选图并勾选原图" }
     /** 抖音：复制全文，再打开抖音 */
     private fun douyin() {
         Share.copy(ctx, "全文", fullText())
@@ -123,7 +158,7 @@ fun SharePanel(custom: List<Channel>, act: ChannelActions, editBar: () -> Unit, 
     val ctx = LocalContext()
     val bar = remember { Settings(ctx).shareBar }
     val items = ShareBar.others(ChannelIds.all(custom).map { it.id }, bar).mapNotNull { ChannelIds.def(it, custom) }
-    ModalBottomSheet(shape = Sq.topXl, onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = P3.surface,
+    AppSheet(shape = Sq.topXl, onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = P3.surface,
         dragHandle = { BottomSheetDefaults.DragHandle(color = P3.borderStrong) }) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp)) {
             Row(Modifier.padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -166,3 +201,14 @@ fun SharePanel(custom: List<Channel>, act: ChannelActions, editBar: () -> Unit, 
 
 @Composable
 fun LocalContext() = androidx.compose.ui.platform.LocalContext.current
+
+
+/** 1.18：微信发图方式（与删除确认同一套玻璃弹窗；两个选项 + 取消，紧凑、无单独控件） */
+@Composable
+fun WechatChoice(act: ChannelActions) {
+    GlassAlert("发到微信", "微信会压缩聊天图片，想让对方看到清晰原图，二选一：", listOf(
+        AlertAction("以文件发送（原图不压缩）") { act.wechatFile() },
+        AlertAction("保存并打开微信") { act.wechatSaveOpen() },
+        AlertAction("取消", AlertAction.Role.Cancel) {},
+    ), { act.askWechat = false })
+}

@@ -53,11 +53,8 @@ class Squircle(private val tl: Dp, private val tr: Dp = tl, private val br: Dp =
 
 /** 唯一的圆角刻度（dp）。旧 4–22dp 的零散数值统一映射到这里，整体比 1.4 更圆 */
 object Corner {
-    val xs = 8.dp      // 细条、进度、小徽标
-    val s = 14.dp      // 标签内小块、代码块、引用块
-    val m = 20.dp      // 输入框、列表行、图片、小卡
-    val l = 24.dp      // 选项卡片、提示框
-    val xl = 28.dp     // 卡片、面板、对话框、底部弹层
+    // 1.18：与 Sq 统一，取自 DS.R（以前 Corner 比 Sq 大 2–4dp，Material 兜底组件的圆角和自绘组件对不上）
+    val xs = DS.R.xs; val s = DS.R.s; val m = DS.R.m; val l = DS.R.l; val xl = DS.R.xl
 }
 /**
  * 1.7：全部改为系统 RoundedCornerShape（Outline.Rounded，凸形）。
@@ -65,11 +62,12 @@ object Corner {
  * 所以 1.7 不再在任何自定义路径上画阴影或描边。Squircle 类保留但不再被界面使用。
  */
 object Sq {
-    val card26 = RoundedCornerShape(26.dp)
-    val xs = RoundedCornerShape(10.dp); val s = RoundedCornerShape(14.dp); val m = RoundedCornerShape(18.dp); val l = RoundedCornerShape(22.dp); val xl = RoundedCornerShape(24.dp)
+    val card26 = RoundedCornerShape(DS.R.card)
+    val alert = RoundedCornerShape(DS.R.alert)
+    val xs = RoundedCornerShape(DS.R.xs); val s = RoundedCornerShape(DS.R.s); val m = RoundedCornerShape(DS.R.m); val l = RoundedCornerShape(DS.R.l); val xl = RoundedCornerShape(DS.R.xl)
     val full = RoundedCornerShape(50)
     val rightS = RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp)
-    val topXl = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    val topXl = RoundedCornerShape(topStart = DS.R.xl, topEnd = DS.R.xl)
 }
 
 /**

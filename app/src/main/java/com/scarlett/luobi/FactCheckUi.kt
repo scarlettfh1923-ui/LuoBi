@@ -75,7 +75,7 @@ fun FactSheet(
     fun cnt(v: String) = claims.sumOf { c -> c.details.count { it.verdict == v } }
     fun jump(g: String) { tab = g; anchors[g]?.let { y -> scope.launch { scroll.animateScrollTo(y, Motion.enter()) } } }
 
-    ModalBottomSheet(
+    AppSheet(
         shape = Sq.topXl, onDismissRequest = { push(); onDismiss() },
         sheetState = sheetState,
         containerColor = P3.bg, dragHandle = { BottomSheetDefaults.DragHandle(color = P3.borderStrong) },

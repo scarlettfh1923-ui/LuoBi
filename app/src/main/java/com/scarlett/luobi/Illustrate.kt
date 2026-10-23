@@ -160,10 +160,10 @@ fun ProposalCard(ctx: Context, p: Proposal, heading: String, idx: Int, total: In
         }
         if (p.source.isNotBlank() && p.cands.isNotEmpty()) Text("来源：${p.source}", Modifier.padding(top = 6.dp), fontSize = 11.sp, color = P3.text3)
         Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton({ il.next(p) }, enabled = !p.loading, contentPadding = PaddingValues(horizontal = 12.dp), shape = Sq.full, border = null, modifier = Modifier.hairline(Sq.full, Hairline)) { SvgIcon(Ic.refresh, P3.text2, 16.dp); Text(" 换一批", fontSize = 13.sp, color = P3.text) }
-            OutlinedButton({ il.skip(p) }, contentPadding = PaddingValues(horizontal = 12.dp), shape = Sq.full, border = null, modifier = Modifier.hairline(Sq.full, Hairline)) { Text("跳过", fontSize = 13.sp, color = P3.text) }
+            OutlineButton({ il.next(p) }, enabled = !p.loading, contentPadding = PaddingValues(horizontal = 12.dp), shape = Sq.full, border = null, modifier = Modifier.hairline(Sq.full, Hairline)) { SvgIcon(Ic.refresh, P3.text2, 16.dp); Text(" 换一批", fontSize = 13.sp, color = P3.text) }
+            OutlineButton({ il.skip(p) }, contentPadding = PaddingValues(horizontal = 12.dp), shape = Sq.full, border = null, modifier = Modifier.hairline(Sq.full, Hairline)) { Text("跳过", fontSize = 13.sp, color = P3.text) }
             Spacer(Modifier.weight(1f))
-            Button({ il.insert(p) }, enabled = p.cands.isNotEmpty() && !p.loading, colors = ButtonDefaults.buttonColors(containerColor = P3.accent), shape = Sq.full) { Text("插入", fontSize = 14.sp) }
+            FilledButton({ il.insert(p) }, enabled = p.cands.isNotEmpty() && !p.loading, colors = ButtonDefaults.buttonColors(containerColor = P3.accent), shape = Sq.full) { Text("插入", fontSize = 14.sp) }
         }
     }
 }

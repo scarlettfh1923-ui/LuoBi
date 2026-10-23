@@ -63,6 +63,8 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switchTo: (Long) -> Unit, goSub: (String) -> Unit, start: (GenJob) -> Unit) {
     val ctx = LocalContext.current; val s = remember { Settings(ctx) }; val scope = rememberCoroutineScope()
     var deleting by remember { mutableStateOf(false) }
+    // 1.18：看过刚写好的这篇 → 创作页的「已写好」卡回去时淡出收起；通知也一并收掉
+    LaunchedEffect(id) { if (GenCard.state.value?.noteId == id) { GenCard.markViewed(ctx, id); CopyWorker.clearDoneNotice(ctx) } }
     val noteState by remember(id) { db.notes().byId(id).map { it to true } }.collectAsState(initial = null to false)
     LaunchedEffect(noteState) { if (!deleting && noteState.second && noteState.first == null) { snack("这篇文章已不存在（可能已被删除）"); back() } }
     var font by remember { mutableFloatStateOf(s.fontSize) }
@@ -253,7 +255,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
         }
     }
     }
-    if (verMenu) ModalBottomSheet(shape = Sq.topXl, onDismissRequest = { verMenu = false }, containerColor = P3.surface) {
+    if (verMenu) AppSheet(shape = Sq.topXl, onDismissRequest = { verMenu = false }, containerColor = P3.surface) {
         Column(Modifier.padding(horizontal = 20.dp).navigationBarsPadding().padding(bottom = 16.dp)) {
             Text("版本记录", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text("每改写一次存一个版本，点一下切换 / 退回", Modifier.padding(top = 2.dp, bottom = 10.dp), fontSize = 13.sp, color = P3.text2)
@@ -264,7 +266,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                     if (v.id == n.id) Text("当前", fontSize = 12.sp, color = P3.accent)
                 }
             }
-            if (versions.size > 1 && n.version > 1) TextButton(onClick = { verMenu = false; confirmDel = true }, shape = Sq.full) { Text("删除当前版本", color = P3.danger) }
+            if (versions.size > 1 && n.version > 1) PlainButton(onClick = { verMenu = false; confirmDel = true }, shape = Sq.full) { Text("删除当前版本", color = P3.danger) }
         }
     }
     if (confirmDel) ConfirmDialog("删除第 ${n.version} 版？", "其它版本保留，删除后会退回到上一版。", "删除", true, onOk = {
@@ -273,18 +275,17 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     }) { confirmDel = false }
     if (custom) {
         var ins by remember { mutableStateOf("") }
-        AlertDialog(shape = Sq.xl, onDismissRequest = { custom = false }, containerColor = P3.surface, title = { Text("自定义改写") },
-            text = { InputBox(ins, { ins = it }, "比如：开头更抓人；加一个真实例子；改成第一人称", minHeight = 90.dp) },
-            confirmButton = { TextButton(onClick = { custom = false; if (ins.isNotBlank()) rewrite(ins.trim()) }, shape = Sq.full) { Text("改写", color = P3.accent) } },
-            dismissButton = { TextButton(onClick = { custom = false }, shape = Sq.full) { Text("取消", color = P3.text2) } })
+        GlassAlert("自定义改写", null, listOf(AlertAction("改写") { if (ins.isNotBlank()) rewrite(ins.trim()) }, AlertAction("取消", AlertAction.Role.Cancel) {}), { custom = false }) {
+            InputBox(ins, { ins = it }, "比如：开头更抓人；加一个真实例子；改成第一人称", minHeight = 90.dp)
+        }
     }
     capEdit?.let { pic ->
         var c by remember(pic) { mutableStateOf(pic.caption) }
-        AlertDialog(shape = Sq.xl, onDismissRequest = { capEdit = null }, containerColor = P3.surface, title = { Text("编辑图注") },
-            text = { InputBox(c, { c = it }, "一句话说明这张图（可留空）", minHeight = 60.dp) },
-            confirmButton = { TextButton(onClick = { il.caption(pic, c.trim()); capEdit = null }, shape = Sq.full) { Text("保存", color = P3.accent) } },
-            dismissButton = { TextButton(onClick = { capEdit = null }, shape = Sq.full) { Text("取消", color = P3.text2) } })
+        GlassAlert("编辑图注", null, listOf(AlertAction("保存") { il.caption(pic, c.trim()) }, AlertAction("取消", AlertAction.Role.Cancel) {}), { capEdit = null }) {
+            InputBox(c, { c = it }, "一句话说明这张图（可留空）", minHeight = 60.dp)
+        }
     }
+    if (act.askWechat) WechatChoice(act)
     if (xhsSheet) XhsSheet(n, imgs, pal) { xhsSheet = false }
     if (panel) SharePanel(channels, act, { panel = false; goSub("sharebar") }, onFactCheck = { panel = false; onFactIcon() },
         info = ArticleInfo.line(n), versionsLabel = if (versions.size > 1) "共 ${versions.size} 版 ›" else "", onVersions = { panel = false; verMenu = true }) { panel = false; barTick++ }
@@ -377,7 +378,7 @@ fun XhsSheet(n: Note, imgs: List<Bitmap>, pal: ReadPalette, dismiss: () -> Unit)
     val items = listOf(Triple("标题", "粘贴到标题栏", n.title), Triple("标签", "粘贴到正文末尾或话题栏", n.tagList().joinToString(" ") { "#$it" }), Triple("正文", "粘贴到正文栏", plainBody))
     var copied by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { for ((i, it) in items.withIndex()) { Share.copy(ctx, it.first, it.third); copied = i + 1; if (i < items.lastIndex) delay(1000) } }
-    ModalBottomSheet(shape = Sq.topXl, onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = P3.surface,
+    AppSheet(shape = Sq.topXl, onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = P3.surface,
         dragHandle = { BottomSheetDefaults.DragHandle(color = P3.borderStrong) }, contentWindowInsets = { WindowInsets(0) }) {
         Column(Modifier.padding(horizontal = 20.dp).navigationBarsPadding().padding(bottom = 12.dp)) {
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
@@ -398,14 +399,14 @@ fun XhsSheet(n: Note, imgs: List<Bitmap>, pal: ReadPalette, dismiss: () -> Unit)
                             Row(verticalAlignment = Alignment.CenterVertically) { Dot(if (copied > i) P3.accent else P3.text3.copy(alpha = .5f)); Text("  ${i + 1} · $h → $where", fontSize = 12.sp, color = P3.accent, fontWeight = FontWeight.SemiBold) }
                             Text(text, Modifier.padding(top = 4.dp), fontSize = if (i == 0) 15.sp else 13.sp, color = P3.text, fontWeight = if (i == 0) FontWeight.SemiBold else FontWeight.Normal, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 20.sp)
                         }
-                        IconButton(onClick = { Share.copy(ctx, h, text); snack("已重新复制$h") }, enabled = copied >= 3) { SvgIcon(Ic.copy, if (copied >= 3) P3.accent else P3.text3, 20.dp, desc = "重新复制$h") }
+                        IconTap(onClick = { Share.copy(ctx, h, text); snack("已重新复制$h") }, enabled = copied >= 3) { SvgIcon(Ic.copy, if (copied >= 3) P3.accent else P3.text3, 20.dp, desc = "重新复制$h") }
                     }
                 }
                 Text("按 标题 → 标签 → 正文 顺序、每条间隔约 1 秒写入，输入法剪贴板历史（如搜狗/百度/Gboard）会同时保留。", Modifier.padding(top = 10.dp), fontSize = 12.sp, lineHeight = 18.sp, color = P3.text2)
             }
             Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = dismiss, Modifier.weight(1f), shape = Sq.full) { Text("返回", color = P3.text2, fontSize = 15.sp) }
-                Button(onClick = { Share.sendImages(ctx, n, imgs); dismiss() }, Modifier.weight(2f).height(48.dp), enabled = copied >= 3, shape = Sq.full,
+                PlainButton(onClick = dismiss, Modifier.weight(1f), shape = Sq.full) { Text("返回", color = P3.text2, fontSize = 15.sp) }
+                FilledButton(onClick = { Share.sendImages(ctx, n, imgs); dismiss() }, Modifier.weight(2f).height(48.dp), enabled = copied >= 3, shape = Sq.full,
                     colors = ButtonDefaults.buttonColors(containerColor = P3.accent)) { Text("去小红书发布", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
             }
         }
@@ -482,8 +483,8 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("正文排版", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = pal.text)
                 val many = imgs.size > 18
-                Text("共 ${imgs.size} 张", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (many) Color(0xFFC0392B) else pal.accent,
-                    modifier = Modifier.clip(Sq.full).background((if (many) Color(0xFFC0392B) else pal.accent).copy(alpha = .12f)).padding(horizontal = 10.dp, vertical = 3.dp))
+                Text("共 ${imgs.size} 张", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (many) P3.danger else pal.accent,
+                    modifier = Modifier.clip(Sq.full).background((if (many) P3.danger else pal.accent).copy(alpha = .12f)).padding(horizontal = 10.dp, vertical = 3.dp))
             }
             Text("画面比例", fontSize = 12.sp, color = pal.sub, modifier = Modifier.padding(top = 8.dp, bottom = 6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -503,11 +504,11 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
                 SoftSlider(liveSpacing, { liveSpacing = it }, Render.LINE_MIN..Render.LINE_MAX, 0.1f, pal.accent, pal.sub.copy(alpha = .25f), pal.surface, Modifier.weight(1f),
                     onChangeFinished = { setSpacing(it) })
             }
-            Text(if (imgs.size > 18) "小红书单篇最多 18 张，可调小行距或字号" else if (CardHint.dropped > 0) "小红书单篇最多 18 张，已省略后面 ${CardHint.dropped} 张文中配图" else "换比例后封面与正文图会重新分页", fontSize = 12.sp, color = if (imgs.size > 18) Color(0xFFC0392B) else pal.sub)
+            Text(if (imgs.size > 18) "小红书单篇最多 18 张，可调小行距或字号" else if (CardHint.dropped > 0) "小红书单篇最多 18 张，已省略后面 ${CardHint.dropped} 张文中配图" else "换比例后封面与正文图会重新分页", fontSize = 12.sp, color = if (imgs.size > 18) P3.danger else pal.sub)
         }
         Spacer(Modifier.height(14.dp))
         if (imgs.isEmpty()) Box(Modifier.fillMaxWidth().height(400.dp), contentAlignment = Alignment.Center) {
-            if (cardErr != null) Text(cardErr, color = Color(0xFFC0392B), fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(24.dp))
+            if (cardErr != null) Text(cardErr, color = P3.danger, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(24.dp))
             else CircularProgressIndicator(color = pal.accent)
         }
         else {
@@ -524,8 +525,8 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
         Column(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             // 1.16：「保存到相册」已在底部操作栏（存相册），这里不再重复，避免从底栏下面露出来
             if (imgOn) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onAiBg, enabled = !bgBusy, shape = Sq.full) { SvgIcon(Ic.wand, pal.accent, 16.dp); Spacer(Modifier.width(4.dp)); Text(if (bgBusy) "生成中…" else if (hasBg) "换一张背景" else "AI 生成封面背景", color = pal.accent) }
-                if (hasBg) TextButton(onClick = clearBg, shape = Sq.full) { Text("去掉背景", color = pal.sub) }
+                PlainButton(onClick = onAiBg, enabled = !bgBusy, shape = Sq.full) { SvgIcon(Ic.wand, pal.accent, 16.dp); Spacer(Modifier.width(4.dp)); Text(if (bgBusy) "生成中…" else if (hasBg) "换一张背景" else "AI 生成封面背景", color = pal.accent) }
+                if (hasBg) PlainButton(onClick = clearBg, shape = Sq.full) { Text("去掉背景", color = pal.sub) }
             }
         }
         Spacer(Modifier.height(bottom + 16.dp))
@@ -563,9 +564,9 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
                 .pointerInput(Unit) { awaitPointerEventScope { while (true) { val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial); if (e.changes.any { it.pressed }) armed = true } } }
                 .pointerInput(Unit) { detectTapGestures { hideKb() } }) {
                 Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { hideKb(); close() }) { SvgIcon(Ic.close, cs.onSurface, desc = "关闭") }
+                    IconTap(onClick = { hideKb(); close() }) { SvgIcon(Ic.close, cs.onSurface, desc = "关闭") }
                     Text("编辑文章", Modifier.weight(1f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                    Button(onClick = { hideKb(); save(n.copy(title = t.trim(), body = b, tags = g.joinToString(" "))) }, enabled = changed && t.isNotBlank(), shape = Sq.full,
+                    FilledButton(onClick = { hideKb(); save(n.copy(title = t.trim(), body = b, tags = g.joinToString(" "))) }, enabled = changed && t.isNotBlank(), shape = Sq.full,
                         contentPadding = PaddingValues(horizontal = 18.dp), modifier = Modifier.padding(end = 8.dp).height(36.dp)) { Text("保存", fontSize = 15.sp) }
                 }
                 Column(Modifier.padding(horizontal = 20.dp).weight(1f)) {
@@ -584,9 +585,7 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
                     Text("正文 ${b.length} 字" + if (changed) " · 未保存" else "", Modifier.fillMaxWidth().padding(vertical = 8.dp), textAlign = TextAlign.End, fontSize = 12.sp, color = t3())
                 }
             }
-            if (confirm) AlertDialog(shape = Sq.xl, onDismissRequest = { confirm = false }, title = { Text("放弃修改？") }, text = { Text("你有未保存的修改，离开后将丢失。") },
-                confirmButton = { TextButton(onClick = { confirm = false; dismiss() }, shape = Sq.full) { Text("放弃", color = Color(0xFFC0392B)) } },
-                dismissButton = { TextButton(onClick = { confirm = false }, shape = Sq.full) { Text("继续编辑") } })
+            if (confirm) GlassAlert("放弃修改？", "你有未保存的修改，离开后将丢失。", listOf(AlertAction("放弃", AlertAction.Role.Destructive) { dismiss() }, AlertAction("继续编辑", AlertAction.Role.Cancel) {}), { confirm = false })
         }
     }
 }
@@ -625,7 +624,7 @@ fun ArticleBlock(ml: MdLine, next: MdKind?, font: Float, pal: ReadPalette, famil
 /** 1.16：段落依次淡入上浮 */
 fun Modifier.riseIn(i: Int, on: Boolean): Modifier = if (!on || i > 12) this else composed {
     val a = remember { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(Unit) { kotlinx.coroutines.delay(380L * i); a.animateTo(1f, androidx.compose.animation.core.tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+    LaunchedEffect(Unit) { if (Motion.reduced) { a.snapTo(1f); return@LaunchedEffect }; kotlinx.coroutines.delay(380L * i); a.animateTo(1f, Motion.enter(420)) }
     graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 10f * density }
 }
 

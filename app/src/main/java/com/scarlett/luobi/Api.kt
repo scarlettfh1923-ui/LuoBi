@@ -1,5 +1,7 @@
 package com.scarlett.luobi
 
+import kotlinx.coroutines.ensureActive
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -144,6 +146,46 @@ object Ai {
         content
     }
 
+    /**
+     * 1.18：流式生成（stream:true，逐行读 data:），每收到一段就把累计文本回调给 onDelta，用于进度卡的实时字数 / 打字行。
+     * 任何异常或没拿到正文时退回普通（非流式）请求，保证不比 1.17 差。
+     */
+    suspend fun chatStream(t: Target, system: String?, user: String, json: Boolean, ds: DsGen? = null, onDelta: (String) -> Unit): String = withContext(Dispatchers.IO) {
+        val msgs = JSONArray()
+        if (system != null) msgs.put(JSONObject().put("role", "system").put("content", system))
+        msgs.put(JSONObject().put("role", "user").put("content", user))
+        val acc = StringBuilder()
+        fun eat(line: String) {
+            val l = line.trim(); if (!l.startsWith("data:")) return
+            val d = l.removePrefix("data:").trim(); if (d.isEmpty() || d == "[DONE]") return
+            val j = try { JSONObject(d) } catch (_: Exception) { return }
+            val ch = j.optJSONArray("choices")?.optJSONObject(0) ?: return
+            val dl = ch.optJSONObject("delta") ?: return
+            val piece = if (dl.isNull("content")) "" else dl.optString("content")
+            if (piece.isNotEmpty()) { acc.append(piece); onDelta(acc.toString()) }
+        }
+        val got = try {
+            val body = chatBody(t.pid, t.model, msgs, json, null, plain = t.pid == "custom" && !json, ds = ds).put("stream", true)
+            val fake = chatTransport
+            if (fake != null) {
+                val r = fake(t.url + "/chat/completions", body.toString())
+                if (r.first !in 200..299) throw ApiError(r.first, r.second, "")
+                if (r.second.contains("data:")) r.second.lineSequence().forEach { eat(it) }
+                else JSONObject(r.second).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")?.let { acc.append(it); onDelta(acc.toString()) }
+            } else {
+                val c = URL(t.url + "/chat/completions").openConnection() as HttpURLConnection
+                c.requestMethod = "POST"; c.connectTimeout = 20000; c.readTimeout = 180000
+                c.setRequestProperty("Content-Type", "application/json"); c.setRequestProperty("Accept", "text/event-stream")
+                c.setRequestProperty("Authorization", "Bearer ${t.key}")
+                c.doOutput = true; c.outputStream.use { it.write(body.toString().toByteArray()) }
+                if (c.responseCode !in 200..299) throw ApiError(c.responseCode, c.errorStream?.bufferedReader()?.readText().orEmpty(), "")
+                c.inputStream.bufferedReader().useLines { ls -> ls.forEach { ensureActive(); eat(it) } }
+            }
+            acc.toString()
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { "" }
+        if (got.isNotBlank()) got else chatText(t, system, user, json, null, ds)
+    }
+
     /** 中转站模型列表：GET {base}/models */
     fun listModels(base: String, key: String): List<String> {
         val j = http("GET", Relay.base(base) + "/models", key, null)
@@ -195,11 +237,12 @@ object Ai {
     }
 
     /** 第 ③ 步：生成并存入文案库，返回 note id */
-    suspend fun write(ctx: Context, d: GenJob): Long {
+    suspend fun write(ctx: Context, d: GenJob, onDelta: ((String) -> Unit)? = null): Long {
         val t = target(ctx, d.model)
         // 1.4：每次（含失败重试）都按「当前」模板重新拼提示词，不用排队时存下的旧快照
         val prompt = current(ctx, d) ?: d.finalPrompt
-        val txt = chatText(t, "你是专业的中文写作者。$OUT_RULE", prompt, true, ds = dsGen(ctx))
+        val txt = if (onDelta != null) chatStream(t, "你是专业的中文写作者。$OUT_RULE", prompt, true, dsGen(ctx), onDelta)
+            else chatText(t, "你是专业的中文写作者。$OUT_RULE", prompt, true, ds = dsGen(ctx))
         val a = ArticleParse.parse(txt, d.cleaned.take(20))
         if (a.body.isBlank()) throw AiFormatError("缺少正文", txt.take(200))
         val db = AppDb.get(ctx)

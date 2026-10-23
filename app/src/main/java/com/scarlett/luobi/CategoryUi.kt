@@ -43,7 +43,7 @@ fun CategoryLabel(category: String, accent: Color, sub: Color, onClick: () -> Un
 @Composable
 fun CategorySheet(current: String, aiPick: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
     var sel by remember(current) { mutableStateOf(current) }
-    ModalBottomSheet(shape = Sq.topXl, onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    AppSheet(shape = Sq.topXl, onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = P3.bg, dragHandle = { BottomSheetDefaults.DragHandle(color = P3.borderStrong) }) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 16.dp)) {
             Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {

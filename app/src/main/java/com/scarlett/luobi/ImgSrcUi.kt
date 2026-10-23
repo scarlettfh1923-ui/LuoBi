@@ -156,7 +156,7 @@ fun ImgSrcEdit(id: String, back: () -> Unit) {
                 Secure.set(ctx, "imgkey_$nid", key)
                 val l = ImgSources.list(ctx); ImgSources.save(ctx, if (l.any { it.id == nid }) l.map { if (it.id == nid) cur() else it } else l + cur()); snack("已保存「${cur().name}」"); back()
             }
-            if (!isNew) TextButton({ del = true }, Modifier.fillMaxWidth(), shape = Sq.full) { Text("删除这个接口", color = P3.danger) }
+            if (!isNew) PlainButton({ del = true }, Modifier.fillMaxWidth(), shape = Sq.full) { Text("删除这个接口", color = P3.danger) }
         }
     }
     if (del) ConfirmDialog("删除「$name」？", "Key 也会一起清除。", "删除", true, onOk = { Secure.set(ctx, "imgkey_$nid", ""); ImgSources.save(ctx, ImgSources.list(ctx).filter { it.id != nid }); back() }) { del = false }

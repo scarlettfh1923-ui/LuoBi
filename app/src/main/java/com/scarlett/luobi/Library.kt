@@ -114,7 +114,7 @@ fun LibraryScreen(
             item {
                 if (managing) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { setManaging(false); selected = emptySet() }, shape = Sq.full) { Text("完成", color = t3(), fontSize = 15.sp) }
+                        PlainButton(onClick = { setManaging(false); selected = emptySet() }, shape = Sq.full) { Text("完成", color = t3(), fontSize = 15.sp) }
                         Text("已选 ${selected.size} 篇", Modifier.weight(1f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                         Spacer(Modifier.width(64.dp))
                     }
@@ -225,29 +225,11 @@ fun LibraryScreen(
         }
     }
 
-    if (confirmBatch) {
-        AlertDialog(shape = Sq.xl, onDismissRequest = { confirmBatch = false },
-            title = { Text("删除 ${selected.size} 篇文章？") },
-            text = { Text("包括所有版本，删除后无法恢复。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    val ids = selected.toList(); confirmBatch = false
-                    deleteNotes(ids); setManaging(false)
-                }, shape = Sq.full) { Text("删除", color = P3.danger) }
-            },
-            dismissButton = { TextButton(onClick = { confirmBatch = false }, shape = Sq.full) { Text("取消") } })
-    }
+    if (confirmBatch) DeleteAlert("删除 ${selected.size} 篇文章？", null, "包括所有版本，删除后无法恢复", onOk = {
+        val ids = selected.toList(); deleteNotes(ids); setManaging(false)
+    }) { confirmBatch = false }
     confirmOne?.let { n ->
-        AlertDialog(shape = Sq.xl, onDismissRequest = { confirmOne = null; openSwipeId = null },
-            title = { Text("删除这篇文章？") },
-            text = { Text("「${n.title}」删除后无法恢复。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmOne = null
-                    deleteNotes(listOf(n.id), undo = n)
-                }, shape = Sq.full) { Text("删除", color = P3.danger) }
-            },
-            dismissButton = { TextButton(onClick = { confirmOne = null; openSwipeId = null }, shape = Sq.full) { Text("取消") } })
+        DeleteAlert("删除这篇文章？", n.title, onOk = { deleteNotes(listOf(n.id), undo = n) }) { confirmOne = null; openSwipeId = null }
     }
 }
 
