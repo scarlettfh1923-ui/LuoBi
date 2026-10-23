@@ -20,6 +20,31 @@ object FactNet {
     var gapMs = 400L
     var now: () -> Long = { System.currentTimeMillis() }
     const val TRIES = 3
+    /** 1.19：每个检索源单次请求最多 8 秒 */
+    const val TIMEOUT_MS = 8000
+    /** 连通性探测（测试可替换）：url → 能否在 ms 内连上 */
+    var probe: (String, Int) -> Boolean = { u, ms -> runCatching {
+        val c = URL(u).openConnection() as HttpURLConnection
+        c.connectTimeout = ms; c.readTimeout = ms; c.setRequestProperty("User-Agent", "Mozilla/5.0 LuoBi/1.19")
+        try { c.responseCode in 200..399 } finally { c.disconnect() }
+    }.getOrDefault(false) }
+    /** 网页原文字节（测试可替换） */
+    var bytes: (String) -> Pair<ByteArray, String> = { u ->
+        val c = URL(u).openConnection() as HttpURLConnection
+        c.connectTimeout = TIMEOUT_MS; c.readTimeout = TIMEOUT_MS
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Mobile Safari/537.36")
+        c.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9")
+        try { if (c.responseCode !in 200..299) ByteArray(0) to "" else c.inputStream.use { it.readBytes() } to c.contentType.orEmpty() } finally { c.disconnect() }
+    }
+    /** 1.19：按 Content-Type → <meta charset> → GB18030 兜底解码（国内很多老站是 GBK） */
+    fun decode(b: ByteArray, contentType: String): String {
+        fun cs(n: String?) = n?.trim()?.trim('"', '\'')?.let { runCatching { java.nio.charset.Charset.forName(if (it.equals("gb2312", true) || it.equals("gbk", true)) "GB18030" else it) }.getOrNull() }
+        cs(Regex("charset=([\\w-]+)", RegexOption.IGNORE_CASE).find(contentType)?.groupValues?.get(1))?.let { return String(b, it) }
+        val head = String(b, 0, minOf(b.size, 4096), Charsets.ISO_8859_1)
+        cs(Regex("<meta[^>]+charset=[\"']?([\\w-]+)", RegexOption.IGNORE_CASE).find(head)?.groupValues?.get(1))?.let { return String(b, it) }
+        val dec = Charsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+        return runCatching { dec.decode(java.nio.ByteBuffer.wrap(b)).toString() }.getOrElse { String(b, java.nio.charset.Charset.forName("GB18030")) }
+    }
 
     class Fail(val code: Int, msg: String) : java.io.IOException(msg)
 
@@ -45,7 +70,7 @@ object FactNet {
 
     private fun real(method: String, url: String, headers: Map<String, String>, body: String?): Resp {
         val c = URL(url).openConnection() as HttpURLConnection
-        c.requestMethod = method; c.connectTimeout = 12000; c.readTimeout = 30000
+        c.requestMethod = method; c.connectTimeout = TIMEOUT_MS; c.readTimeout = TIMEOUT_MS
         headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
         if (body != null) { c.doOutput = true; c.outputStream.use { it.write(body.toByteArray()) } }
         return try {
@@ -82,7 +107,7 @@ object FactSources {
 
     /** Kimi 联网搜索 Basic：POST /v1/tools/search {"text_query","limit","timeout_seconds"[,"include_content"]} */
     fun kimiSearch(key: String, q: String, includeContent: Boolean = false): List<FactHit> {
-        val b = JSONObject().put("text_query", q).put("limit", 5).put("timeout_seconds", 10)
+        val b = JSONObject().put("text_query", q).put("limit", 5).put("timeout_seconds", 7)
         if (includeContent) b.put("include_content", true)
         val arr = JSONObject(ok(FactNet.call("POST", "https://api.moonshot.cn/v1/tools/search", json(key), b.toString()))).optJSONArray("search_results") ?: return emptyList()
         return objs(arr).map { FactHit(it.optString("title"), it.optString("url"), it.optString("snippet").take(500), it.optString("site_name").ifBlank { "网页" }, "Kimi",

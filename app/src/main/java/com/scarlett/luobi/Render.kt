@@ -82,6 +82,11 @@ object Render {
         val mult = L / pitch1
         val boxExtra = (p.descent() - p.ascent()) - sizePx
         val v = L - sizePx
+        if (tightRhythm) {
+            // 1.19：段距 ≈ 0.6 行、小标题上 ≈ 1 行、下 ≈ 0.4 行（可见空白）
+            val para = maxOf(0.6f * L, v + 4f)
+            return Rhythm(L, v, para - boxExtra, maxOf(1.0f * L, para + 8f) - boxExtra, maxOf(0.4f * L, v) - boxExtra, mult)
+        }
         val paraVis = v + 0.7f * L
         return Rhythm(L, v, paraVis - boxExtra, 2f * paraVis - boxExtra, 0.45f * L - boxExtra, mult)
     }
@@ -145,13 +150,13 @@ object Render {
      * 封面 + 正文页最多 18 张：超出时从后往前丢掉文中配图，丢了几张记在 [lastDroppedPics]。
      */
     fun pages(title: String, body: String, st: CardStyle, tf: Typeface = Typeface.DEFAULT, sizePx: Float = 46f, spacing: Float = 1.7f, boldTf: Typeface = Typeface.create(Typeface.DEFAULT, 700, false), width: Int = W, height: Int = H,
-              pics: Map<Int, List<Pair<Bitmap, String>>> = emptyMap(), maxTotal: Int = 18): List<Bitmap> {
+              pics: Map<Int, List<Pair<Bitmap, String>>> = emptyMap(), maxTotal: Int = 18, kind: BodyKind = BodyKind.PLAIN): List<Bitmap> {
         val all = pics.toSortedMap().flatMap { (k, l) -> l.map { k to it } }
         var keep = all.size
         while (true) {
             val use = all.take(keep).groupBy({ it.first }, { it.second })
-            val n = runCatching { pagesInner(title, body, st, tf, sizePx, spacing, boldTf, width, height, use, countOnly = true).size }.getOrElse { if (keep == 0) throw it else Int.MAX_VALUE }
-            if (n + 1 <= maxTotal || keep == 0) { lastDroppedPics = all.size - keep; return pagesInner(title, body, st, tf, sizePx, spacing, boldTf, width, height, use, countOnly = false) }
+            val n = runCatching { pagesInner(title, body, st, tf, sizePx, spacing, boldTf, width, height, use, countOnly = true, kind = kind).size }.getOrElse { if (keep == 0) throw it else Int.MAX_VALUE }
+            if (n + 1 <= maxTotal || keep == 0) { lastDroppedPics = all.size - keep; return pagesInner(title, body, st, tf, sizePx, spacing, boldTf, width, height, use, countOnly = false, kind = kind) }
             keep--
         }
     }
@@ -171,13 +176,16 @@ object Render {
     }
 
     private fun pagesInner(title: String, body: String, st: CardStyle, tf: Typeface, sizePx: Float, spacing: Float, boldTf: Typeface, width: Int, height: Int,
-                           pics: Map<Int, List<Pair<Bitmap, String>>>, countOnly: Boolean): List<Bitmap> {
-        val m = 100; val top = 230; val bottom = height - 170; val avail = bottom - top
+                           pics: Map<Int, List<Pair<Bitmap, String>>>, countOnly: Boolean, kind: BodyKind = BodyKind.PLAIN): List<Bitmap> {
+        // 1.19：不再画标题条；上下字迹留白对称（3:4 ≈ 140，9:16 ≈ 160），页脚居中放在下留白里
+        val m = marginH; val vm = vMargin(height); val top = vm; val bottom = height - vm; val avail = bottom - top
+        val tf = if (kind == BodyKind.BOOK) Typeface.create(Typeface.SERIF, 400, false) else tf
+        val boldTf = if (kind == BodyKind.BOOK) Typeface.create(Typeface.SERIF, 700, false) else boldTf
         val contentW = width - 2 * m
         val paras = body.replace("\r", "").split(Regex("\n+")).map { it.trim() }.filter { it.isNotEmpty() }
         val headPx = sizePx * 1.25f
-        val bodyP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx; typeface = tf; color = st.text; letterSpacing = 0.03f }
-        val headP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = headPx; typeface = boldTf; color = st.text; letterSpacing = 0.04f }
+        val bodyP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx; typeface = tf; color = kind.ink; letterSpacing = 0.03f }
+        val headP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = headPx; typeface = boldTf; color = kind.head; letterSpacing = 0.04f }
         val rh = rhythm(sizePx, spacing.coerceIn(1.0f, LINE_MAX), bodyP)
         val bodyMult = rh.mult
         /** 一块 = 一段 / 一个小标题；gap = 与上一块字迹之间的可见空白；页首 gap = 0 */
@@ -188,7 +196,7 @@ object Render {
             fun atTop() = Block(layout, head, 0, img, imgH, cap)
             fun withGap(g: Int) = Block(layout, head, g, img, imgH, cap)
         }
-        val capP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 0.56f; typeface = tf; color = st.text; alpha = 130 }
+        val capP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 0.56f; typeface = tf; color = kind.ink; alpha = 130 }
         val emptyLay = layoutRaw(" ", bodyP, contentW, 1f)
         val pageList = mutableListOf<MutableList<Block>>()
         var cur = mutableListOf<Block>(); var used = 0
@@ -210,7 +218,7 @@ object Render {
         val oneBodyLine = rh.line.toInt()
         fun placeHead(text: String) {
             val lay = layout(text, headP, contentW, HEAD_MULT)
-            if (cur.isNotEmpty() && used + Block(lay, true, gapFor(true)).height + rh.belowHead.toInt() + oneBodyLine > avail) flush()
+            if (cur.isNotEmpty() && used + Block(lay, true, gapFor(true)).height + rh.belowHead.toInt() + 2 * oneBodyLine > avail) flush()  // 1.19：小标题后至少能放 2 行正文才留在本页
             val blk = Block(lay, true, gapFor(true)); cur.add(blk); used += blk.height
         }
         fun placeBody(text: String) {
@@ -226,8 +234,9 @@ object Render {
                     val h = g + (full.getLineBaseline(line) + bodyP.descent() - whole.inkTop).toInt()
                     if (h <= room) fit = line + 1 else break
                 }
+                if (fit == 1 && full.lineCount >= 2 && cur.size > 1 && cur.last().head) fit = 0
                 if (fit == 0) {
-                    if (cur.isNotEmpty() && cur.last().head) {  // 小标题别孤零零留在页底
+                    if (cur.size > 1 && cur.last().head) {  // 小标题别孤零零留在页底
                         val moved = cur.removeAt(cur.lastIndex); flush(); val o = moved.atTop(); cur.add(o); used = o.height; continue
                     }
                     if (cur.isNotEmpty()) { flush(); continue }
@@ -260,29 +269,59 @@ object Render {
         lastGeometry = pageList.map { pg -> pg.map { Triple(it.head, it.gap, it.inkBottom - it.inkTop) } }
         // 超长保护：先算页数再画图，避免一次性申请几十张大图导致闪退
         if (pageList.size > MAX_PAGES) throw TooLongError("按现在的字号和行距，这篇文章需要 ${pageList.size} 张配图，超过了上限 $MAX_PAGES 张（小红书单篇最多 18 张）。建议调小字号或行距，或者把文章拆成两篇。")
-        if (countOnly) return pageList.map { DUMMY }
         val n = pageList.size.coerceAtLeast(1)
-        val heads = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 34f; color = st.accent; typeface = boldTf }
-        val foot = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 32f; color = st.text; alpha = 140 }
-        return pageList.mapIndexed { idx, blks ->
+        val foot = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 30f; color = kind.sub2; typeface = if (kind == BodyKind.BOOK) tf else Typeface.DEFAULT; letterSpacing = .06f }
+        val footY = height - vm / 2f + 10f
+        val bottoms = mutableListOf<Int>()
+        val out = pageList.mapIndexed { idx, blks ->
+            // 非末页：把剩余空白分摊到段距（每处最多半行），让末行落在统一的下边距
+            val usedH = blks.sumOf { it.height }
+            val slots = blks.drop(1).count { it.gap > 0 }
+            val extra = if (idx < pageList.size - 1 && slots > 0) ((avail - usedH).toFloat() / slots).coerceIn(0f, rh.line * justifyCap) else 0f
+            var yy = top.toFloat(); var k = 0
+            val ys = blks.map { blk -> val add = if (k++ > 0 && blk.gap > 0) extra else 0f; val y0 = yy + add; yy = y0 + blk.height; y0 }
+            bottoms += yy.toInt()
+            if (countOnly) return@mapIndexed DUMMY
             val b = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888); val c = Canvas(b)
-            c.drawColor(st.bg1); frame(c, width, height, st)
-            c.drawRect(0f, 0f, width.toFloat(), 14f, Paint().apply { color = st.accent })
-            val ht = TextUtilsEllipsize(title, heads, width - 2f * m - 120)
-            c.drawText(ht, m.toFloat(), 140f, heads)
-            c.drawRect(m.toFloat(), 172f, width - m.toFloat(), 174f, Paint().apply { color = st.text; alpha = 40 })
-            var y = top.toFloat()
-            for (blk in blks) {
+            if (kind.bg == kind.bg2) c.drawColor(kind.bg) else c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), Paint().apply { shader = LinearGradient(0f, 0f, width * .3f, height.toFloat(), kind.bg, kind.bg2, Shader.TileMode.CLAMP) })
+            val bar = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Covers.ACCENT }
+            for ((bi, blk) in blks.withIndex()) {
+                val y = ys[bi]
                 if (blk.img != null) drawPic(c, blk.img, m.toFloat(), y + blk.gap, contentW, blk.imgH, blk.cap)
-                else { c.save(); c.translate(m.toFloat(), y + blk.gap - blk.inkTop); blk.layout.draw(c); c.restore() }
-                y += blk.height
+                else {
+                    if (blk.head) { val t0 = y + blk.gap; val l = blk.layout; c.drawRoundRect(m - 30f, t0 + 4f, m - 22f, t0 + (l.getLineBaseline(0) + l.paint.descent() - blk.inkTop) - 4f, 4f, 4f, bar) }
+                    c.save(); c.translate(m.toFloat(), y + blk.gap - blk.inkTop); blk.layout.draw(c); c.restore()
+                }
             }
-            val pn = "${idx + 1} / $n"
-            c.drawText(pn, width - m - foot.measureText(pn), height - 90f, foot)
-            c.drawText("左滑继续阅读 →".takeIf { idx < n - 1 } ?: "— 完 —", m.toFloat(), height - 90f, foot)
+            when (kind) {
+                BodyKind.PLAIN -> { foot.textAlign = Paint.Align.CENTER; c.drawText("${idx + 1} / $n", width / 2f, footY, foot) }
+                BodyKind.PROGRESS -> {
+                    val num = String.format(java.util.Locale.US, "%02d", idx + 1); foot.textAlign = Paint.Align.RIGHT
+                    c.drawText(num, width - m.toFloat(), footY, foot)
+                    val r = width - m - 90f; val cy = footY - 10f
+                    c.drawRoundRect(m.toFloat(), cy - 2f, r, cy + 2f, 2f, 2f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x1F14171F })
+                    c.drawRoundRect(m.toFloat(), cy - 2f, m + (r - m) * (idx + 1) / n, cy + 2f, 2f, 2f, bar)
+                }
+                BodyKind.BOOK -> { foot.textAlign = Paint.Align.RIGHT; c.drawText("— ${idx + 1} —", width - m.toFloat(), footY, foot) }
+            }
             b
         }
+        lastBottoms = bottoms
+        lastShape = pageList.map { pg -> pg.map { b -> b.head to (if (b.img != null) 0 else b.layout.lineCount) } }
+        lastChars = pageList.map { pg -> pg.filter { it.img == null }.sumOf { b -> b.layout.text.count { !it.isWhitespace() && it != '\u2060' } } }
+        return out
     }
+    fun vMargin(height: Int) = marginV ?: 96
+    /** 边距参数（1.19 方案比较用） */
+    @Volatile var marginH = 72
+    @Volatile var marginV: Int? = null
+    @Volatile var justifyCap = 0f
+    @Volatile var tightRhythm = true
+    @Volatile var lastChars: List<Int> = emptyList()
+    /** 测试用：每页每块（是否小标题, 行数） */
+    @Volatile var lastShape: List<List<Pair<Boolean, Int>>> = emptyList()
+    /** 测试用：每页末行字迹底部 y */
+    @Volatile var lastBottoms: List<Int> = emptyList()
 
     /** 测试用：最近一次分页的 (是否小标题, 上方可见空白, 字迹高度) */
     @Volatile var lastGeometry: List<List<Triple<Boolean, Int, Int>>> = emptyList()

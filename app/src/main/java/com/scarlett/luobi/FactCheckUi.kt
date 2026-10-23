@@ -1,5 +1,6 @@
 package com.scarlett.luobi
 
+import androidx.compose.ui.platform.testTag
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.clickable
@@ -101,6 +102,8 @@ fun FactSheet(
                 }
                 Text((if (fromCache) "上次结果 · " else "") + report.searchNote, Modifier.padding(top = 3.dp), fontSize = 11.sp, color = P3.text3,
                     maxLines = if (noteOpen) 6 else 1, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
+                if (report.status.isNotBlank()) Text("检索源状态：" + report.status, Modifier.padding(top = 2.dp).testTag("factStatus"), fontSize = 11.sp,
+                    color = P3.text3, maxLines = if (noteOpen) 6 else 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
             }
             Column(Modifier.weight(1f, fill = false).verticalScroll(scroll).padding(horizontal = 16.dp)) {
                 Column(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface)) {

@@ -54,7 +54,41 @@ object FactPipeline {
 
     /** 一次模型调用：judge=true 时是裁决（遵守 DeepSeek 深度思考开关） */
     fun interface Llm { suspend fun ask(system: String, user: String, judge: Boolean): String }
-    class Env(val llm: Llm, val chain: List<FactQuotes.Src>, val page: (String) -> String = { "" }, val label: String = "")
+    class Env(val llm: Llm, val chain: List<FactQuotes.Src>, val page: (String) -> String = { "" }, val label: String = "", val status: SourceStatus = SourceStatus())
+
+    /** 1.19：记录每个检索源这次的表现；Key 错 / 余额不足 / 连不上的源本次不再调用 */
+    class SourceStatus {
+        private val ok = ConcurrentHashMap<String, Int>()
+        private val err = ConcurrentHashMap<String, String>()
+        private val dead: MutableSet<String> = ConcurrentHashMap.newKeySet()
+        val notes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+        fun dead(label: String) = label in dead
+        fun success(label: String) { ok.merge(label, 1, Int::plus) }
+        fun skip(label: String, why: String) { dead += label; err[label] = why }
+        fun fail(label: String, e: Throwable) {
+            val k = classify(e)
+            err[label] = k
+            if (k == "Key 错" || k == "余额不足") dead += label
+        }
+        fun summary(): String {
+            val names = (ok.keys + err.keys).distinct()
+            val parts = names.map { n -> val o = ok[n] ?: 0; val e = err[n]
+                n + " " + when { o > 0 && e != null -> "成功（偶有$e）"; o > 0 -> "成功"; e != null -> e; else -> "无结果" } }
+            return (parts + notes).joinToString(" · ")
+        }
+        companion object {
+            fun classify(e: Throwable): String = when {
+                e is FactNet.Fail && e.code == 429 -> "限流"
+                e is FactNet.Fail && (e.code == 401 || e.code == 403) -> "Key 错"
+                e is FactNet.Fail && e.code == 402 -> "余额不足"
+                e is java.net.SocketTimeoutException -> "超时"
+                e is java.net.UnknownHostException || e is java.net.ConnectException || e is javax.net.ssl.SSLException -> "连不上"
+                e is FactNet.MissingKey -> "未填 Key"
+                e.message?.contains("预算") == true -> "预算用完"
+                else -> "出错"
+            }
+        }
+    }
 
     /** 测试 / 预览可替换 */
     @Volatile var envOverride: ((Context) -> Env)? = null
@@ -78,20 +112,32 @@ object FactPipeline {
         Yuanbao.resetSession()
         // 元宝有 Key 就排第一（她验证过的顺序）
         val order = (if (ybKey.isNotBlank()) listOf(FactCheck.SearchProvider.YUANBAO) else emptyList()) + sel
-        val chain = FactQuotes.chain(order, ::keyOf, ctx) { budget.getAndDecrement() > 0 }
+        val status = SourceStatus()
+        val chain0 = FactQuotes.chain(order, ::keyOf, ctx) { (budget.getAndDecrement() > 0).also { if (!it) status.notes += "元宝本篇额度用完" } }
+        val chain = wikiGate(chain0, status)
         val kimi = s.key("kimi")
         val llm = Llm { sys, user, judge ->
-            try { Ai.chatText(target, sys, user, true, if (judge && ds.think) null else 4096, if (judge) ds else null) }
+            try { Ai.chatText(target, sys, user, true, if (judge && ds.think) null else if (judge) 4096 else 8192, if (judge) ds else null) }
             catch (e: ApiError) { throw FactCheck.refineFactModelError(e, check) ?: e }
         }
         return Env(llm, chain, { u -> if (kimi.isNotBlank()) runCatching { FactSources.kimiFetch(kimi, u) }.getOrDefault("") else plainPage(u) },
-            "校对模型 ${check.label} · ${check.sub}" + if (ds.think && check.ref == "p:deepseek") "（深度思考）" else "")
+            "校对模型 ${check.label} · ${check.sub}" + if (ds.think && check.ref == "p:deepseek") "（深度思考）" else "", status)
     }
+
+    const val WIKI_PROBE = "https://zh.wikipedia.org/w/api.php?action=query&meta=siteinfo&format=json"
+    /** 1.19：3 秒探测维基；连不上（国内常见）就整组跳过，不再每条都等超时 */
+    fun wikiGate(chain: List<FactQuotes.Src>, status: SourceStatus): List<FactQuotes.Src> {
+        val wiki = chain.filter { isWiki(it.label) }
+        if (wiki.isEmpty() || FactNet.probe(WIKI_PROBE, 3000)) return chain
+        wiki.forEach { status.skip(it.label, "连不上（已跳过）") }
+        return chain - wiki.toSet()
+    }
+    fun isWiki(label: String) = label.contains("维基")
 
     /** 免 Key 取网页正文（粗暴去标签） */
     fun plainPage(url: String): String = runCatching {
-        val r = FactNet.call("GET", url, mapOf("User-Agent" to "Mozilla/5.0 LuoBi/1.17"), null)
-        if (r.code !in 200..299) "" else r.body.replace(Regex("(?is)<(script|style)[^>]*>.*?</\\1>"), " ").replace(Regex("(?i)<br\\s*/?>|</p>|</div>|</li>"), "\n")
+        val (b, ct) = FactNet.bytes(url)
+        if (b.isEmpty()) "" else FactNet.decode(b, ct).replace(Regex("(?is)<(script|style)[^>]*>.*?</\\1>"), " ").replace(Regex("(?i)<br\\s*/?>|</p>|</div>|</li>"), "\n")
             .replace(Regex("<[^>]+>"), " ").replace("&nbsp;", " ").replace(Regex("[ \\t]+"), " ").take(60_000)
     }.getOrDefault("")
 
@@ -100,13 +146,47 @@ object FactPipeline {
     fun extractPrompt(title: String, body: String) = """把文章里的说法逐条拿出来，每条拆成原子细节，并为每个细节写 2–3 条检索查询。
 细节维度：人物 / 时间 / 地点 / 地名 / 事件 / 关系 / 引述归属 / 范围 / 因果 / 状态。
 类型只能是：可核实事实、引述归属（某人/某书说过、主张过）、修辞渲染（夸张、概括、氛围）、观点（作者自己的判断）。
+entities 里同一人物/事物的别名、简称、外文原名都列出来（如「胡适」「胡适之」「Hu Shih」）。
 查询规则：每条查询必须含该细节的具体人名/书名/地名/年份；不要用文章标题或文章主题（如「民国 开放 保守」）当查询；外国人名、书名另写一条英文原名查询。
 span 必须是原文里一字不差的片段。
 输出：{"claims":[{"span":"原文片段","claim":"这句说了什么","details":[{"aspect":"地点","text":"发生在北平","type":"可核实事实","entities":["丁玲","北平"],"queries":["丁玲 胡也频 1925 北京 同居","冯雪峰 丁玲 1928 杭州 葛岭"]}]}]}
 
 标题：$title
 正文：
-${body.take(12000)}"""
+$body"""
+
+    /** 1.19：按段落切块（每块约 2500 字），长文不再被截断 */
+    const val CHUNK = 2500
+    fun chunks(body: String, size: Int = CHUNK): List<String> {
+        if (body.length <= size) return listOf(body)
+        val out = mutableListOf<String>(); val b = StringBuilder()
+        for (p in body.split(Regex("(?<=\n)"))) {
+            if (b.isNotEmpty() && b.length + p.length > size) { out += b.toString(); b.clear() }
+            if (p.length > size) { p.chunked(size).forEach { out += it } } else b.append(p)
+        }
+        if (b.isNotBlank()) out += b.toString()
+        return out.filter { it.isNotBlank() }
+    }
+    /** 逐块抽取（每块失败重试 1 次），合并并重新编号 */
+    suspend fun extractAll(title: String, body: String, env: Env): List<FactClaim> {
+        val parts = chunks(body)
+        val all = mutableListOf<FactClaim>(); var failed = 0; var lastErr: Throwable? = null
+        for ((i, part) in parts.withIndex()) {
+            val tag = if (parts.size > 1) "（全文第 ${i + 1}/${parts.size} 段）" else ""
+            var got: List<FactClaim>? = null
+            for (attempt in 0..1) {
+                try { got = parseClaims(env.llm.ask(EXTRACT_SYS, extractPrompt(title + tag, part), false), body, title); break }
+                catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: ApiError) { if (e.code in listOf(401, 402, 403)) throw e; lastErr = e }
+                catch (e: Throwable) { lastErr = e }
+            }
+            if (got == null) failed++ else all += got
+        }
+        if (all.isEmpty() && failed > 0) throw lastErr!!
+        if (failed > 0) env.status.notes += "有 $failed 段没能拆出说法"
+        return all.mapIndexed { n, c -> val cid = "c${n + 1}"
+            c.copy(id = cid, details = c.details.mapIndexed { k, d -> d.copy(id = "$cid.d${k + 1}") }) }
+    }
 
     fun parseClaims(reply: String, body: String, title: String): List<FactClaim> {
         val j = obj(reply) ?: throw CleanParse.BadFormat(reply.take(200))
@@ -178,6 +258,9 @@ ${body.take(12000)}"""
     // ---------------- 2 查询清洗 ----------------
     val GENERIC = setOf("民国", "社会", "文人", "关系", "开放", "保守", "女性", "知识分子", "规范", "今天", "当时", "中国", "历史", "文化", "爱情", "婚恋", "恋爱", "自由")
     fun entitiesOf(d: FactDetail): List<String> = d.entities.map { it.trim() }.filter { it.length >= 2 && it !in GENERIC }.distinct()
+    /** 1.19：相关性过滤用的别名——外文译名按「·」拆开、去书名号 */
+    fun aliases(ents: List<String>): List<String> = (ents + ents.flatMap { e -> e.split('·', '•', '・').map { it.trim() }.filter { it.length >= 2 && it !in GENERIC } } +
+        ents.map { it.removePrefix("《").removeSuffix("》") }).filter { it.length >= 2 }.distinct()
 
     /** 每条查询必须带实体；不能是标题/主题；不足 2 条就用实体补齐；最多 3 条 */
     fun sanitize(d: FactDetail, title: String, extra: List<String> = emptyList()): List<String> {
@@ -207,8 +290,9 @@ ${body.take(12000)}"""
 
     // ---------------- 3/4 检索 + 相关性 ----------------
     /** 把全文切成段，只留提到实体的段（每段 ≤ 360 字） */
-    fun relevant(text: String, ents: List<String>, cap: Int = 360): List<String> {
-        if (ents.isEmpty()) return emptyList()
+    fun relevant(text: String, ents0: List<String>, cap: Int = 360): List<String> {
+        if (ents0.isEmpty()) return emptyList()
+        val ents = aliases(ents0)
         val paras = text.split(Regex("\\n+")).flatMap { p -> if (p.length <= cap) listOf(p) else p.split(Regex("(?<=[。！？.!?])")).chunkedBy(cap) }
         return paras.map { it.trim() }.filter { p -> p.length >= 8 && ents.any { p.contains(it, ignoreCase = true) } }
             .sortedByDescending { p -> ents.count { p.contains(it, ignoreCase = true) } }
@@ -224,31 +308,50 @@ ${body.take(12000)}"""
         else -> 0
     }
 
-    private val netLock = Mutex()
+    /** 1.19：每个源各自排队（同源不并发，免得限流），不同源同时查 */
+    private val srcLocks = ConcurrentHashMap<String, Mutex>()
+    private fun lockOf(label: String) = srcLocks.getOrPut(label) { Mutex() }
+    private suspend fun <T> guarded(src: FactQuotes.Src, env: Env, empty: T, f: () -> T): T {
+        if (env.status.dead(src.label)) return empty
+        return lockOf(src.label).withLock {
+            try { f().also { env.status.success(src.label) } }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Throwable) { env.status.fail(src.label, e); empty }
+        }
+    }
 
     /** 沿兜底链搜一个细节：有相关段落就停 */
     suspend fun search(d: FactDetail, queries: List<String>, env: Env, used: MutableSet<String>): List<Evidence> {
         val ents = entitiesOf(d)
+        val tiers = env.chain.partition { !isWiki(it.label) }.toList().filter { it.isNotEmpty() }
+        for (tier in tiers) {
+            val res = coroutineScope { tier.map { src -> async(kotlinx.coroutines.Dispatchers.IO) { src to searchOne(src, d, ents, queries, env) } }.awaitAll() }
+            val out = res.flatMap { (src, l) -> if (l.isNotEmpty()) used += src.label; l }.distinctBy { it.url }
+            if (out.isNotEmpty()) return out.sortedByDescending { rank(it.url) }.take(PASSAGES_PER_DETAIL)
+        }
+        return emptyList()
+    }
+
+    private suspend fun searchOne(src: FactQuotes.Src, d: FactDetail, ents: List<String>, queries: List<String>, env: Env): List<Evidence> {
         val out = mutableListOf<Evidence>()
-        for (src in env.chain) {
+        run {
             val qs = if (src.english) queries.filter { q -> q.any { it in 'A'..'z' } }.ifEmpty { queries.take(1) } else queries
             for (q in qs) {
-                val hits = netLock.withLock { runCatching { src.search(q) }.getOrDefault(emptyList()) }
+                val hits = guarded(src, env, emptyList()) { src.search(q) }
                 if (hits.isEmpty()) continue
                 hits.sortedByDescending { rank(it.url) }.forEachIndexed { i, h ->
                     if (out.any { it.url == h.url }) return@forEachIndexed
                     var text = h.text.ifBlank { h.snippet }
                     if (i < FULL_PER_DETAIL && h.text.length < 400) {
-                        val full = netLock.withLock { runCatching { src.full?.invoke(h) ?: (if (h.url.startsWith("http")) env.page(h.url) else "") }.getOrDefault("") }
+                        val full = if (src.full != null) guarded(src, env, "") { src.full.invoke(h) } else runCatching { if (h.url.startsWith("http")) env.page(h.url) else "" }.getOrDefault("")
                         if (full.isNotBlank()) text = full + "\n" + text
                     }
                     val pas = relevant(text, ents).take(2)
                     if (pas.isNotEmpty()) out += Evidence("", h.title, h.url, src.label, pas.joinToString(" … "))
                 }
             }
-            if (out.isNotEmpty()) { used += src.label; break }
         }
-        return out.sortedByDescending { rank(it.url) }.take(PASSAGES_PER_DETAIL)
+        return out
     }
 
     // ---------------- 5 裁决 ----------------
@@ -279,6 +382,16 @@ ${body.take(12000)}"""
         val parts = quote.split(Regex("……|…|\\.\\.\\.")).map(::norm).filter { it.length >= 6 }
         return parts.isNotEmpty() && parts.all { t.contains(it) }
     }
+    /** 1.19：模糊引文——双字覆盖率 ≥ 0.7 视为大意一致 */
+    const val FUZZY = 0.7
+    fun quoteNear(quote: String, text: String): Boolean {
+        val q = norm(quote); val t = norm(text)
+        if (q.length < 6) return false
+        val grams = (0 until q.length - 1).map { q.substring(it, it + 2) }
+        val tg = (0 until maxOf(0, t.length - 1)).mapTo(HashSet()) { t.substring(it, it + 2) }
+        return grams.count { it in tg }.toDouble() / grams.size >= FUZZY
+    }
+    const val FUZZY_NOTE = "（引文与资料大意一致，未逐字对上）"
     fun normVerdict(v: String) = VERDICTS.firstOrNull { v.contains(it) } ?: when {
         v.contains("渲染") -> RHET; v.contains("观点") -> OPN; v.contains("出入") || v.contains("错") -> BAD; v.contains("部分") -> PART; v.contains("印证") || v.contains("属实") -> OK; else -> UNK }
 
@@ -295,8 +408,9 @@ ${body.take(12000)}"""
             val es = ev[d.id].orEmpty()
             val quote = o.optString("quote").trim()
             val cited = o.optString("evidence").let { id -> es.firstOrNull { it.id == id.trim().trimStart('[').trimEnd(']') } }
-            val hit = (listOfNotNull(cited) + es).firstOrNull { quoteIn(quote, it.text) }
+            var hit = (listOfNotNull(cited) + es).firstOrNull { quoteIn(quote, it.text) }
             var reason = o.optString("reason")
+            if (hit == null && v in listOf(OK, PART, BAD)) (listOfNotNull(cited) + es).firstOrNull { quoteNear(quote, it.text) }?.let { hit = it; reason += FUZZY_NOTE }
             if (v in listOf(OK, PART, BAD) && hit == null) { v = UNK; reason = "裁决给的引文在资料里找不到，不采信" + if (reason.isNotBlank()) "（原判断：$reason）" else "" }
             if (v == RHET && d.type != T_RHET && hit == null && es.isEmpty()) v = UNK
             val rw = if (v in listOf(PART, BAD)) o.optString("rewrite").trim() else ""
@@ -337,7 +451,7 @@ ${body.take(12000)}"""
     suspend fun run(title: String, body: String, env: Env, resume: State? = null,
                     save: suspend (State) -> Unit = {}, progress: suspend (Int, Int) -> Unit = { _, _ -> }): FactReport = coroutineScope {
         val claims0 = resume?.claims?.takeIf { it.isNotEmpty() }
-            ?: implicit(title, body, parseClaims(env.llm.ask(EXTRACT_SYS, extractPrompt(title, body), false), body, title))
+            ?: implicit(title, body, extractAll(title, body, env))
         val used: MutableSet<String> = ConcurrentHashMap.newKeySet<String>().apply { resume?.sources?.let { addAll(it) } }
         val cur = claims0.toMutableList()
         val lock = Mutex()
@@ -346,19 +460,34 @@ ${body.take(12000)}"""
         val sem = Semaphore(CONCURRENCY)
         cur.indices.filter { !cur[it].done }.map { i ->
             async { sem.withPermit {
-                val r = checkClaim(cur[i], title, env, used)
+                val r = checkSafe(cur[i], title, env, used)
                 lock.withLock { cur[i] = r; save(State(cur.toList(), used.toList())); progress(cur.count { it.done }, cur.size) }
             } }
         }.awaitAll()
-        report(cur, used.toList(), env.label)
+        report(cur, used.toList(), env.label, env.status.summary())
     }
 
-    fun report(claims: List<FactClaim>, sources: List<String>, label: String): FactReport {
+    const val UNDONE = "未完成："
+    /** 1.19：单条说法出错重试 2 次；还不行就标「无法核实（未完成）」，其他说法照常出报告 */
+    suspend fun checkSafe(c: FactClaim, title: String, env: Env, used: MutableSet<String>): FactClaim {
+        var last: Throwable? = null
+        for (attempt in 0..2) {
+            try { return checkClaim(c, title, env, used) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: ApiError) { if (e.code in listOf(401, 402, 403)) throw e; last = e }
+            catch (e: Throwable) { last = e }
+        }
+        val why = UNDONE + (last?.message?.take(40) ?: "未知原因")
+        return c.copy(done = true, details = c.details.map { it.copy(verdict = if (it.type == T_OPINION) OPN else UNK, reason = why) })
+    }
+
+    fun report(claims: List<FactClaim>, sources: List<String>, label: String, status: String = ""): FactReport {
         val issues = claims.flatMap { c -> c.details.map { d -> issueOf(c, d) } }
         val order = listOf("元宝搜索", "Kimi 搜索", "DeepSeek 搜索", "中文维基", "博查", "英文维基", "维基语录")
         val src = sources.distinct().sortedBy { order.indexOf(it).let { i -> if (i < 0) 99 else i } }
         val note = "检索：" + (src.ifEmpty { listOf("无") }).joinToString("、") + (if (label.isNotBlank()) " · $label" else "")
-        return FactReport(issues, emptyList(), note, claims.flatMap { c -> c.details.flatMap { it.queries } }.distinct(), claims = claims, sources = src)
+        return FactReport(issues, emptyList(), note, claims.flatMap { c -> c.details.flatMap { it.queries } }.distinct(), claims = claims, sources = src,
+            status = status + claims.count { c -> c.details.any { it.reason.startsWith(UNDONE) } }.let { if (it > 0) (if (status.isBlank()) "" else " · ") + "$it 条没查完（报告不完整）" else "" })
     }
 
     fun issueOf(c: FactClaim, d: FactDetail) = FactIssue(id = d.id, span = c.span, category = d.aspect, severity = if (d.verdict == BAD) "高" else "中",

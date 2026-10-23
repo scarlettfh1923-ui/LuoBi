@@ -89,7 +89,16 @@ class FactWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
             val req = OneTimeWorkRequestBuilder<FactWorker>().setInputData(workDataOf(K_NOTE to id, K_TITLE to title)).addTag(TAG)
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
-            WorkManager.getInstance(c).enqueueUniqueWork(name(id), ExistingWorkPolicy.KEEP, req)
+            // 1.19：重新检测用 REPLACE（顶掉卡住的旧任务）；续跑仍用 KEEP
+            WorkManager.getInstance(c).enqueueUniqueWork(name(id), policy(fresh), req)
+        }
+        fun policy(fresh: Boolean) = if (fresh) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
+        const val CANCELLED = "已取消"
+        /** 1.19：用户点「取消校对」 */
+        suspend fun cancel(c: Context, id: Long) {
+            runCatching { WorkManager.getInstance(c).cancelUniqueWork(name(id)) }
+            val dao = AppDb.get(c).factJobs()
+            dao.get(id)?.let { dao.put(it.copy(status = FAILED, error = CANCELLED, updatedAt = System.currentTimeMillis())) }
         }
         fun isActive(c: Context, id: Long): Boolean = runCatching {
             WorkManager.getInstance(c).getWorkInfosForUniqueWork(name(id)).get().any { !it.state.isFinished }

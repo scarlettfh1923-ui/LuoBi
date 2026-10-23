@@ -49,7 +49,7 @@ class FactSearch1151Test {
         val (k, b) = calls.single()
         assertEquals("POST https://api.moonshot.cn/v1/tools/search", k)
         val j = JSONObject(b!!)
-        assertEquals("甜蜜蜜 结局", j.getString("text_query")); assertEquals(5, j.getInt("limit")); assertEquals(10, j.getInt("timeout_seconds"))
+        assertEquals("甜蜜蜜 结局", j.getString("text_query")); assertEquals(5, j.getInt("limit")); assertEquals(7, j.getInt("timeout_seconds"))
         assertFalse(j.has("include_content"))
         FactSources.kimiSearch("mk", "x", includeContent = true); assertTrue(JSONObject(calls.last().second!!).getBoolean("include_content"))
         fake { _, _ -> FactNet.Resp(200, """{"url":"u","title":"t","markdown":"# 剧情"}""") }

@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +80,9 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     var verMenu by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
     var style by remember { mutableIntStateOf(s.style.coerceIn(0, Render.styles.lastIndex)) }
+    var coverK by remember { mutableIntStateOf(s.coverKind.coerceIn(0, CoverKind.entries.lastIndex)) }
+    var bodyK by remember { mutableIntStateOf(s.bodyKind.coerceIn(0, BodyKind.entries.lastIndex)) }
+    var thumbs by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
     var ratio by remember { mutableIntStateOf(s.cardRatio.coerceIn(0, CardRatio.entries.lastIndex)) }
     var aiBg by remember { mutableStateOf<Bitmap?>(null) }
     var imgs by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
@@ -91,7 +95,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     var cardErr by remember { mutableStateOf<String?>(null) }
     var cardBusy by remember { mutableStateOf(true) }
     val fontReady = Fonts.ready(ctx, fontId)
-    LaunchedEffect(n.title, n.body, n.tags, style, aiBg, fontId, fontReady, font, spacing, ratio) {
+    LaunchedEffect(n.title, n.body, n.tags, style, aiBg, fontId, fontReady, font, spacing, ratio, coverK, bodyK) {
         cardBusy = true; cardErr = null
         delay(180)
         try {
@@ -99,9 +103,12 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 val fid = if (fontReady) fontId else "sans"
                 val reg = Fonts.typeface(ctx, fid, false); val bold = Fonts.typeface(ctx, fid, true)
                 val r = CardRatio.fromIndex(ratio)
-                listOf(Render.cover(n.title, n.tagList(), Render.styles[style], aiBg, bold, r.w, r.h)) +
+                // 1.19：AI 背景沿用旧封面（深色叠字）；否则按所选封面风格
+                val cov = if (aiBg != null) Render.cover(n.title, n.tagList(), Render.styles[style], aiBg, bold, r.w, r.h)
+                    else Covers.render(CoverKind.of(coverK), n.title, n.tagList(), n.body, r.w, r.h)
+                listOf(cov) +
                     Render.pages(n.title, n.body, Render.styles[style], reg, font * 46f / 18f, spacing, bold, r.w, r.h,
-                        pics = PicCache.bitmaps(ctx, n.pics(), Export.paras(n.body).size, Settings(ctx).showCredit, maxPx = 2048)).also { CardHint.dropped = Render.lastDroppedPics }
+                        pics = PicCache.bitmaps(ctx, n.pics(), Export.paras(n.body).size, Settings(ctx).showCredit, maxPx = 2048), kind = BodyKind.of(bodyK)).also { CardHint.dropped = Render.lastDroppedPics }
             }
         } catch (_: kotlinx.coroutines.CancellationException) {
         } catch (e: OutOfMemoryError) {
@@ -109,6 +116,9 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
         } catch (e: Exception) {
             val f = Errors.explain(e); cardErr = f.title + "\n" + f.detail
         } finally { cardBusy = false }
+    }
+    LaunchedEffect(n.title, n.body, n.tags) {
+        thumbs = withContext(Dispatchers.Default) { runCatching { Covers.thumbs(n.title, n.tagList(), n.body) }.getOrDefault(emptyList()) }
     }
     val family = remember(fontId, Fonts.progress[fontId]) { Fonts.family(ctx, fontId) ?: FontFamily.Default }
     fun genBg() {
@@ -142,6 +152,8 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     var factFromCache by remember { mutableStateOf(false) }
     var factFocus by remember { mutableStateOf<String?>(null) }
     var catSheet by remember { mutableStateOf(false) }
+    var factPreErr by remember { mutableStateOf<String?>(null) }
+    var factCancelAsk by remember { mutableStateOf(false) }
     val notifPerm = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
     fun persistFact(r: FactReport?) {
         factReport = r
@@ -162,13 +174,17 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
         if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             runCatching { notifPerm.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
         scope.launch {
-            try { withContext(Dispatchers.IO) { FactWorker.start(ctx, n.id, n.title, fresh = true) }; snack("已开始后台校对，可以继续阅读，完成后会通知你") }
+            try {
+                val pre = withContext(Dispatchers.IO) { FactPreflight.check(ctx, n.model) }
+                if (pre.fatal != null) { factPreErr = pre.fatal; return@launch }
+                withContext(Dispatchers.IO) { FactWorker.start(ctx, n.id, n.title, fresh = true) }
+                snack(pre.warn?.let { "已开始后台校对 · $it" } ?: "已开始后台校对，可以继续阅读，完成后会通知你") }
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Throwable) { snackErr(e, "事实校对没能开始：") }
         }
     }
     fun onFactIcon() {
-        if (factBusy) { val j = factJob; snack("正在校对" + (if (j != null && j.total > 0) " ${j.done}/${j.total}" else "") + "，完成后会通知你"); return }
+        if (factBusy) { factCancelAsk = true; return }
         if (factReport != null) openFactSheet(fromCache = true)
         else runFactCheck()
     }
@@ -244,7 +260,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                     Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(with(androidx.compose.ui.platform.LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() } + 28.dp)
                         .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(pal.bg, pal.bg.copy(alpha = .85f), pal.bg.copy(alpha = 0f)))))
                 }
-                else Box(Modifier.padding(top = pad.calculateTopPadding())) { Gallery(imgs, style, { style = it; s.style = it }, spacing, { spacing = it; s.cardSpacing = it }, ratio, { ratio = it; s.cardRatio = it }, s.imgOn, bgBusy, aiBg != null, pal, pad.calculateBottomPadding(),
+                else Box(Modifier.padding(top = pad.calculateTopPadding())) { Gallery(imgs, thumbs, coverK, { coverK = it; s.coverKind = it; aiBg = null }, bodyK, { bodyK = it; s.bodyKind = it }, spacing, { spacing = it; s.cardSpacing = it }, ratio, { ratio = it; s.cardRatio = it }, s.imgOn, bgBusy, aiBg != null, pal, pad.calculateBottomPadding(),
                     cardBusy = cardBusy, cardErr = cardErr, onAiBg = { genBg() }, clearBg = { aiBg = null },
                     save = { scope.launch { val c = withContext(Dispatchers.IO) { Share.save(ctx, imgs) }; snack("已保存 $c 张图片到相册「落笔」") } }) }
             } }
@@ -289,6 +305,11 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     if (xhsSheet) XhsSheet(n, imgs, pal) { xhsSheet = false }
     if (panel) SharePanel(channels, act, { panel = false; goSub("sharebar") }, onFactCheck = { panel = false; onFactIcon() },
         info = ArticleInfo.line(n), versionsLabel = if (versions.size > 1) "共 ${versions.size} 版 ›" else "", onVersions = { panel = false; verMenu = true }) { panel = false; barTick++ }
+    factPreErr?.let { m -> GlassAlert("事实校对没能开始", m, listOf(AlertAction("知道了", AlertAction.Role.Default) {}), { factPreErr = null }) }
+    if (factCancelAsk) { val j = factJob
+        GlassAlert("正在后台校对" + (if (j != null && j.total > 0) " ${j.done}/${j.total}" else ""), "完成后会通知你。要中途停下吗？",
+            listOf(AlertAction("取消校对", AlertAction.Role.Destructive) { scope.launch { withContext(Dispatchers.IO) { FactWorker.cancel(ctx, n.id) }; snack("已取消校对") } },
+                AlertAction("继续校对", AlertAction.Role.Cancel) {}), { factCancelAsk = false }) }
     if (catSheet) CategorySheet(n.category, n.categoryAi, onPick = { c -> scope.launch { db.notes().setCategory(n.root, c) } }) { catSheet = false }
     if (factSheet && factReport != null) FactSheet(
         report = factReport!!,
@@ -465,48 +486,74 @@ fun AaPanel(font: Float, setFont: (Float) -> Unit, fontId: String, setFontId: (S
 }
 
 @Composable
-fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Float, setSpacing: (Float) -> Unit, ratio: Int, setRatio: (Int) -> Unit, imgOn: Boolean, bgBusy: Boolean, hasBg: Boolean,
+fun Gallery(imgs: List<Bitmap>, thumbs: List<Bitmap>, cover: Int, setCover: (Int) -> Unit, body: Int, setBody: (Int) -> Unit, spacing: Float, setSpacing: (Float) -> Unit, ratio: Int, setRatio: (Int) -> Unit, imgOn: Boolean, bgBusy: Boolean, hasBg: Boolean,
             pal: ReadPalette, bottom: androidx.compose.ui.unit.Dp, cardBusy: Boolean = false, cardErr: String? = null, onAiBg: () -> Unit, clearBg: () -> Unit, save: () -> Unit) {
     var liveSpacing by remember(spacing) { mutableFloatStateOf(spacing) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Render.styles.forEachIndexed { i, st ->
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(Sq.m).clickable { setStyle(i) }.padding(2.dp)) {
-                    Box(Modifier.size(46.dp).hairline(Sq.full, if (style == i) pal.accent else Color.Transparent, 2.dp).padding(4.dp).clip(Sq.full).background(Color(st.bg2)).hairline(Sq.full, pal.border), contentAlignment = Alignment.Center) {
-                        if (style == i) SvgIcon(Ic.check, Color(st.accent), 16.dp)
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("shareA")) {
+        Spacer(Modifier.height(8.dp))
+        PagerBlock(imgs, ratio, pal, cardErr)
+        // 1.19 方案 A：预览在上，设置收进一张圆角面板
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp).fillMaxWidth().clip(Sq.xl).background(pal.surface).hairline(Sq.xl, pal.border).padding(vertical = 14.dp)) {
+            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("封面风格", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = pal.text)
+                Text(if (hasBg) "AI 背景" else CoverKind.of(cover).label, fontSize = 12.sp, color = pal.sub)
+            }
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CoverKind.entries.forEachIndexed { i, k ->
+                    val sel = cover == i && !hasBg
+                    Column(Modifier.width(64.dp).clip(Sq.m).clickable { setCover(i) }.testTag("cover_$i"), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.size(64.dp, 85.dp).clip(Sq.s).background(pal.bg).hairline(Sq.s, if (sel) pal.accent else pal.border, if (sel) 2.dp else 1.dp)) {
+                            thumbs.getOrNull(i)?.let { Image(it.asImageBitmap(), k.label, Modifier.fillMaxSize().padding(if (sel) 2.dp else 0.dp).clip(Sq.xs), contentScale = ContentScale.Crop) }
+                        }
+                        Text(k.label, Modifier.padding(top = 4.dp), fontSize = 11.sp, maxLines = 1, color = if (sel) pal.accent else pal.sub, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal)
                     }
-                    Text(st.name, Modifier.padding(top = 2.dp), fontSize = 12.sp, color = if (style == i) pal.accent else pal.sub)
                 }
             }
-        }
-        Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(Sq.xl).background(pal.surface).hairline(Sq.xl, pal.border).padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("正文排版", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = pal.text)
+            Box(Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().height(Dp.Hairline).background(pal.border))
+            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("正文版式", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = pal.text)
                 val many = imgs.size > 18
                 Text("共 ${imgs.size} 张", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (many) P3.danger else pal.accent,
                     modifier = Modifier.clip(Sq.full).background((if (many) P3.danger else pal.accent).copy(alpha = .12f)).padding(horizontal = 10.dp, vertical = 3.dp))
             }
-            Text("画面比例", fontSize = 12.sp, color = pal.sub, modifier = Modifier.padding(top = 8.dp, bottom = 6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CardRatio.entries.forEachIndexed { i, r ->
-                    val sel = ratio == i
-                    val label = "${r.label} ${r.sub}"
-                    Box(Modifier.weight(1f).height(40.dp).clip(Sq.m)
-                        .background(if (sel) pal.accent.copy(alpha = .14f) else pal.bg)
-                        .hairline(Sq.m, if (sel) pal.accent else pal.border, if (sel) 1.5.dp else 1.dp)
-                        .clickable { setRatio(i) }, contentAlignment = Alignment.Center) {
-                        Text(label, fontSize = 13.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, color = if (sel) pal.accent else pal.sub, maxLines = 1)
+            Row(Modifier.padding(horizontal = 16.dp).padding(top = 10.dp).fillMaxWidth().height(36.dp).clip(Sq.m).background(pal.bg).padding(3.dp)) {
+                BodyKind.entries.forEachIndexed { i, k ->
+                    val sel = body == i
+                    Box(Modifier.weight(1f).fillMaxHeight().clip(Sq.s).background(if (sel) pal.surface else Color.Transparent).then(if (sel) Modifier.hairline(Sq.s, pal.border) else Modifier)
+                        .clickable { setBody(i) }.testTag("body_$i"), contentAlignment = Alignment.Center) {
+                        Text(k.label, fontSize = 12.sp, maxLines = 1, color = if (sel) pal.accent else pal.sub, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal)
                     }
                 }
             }
-            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("行距 ${when { liveSpacing < 1.55f -> "紧凑"; liveSpacing < 1.85f -> "标准"; else -> "宽松" }}", fontSize = 12.sp, color = pal.sub, modifier = Modifier.width(64.dp))
+            Row(Modifier.padding(horizontal = 16.dp).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                CardRatio.entries.forEachIndexed { i, r ->
+                    val sel = ratio == i
+                    Text(r.label, Modifier.padding(end = 8.dp).clip(Sq.full).background(if (sel) pal.accent.copy(alpha = .12f) else pal.bg)
+                        .hairline(Sq.full, if (sel) pal.accent else Color.Transparent).clickable { setRatio(i) }.padding(horizontal = 14.dp, vertical = 6.dp),
+                        fontSize = 12.sp, color = if (sel) pal.accent else pal.sub, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                }
+                Spacer(Modifier.width(6.dp))
+                Text("行距 ${String.format(java.util.Locale.US, "%.1f", liveSpacing)}", fontSize = 12.sp, color = pal.sub, fontFamily = Mono, modifier = Modifier.width(64.dp))
                 SoftSlider(liveSpacing, { liveSpacing = it }, Render.LINE_MIN..Render.LINE_MAX, 0.1f, pal.accent, pal.sub.copy(alpha = .25f), pal.surface, Modifier.weight(1f),
                     onChangeFinished = { setSpacing(it) })
             }
-            Text(if (imgs.size > 18) "小红书单篇最多 18 张，可调小行距或字号" else if (CardHint.dropped > 0) "小红书单篇最多 18 张，已省略后面 ${CardHint.dropped} 张文中配图" else "换比例后封面与正文图会重新分页", fontSize = 12.sp, color = if (imgs.size > 18) P3.danger else pal.sub)
+            if (imgs.size > 18 || CardHint.dropped > 0) Text(if (imgs.size > 18) "小红书单篇最多 18 张，可调小行距或字号" else "小红书单篇最多 18 张，已省略后面 ${CardHint.dropped} 张文中配图",
+                Modifier.padding(horizontal = 16.dp).padding(top = 8.dp), fontSize = 12.sp, color = if (imgs.size > 18) P3.danger else pal.sub)
         }
-        Spacer(Modifier.height(14.dp))
+        Column(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            // 1.16：「保存到相册」已在底部操作栏（存相册），这里不再重复，避免从底栏下面露出来
+            if (imgOn) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                PlainButton(onClick = onAiBg, enabled = !bgBusy, shape = Sq.full) { SvgIcon(Ic.wand, pal.accent, 16.dp); Spacer(Modifier.width(4.dp)); Text(if (bgBusy) "生成中…" else if (hasBg) "换一张背景" else "AI 生成封面背景", color = pal.accent) }
+                if (hasBg) PlainButton(onClick = clearBg, shape = Sq.full) { Text("去掉背景", color = pal.sub) }
+            }
+        }
+        Spacer(Modifier.height(bottom + 16.dp))
+    }
+}
+
+
+@Composable
+private fun PagerBlock(imgs: List<Bitmap>, ratio: Int, pal: ReadPalette, cardErr: String?) = Column(Modifier.fillMaxWidth()) {
         if (imgs.isEmpty()) Box(Modifier.fillMaxWidth().height(400.dp), contentAlignment = Alignment.Center) {
             if (cardErr != null) Text(cardErr, color = P3.danger, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(24.dp))
             else CircularProgressIndicator(color = pal.accent)
@@ -522,15 +569,6 @@ fun Gallery(imgs: List<Bitmap>, style: Int, setStyle: (Int) -> Unit, spacing: Fl
             }
             Text("${ps.currentPage + 1} / ${imgs.size}  ·  ${if (ps.currentPage == 0) "封面" else "正文"}  ·  ${CardRatio.fromIndex(ratio).label}", fontFamily = Mono, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = pal.sub, fontSize = 12.sp)
         }
-        Column(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            // 1.16：「保存到相册」已在底部操作栏（存相册），这里不再重复，避免从底栏下面露出来
-            if (imgOn) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                PlainButton(onClick = onAiBg, enabled = !bgBusy, shape = Sq.full) { SvgIcon(Ic.wand, pal.accent, 16.dp); Spacer(Modifier.width(4.dp)); Text(if (bgBusy) "生成中…" else if (hasBg) "换一张背景" else "AI 生成封面背景", color = pal.accent) }
-                if (hasBg) PlainButton(onClick = clearBg, shape = Sq.full) { Text("去掉背景", color = pal.sub) }
-            }
-        }
-        Spacer(Modifier.height(bottom + 16.dp))
-    }
 }
 
 @Composable
@@ -576,10 +614,10 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
                     HorizontalDivider(Modifier.padding(vertical = 12.dp), thickness = Dp.Hairline, color = cs.outlineVariant)
                     TagEditor(g, { g = it }, cs.primary, cs.background, cs.onSurface, false, collapsible = false)
                     HorizontalDivider(Modifier.padding(vertical = 12.dp), thickness = Dp.Hairline, color = cs.outlineVariant)
-                    // 正文自己滚动：开始拖动时收起键盘（像系统备忘录）
-                    val bodyScroll = rememberScrollState()
-                    LaunchedEffect(bodyScroll) { snapshotFlow { bodyScroll.isScrollInProgress }.collect { if (it) hideKb() } }
-                    BasicTextField(b, { b = it }, Modifier.fillMaxWidth().weight(1f).verticalScroll(bodyScroll).focusProperties { canFocus = armed },
+                    // 1.18.2：正文用 BasicTextField 自带的内部滚动（不再外套 verticalScroll）。
+                    // 外套 verticalScroll 时输入框被量成全文高度，光标移动不会触发滚动，键盘弹出后光标被挡住。
+                    // 内部滚动会自动把光标行滚到可见区（区域高度 = 屏幕 − 键盘，由外层 imePadding 决定）。
+                    BasicTextField(b, { b = it }, Modifier.fillMaxWidth().weight(1f).testTag("editBody").focusProperties { canFocus = armed },
                         textStyle = TextStyle(fontSize = 16.sp, lineHeight = 27.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary),
                         decorationBox = { inner -> Box { if (b.isEmpty()) Text("正文", fontSize = 16.sp, color = t3()); inner() } })
                     Text("正文 ${b.length} 字" + if (changed) " · 未保存" else "", Modifier.fillMaxWidth().padding(vertical = 8.dp), textAlign = TextAlign.End, fontSize = 12.sp, color = t3())

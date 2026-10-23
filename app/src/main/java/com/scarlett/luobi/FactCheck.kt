@@ -60,6 +60,8 @@ data class FactReport(
     val claims: List<FactClaim> = emptyList(),
     /** 1.17：实际用到的检索源 */
     val sources: List<String> = emptyList(),
+    /** 1.19：每个检索源这次的状态（成功 / 限流 / Key 错 / 连不上…），报告顶部显示 */
+    val status: String = "",
 ) {
     /** 未应用的问题数（角标） */
     fun pendingCount() = issues.count { !it.applied && it.span.isNotBlank() }
@@ -418,6 +420,7 @@ object FactCheck {
             .put("queries", queries)
             .put("checkedAt", r.checkedAt)
             .put("claims", FactPipeline.encodeClaims(r.claims))
+            .put("status", r.status)
             .put("sources", JSONArray(r.sources))
             .toString()
     }
@@ -456,7 +459,7 @@ object FactCheck {
             val queries = (0 until qArr.length()).map { qArr.optString(it) }.filter { it.isNotBlank() }
             val srcA = j.optJSONArray("sources") ?: JSONArray()
             FactReport(issues, skipped, j.optString("searchNote"), queries, j.optLong("checkedAt", System.currentTimeMillis()),
-                FactPipeline.decodeClaims(j.optJSONArray("claims")), (0 until srcA.length()).map { srcA.optString(it) })
+                FactPipeline.decodeClaims(j.optJSONArray("claims")), (0 until srcA.length()).map { srcA.optString(it) }, j.optString("status"))
         }.getOrNull()
     }
 

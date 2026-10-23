@@ -31,7 +31,7 @@ class Cards1161Test {
         assertEquals(0, Render.lastDroppedPics)
         // 圆角：图左上角像素不是图色
         val g = pages[gi]; val top = (0 until g.height).first { y -> g.getPixel(540, y) == green }
-        assertNotEquals(green, g.getPixel(100, top))
+        assertNotEquals(green, g.getPixel(Render.marginH + 1, top))
     }
 
     @Test fun capsAt18IncludingCoverAndDropsLaterImages() {

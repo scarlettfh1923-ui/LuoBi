@@ -138,6 +138,8 @@ data class FactJob(
     @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE) suspend fun put(j: FactJob)
     @Query("UPDATE fact_jobs SET done=:done, total=:total, stateJson=:state, updatedAt=:at WHERE noteId=:id") suspend fun progress(id: Long, done: Int, total: Int, state: String, at: Long = System.currentTimeMillis())
     @Query("UPDATE fact_jobs SET seen=1 WHERE noteId=:id") suspend fun markSeen(id: Long)
+    /** 1.19：崩溃恢复时把还在「进行中」的校对标为失败，角标不再一直转 */
+    @Query("UPDATE fact_jobs SET status='failed', error=:why, updatedAt=:at WHERE status='running'") suspend fun failRunning(why: String, at: Long = System.currentTimeMillis()): Int
 }
 
 @Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class, FactJob::class], version = 6, exportSchema = false)
@@ -388,6 +390,9 @@ class Settings(val c: Context) {
         set(v) { p.edit().putFloat("cardLine", v.coerceIn(Render.LINE_MIN, Render.LINE_MAX)).putBoolean("cardLineMigrated", true).apply() }
     var style get() = p.getInt("style", 0); set(v) = put("style", v)
     var cardRatio get() = p.getInt("cardRatio", 0); set(v) = put("cardRatio", v)
+    /** 1.19 小红书：封面风格 / 正文版式 */
+    var coverKind get() = p.getInt("coverKind", 0); set(v) = put("coverKind", v)
+    var bodyKind get() = p.getInt("bodyKind", 0); set(v) = put("bodyKind", v)
     var libSort get() = p.getInt("libSort", 0); set(v) = put("libSort", v)
     /** 配图模型（可选） */
     var imgOn get() = p.getBoolean("imgOn", false); set(v) = put("imgOn", v)

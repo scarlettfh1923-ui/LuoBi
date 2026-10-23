@@ -40,8 +40,11 @@ object CrashGuard {
     }
 
     /** 清掉进行中的生成 / 校对与进度卡（文章本身已在数据库里，不删） */
+    const val FACT_CRASH = "上次应用异常退出，校对已中断，请重新检测"
+    fun failFactJobs(c: Context) { Thread { runCatching { kotlinx.coroutines.runBlocking { AppDb.get(c).factJobs().failRunning(FACT_CRASH) } } }.apply { start(); join(3000) } }
     fun reset(c: Context) {
         try { val wm = WorkManager.getInstance(c); wm.cancelUniqueWork(CopyWorker.NAME); wm.cancelAllWorkByTag(FactWorker.TAG); wm.cancelAllWorkByTag(FactWorker::class.java.name); wm.pruneWork() } catch (_: Throwable) {}
+        try { failFactJobs(c) } catch (_: Throwable) {}
         try { GenCard.clear(c) } catch (_: Throwable) {}
         try { c.getSharedPreferences("gen", Context.MODE_PRIVATE).edit().remove("card").remove("seen").commit() } catch (_: Throwable) {}
         try { CopyWorker.clearDoneNotice(c) } catch (_: Throwable) {}
