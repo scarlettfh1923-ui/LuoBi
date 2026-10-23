@@ -20,6 +20,8 @@ import org.json.JSONObject
 object AppState {
     @Volatile var visible = 0
     val openNote = MutableStateFlow(0L)
+    /** 1.17：点「校对完成」通知 → 打开这篇并弹出结果 */
+    val openFact = MutableStateFlow(0L)
     val sharedText = MutableStateFlow<String?>(null)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 }

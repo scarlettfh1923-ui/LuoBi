@@ -57,7 +57,10 @@ class Fact1151Shot {
         rule.onAllNodesWithContentDescription("事实校对").onFirst().performClick()
         rule.mainClock.advanceTimeBy(900); rule.waitForIdle()
         shot("360-sheet-low-checked")
-        rule.onAllNodes(hasScrollAction()).onLast().performScrollToNode(hasText("没有建议改正", substring = true))
+        rule.onAllNodes(hasScrollAction()).onLast().performScrollToNode(hasText("其他 ·", substring = true))
+        rule.onAllNodesWithText("其他 ·", substring = true).onFirst().performClick()
+        rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
+        rule.onAllNodes(hasScrollAction()).onLast().performScrollToNode(hasText("纽约", substring = true))
         rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
         shot("360-sheet-unverifiable")
     }

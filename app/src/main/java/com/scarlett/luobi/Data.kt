@@ -117,16 +117,40 @@ data class Channel(
     @Delete suspend fun delete(c: Channel)
 }
 
-@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class], version = 5, exportSchema = false)
+/** 1.17：后台事实校对任务（每篇一行；中途进度存在 stateJson，进程被杀后接着跑） */
+@Entity(tableName = "fact_jobs")
+data class FactJob(
+    @PrimaryKey val noteId: Long,
+    val title: String = "",
+    /** running / done / failed */
+    val status: String = "running",
+    val done: Int = 0,
+    val total: Int = 0,
+    val stateJson: String = "",
+    /** 结果是否看过（没看过 → 红点） */
+    val seen: Boolean = true,
+    val error: String = "",
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+@Dao interface FactJobDao {
+    @Query("SELECT * FROM fact_jobs WHERE noteId=:id") suspend fun get(id: Long): FactJob?
+    @Query("SELECT * FROM fact_jobs WHERE noteId=:id") fun flow(id: Long): Flow<FactJob?>
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE) suspend fun put(j: FactJob)
+    @Query("UPDATE fact_jobs SET done=:done, total=:total, stateJson=:state, updatedAt=:at WHERE noteId=:id") suspend fun progress(id: Long, done: Int, total: Int, state: String, at: Long = System.currentTimeMillis())
+    @Query("UPDATE fact_jobs SET seen=1 WHERE noteId=:id") suspend fun markSeen(id: Long)
+}
+
+@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class, FactJob::class], version = 6, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun notes(): NoteDao
     abstract fun templates(): TemplateDao
     abstract fun cleans(): CleanDao
     abstract fun channels(): ChannelDao
+    abstract fun factJobs(): FactJobDao
     companion object {
         @Volatile private var inst: AppDb? = null
         fun get(c: Context): AppDb = inst ?: synchronized(this) {
-            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { inst = it }
+            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { inst = it }
         }
     }
 }
@@ -406,6 +430,13 @@ val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
 /** 1.15：notes 增加 category 列（非破坏，旧文章为空） */
 val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) { db.execSQL("ALTER TABLE notes ADD COLUMN category TEXT NOT NULL DEFAULT ''"); db.execSQL("ALTER TABLE notes ADD COLUMN categoryAi TEXT NOT NULL DEFAULT ''") }
+}
+
+/** 1.17：后台事实校对任务表 */
+val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `fact_jobs` (`noteId` INTEGER NOT NULL, `title` TEXT NOT NULL, `status` TEXT NOT NULL, `done` INTEGER NOT NULL, `total` INTEGER NOT NULL, `stateJson` TEXT NOT NULL, `seen` INTEGER NOT NULL, `error` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`noteId`))")
+    }
 }
 
 data class CategoryCount(val name: String, val count: Int)

@@ -25,7 +25,7 @@ class Migration45Test {
             d.execSQL("INSERT INTO notes (id,createdAt,title,body,tags,favorite,raw,cleaned,intent,templateId,templateName,model,finalPrompt,rootId,version,instruction,images,factReportJson) VALUES (1,5,'旧文','正文','影评',1,'','','{}',0,'豆瓣影评','m','',1,1,'','[]','{\"issues\":[]}')")
             d.version = 4
         }
-        val db = Room.databaseBuilder(ctx, AppDb::class.java, "mig45.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).allowMainThreadQueries().build()
+        val db = Room.databaseBuilder(ctx, AppDb::class.java, "mig45.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).allowMainThreadQueries().build()
         runBlocking {
             val n = db.notes().get(1)!!
             assertEquals("旧文", n.title); assertEquals("正文", n.body); assertTrue(n.favorite); assertEquals("{\"issues\":[]}", n.factReportJson)
@@ -33,7 +33,7 @@ class Migration45Test {
             db.notes().update(n.copy(category = "电影"))
             assertEquals(listOf(CategoryCount("电影", 1)), db.notes().categoryCounts())
         }
-        assertEquals(5, db.openHelper.readableDatabase.version)
+        assertEquals(6, db.openHelper.readableDatabase.version)
         db.close()
     }
 }

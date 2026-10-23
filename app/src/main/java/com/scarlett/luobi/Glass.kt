@@ -139,9 +139,15 @@ fun FloatGroup(dark: Boolean = false, content: @Composable RowScope.() -> Unit) 
     Row(Modifier.height(44.dp).frosted(elevation = 8.dp, dark = dark).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, content = content)
 }
 @Composable
-fun FloatAction(icon: List<String>, tint: Color, desc: String, badge: Int = 0, onClick: () -> Unit) {
+fun FloatAction(icon: List<String>, tint: Color, desc: String, badge: Int = 0, progress: Float? = null, onClick: () -> Unit) {
     Box(Modifier.size(width = 44.dp, height = 44.dp).clip(Sq.full).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        SvgIcon(icon, tint, 22.dp, desc = desc)
+        // 1.17：后台校对中——图标外一圈细进度环（不确定时缓慢转动），不弹窗、不挡正文
+        if (progress != null) {
+            val track = tint.copy(alpha = .18f)
+            if (progress < 0f && !Motion.reduced) CircularProgressIndicator(Modifier.size(34.dp).semantics { contentDescription = "校对进行中" }, color = tint, strokeWidth = 2.dp, trackColor = track)
+            else CircularProgressIndicator({ progress.coerceIn(0f, 1f).coerceAtLeast(.04f) }, Modifier.size(34.dp).semantics { contentDescription = "校对进行中" }, color = tint, strokeWidth = 2.dp, trackColor = track)
+        }
+        SvgIcon(icon, tint, if (progress != null) 18.dp else 22.dp, desc = desc)
         // 1.16：红点弹簧出现
         if (badge < 0) {
             val sc = remember { androidx.compose.animation.core.Animatable(if (Motion.reduced) 1f else 0f) }

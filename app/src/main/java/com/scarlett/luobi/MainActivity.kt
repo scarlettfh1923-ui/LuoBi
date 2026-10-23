@@ -39,7 +39,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class MainActivity : ComponentActivity() {
-    companion object { const val EXTRA_NOTE = "noteId" }
+    companion object { const val EXTRA_NOTE = "noteId"; const val EXTRA_FACT = "openFact" }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); take(intent) }
     private fun take(i: Intent?) {
         val id = i?.getLongExtra(EXTRA_NOTE, 0L) ?: 0L
-        if (id > 0) { AppState.openNote.value = id; i?.removeExtra(EXTRA_NOTE) }
+        if (id > 0) { if (i?.getBooleanExtra(EXTRA_FACT, false) == true) { AppState.openFact.value = id; i.removeExtra(EXTRA_FACT) }; AppState.openNote.value = id; i?.removeExtra(EXTRA_NOTE) }
         if (i?.action == Intent.ACTION_SEND) i.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let { AppState.sharedText.value = it }
     }
     override fun onStart() { super.onStart(); AppState.visible++ }

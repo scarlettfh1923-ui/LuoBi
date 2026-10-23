@@ -56,6 +56,10 @@ data class FactReport(
     val searchNote: String,
     val queries: List<String>,
     val checkedAt: Long = System.currentTimeMillis(),
+    /** 1.17：说法 → 细节 */
+    val claims: List<FactClaim> = emptyList(),
+    /** 1.17：实际用到的检索源 */
+    val sources: List<String> = emptyList(),
 ) {
     /** 未应用的问题数（角标） */
     fun pendingCount() = issues.count { !it.applied && it.span.isNotBlank() }
@@ -383,7 +387,8 @@ object FactCheck {
         val issues = report.issues.map { iss ->
             if (iss.id in appliedIds) iss.copy(applied = true, selected = false) else iss
         }
-        return report.copy(issues = issues)
+        val claims = report.claims.map { c -> c.copy(details = c.details.map { d -> if (d.id in appliedIds) d.copy(applied = true, selected = false) else d }) }
+        return report.copy(issues = issues, claims = claims)
     }
 
     fun encodeReport(r: FactReport): String {
@@ -412,6 +417,8 @@ object FactCheck {
             .put("searchNote", r.searchNote)
             .put("queries", queries)
             .put("checkedAt", r.checkedAt)
+            .put("claims", FactPipeline.encodeClaims(r.claims))
+            .put("sources", JSONArray(r.sources))
             .toString()
     }
 
@@ -447,7 +454,9 @@ object FactCheck {
             val skipped = (0 until skippedArr.length()).map { skippedArr.optString(it) }.filter { it.isNotBlank() }
             val qArr = j.optJSONArray("queries") ?: JSONArray()
             val queries = (0 until qArr.length()).map { qArr.optString(it) }.filter { it.isNotBlank() }
-            FactReport(issues, skipped, j.optString("searchNote"), queries, j.optLong("checkedAt", System.currentTimeMillis()))
+            val srcA = j.optJSONArray("sources") ?: JSONArray()
+            FactReport(issues, skipped, j.optString("searchNote"), queries, j.optLong("checkedAt", System.currentTimeMillis()),
+                FactPipeline.decodeClaims(j.optJSONArray("claims")), (0 until srcA.length()).map { srcA.optString(it) })
         }.getOrNull()
     }
 

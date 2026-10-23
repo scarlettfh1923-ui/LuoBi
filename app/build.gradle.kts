@@ -15,7 +15,7 @@ android {
   compileSdk = 35
   defaultConfig {
     applicationId = "com.scarlett.luobi"
-    minSdk = 29; targetSdk = 35; versionCode = 21; versionName = "1.16.2"
+    minSdk = 29; targetSdk = 35; versionCode = 22; versionName = "1.17.0"
   }
   signingConfigs {
     if (signProps.isNotEmpty()) create("release") {
@@ -60,4 +60,5 @@ dependencies {
   testImplementation("androidx.compose.ui:ui-test-junit4")
   debugImplementation("androidx.compose.ui:ui-test-manifest")
   testImplementation("org.json:json:20231013")
+  testImplementation("androidx.work:work-testing:2.9.1")
 }

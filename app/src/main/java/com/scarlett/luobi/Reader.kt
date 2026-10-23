@@ -128,13 +128,19 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     act.openXhs = { if (imgs.isNotEmpty()) xhsSheet = true else snack("配图还在生成，请稍候") }
 
     // 1.12 事实校对：缓存上次结果；点图标重开不重跑；「重新检测」才重跑；建议可手改；勾选应用
-    var factBusy by remember { mutableStateOf(false) }
+    // 1.17：校对在后台跑（WorkManager 前台任务）；这里只看任务行和 WorkManager 状态
+    val factJob by remember(n.id) { db.factJobs().flow(n.id) }.collectAsState(initial = null)
+    val factWork by remember(n.id) { androidx.work.WorkManager.getInstance(ctx).getWorkInfosForUniqueWorkFlow(FactWorker.name(n.id)) }.collectAsState(initial = null)
+    val factActive = factWork?.let { l -> l.any { !it.state.isFinished } }
     var factReport by remember(n.id) { mutableStateOf(FactCheck.decodeReport(n.factReportJson)) }
-    LaunchedEffect(n.id) { factReport = FactCheck.decodeReport(n.factReportJson) }
+    LaunchedEffect(n.id, n.factReportJson) { factReport = FactCheck.decodeReport(n.factReportJson) }
+    val factState = FactBadge.state(factJob, factReport != null, factActive)
+    val factBusy = factState == FactBadge.S.RUNNING
     var factSheet by remember { mutableStateOf(false) }
     var factFromCache by remember { mutableStateOf(false) }
     var factFocus by remember { mutableStateOf<String?>(null) }
     var catSheet by remember { mutableStateOf(false) }
+    val notifPerm = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
     fun persistFact(r: FactReport?) {
         factReport = r
         val json = r?.let { FactCheck.encodeReport(it) }.orEmpty()
@@ -144,28 +150,29 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
         if (factReport == null) return
         factFromCache = fromCache
         factSheet = true
+        scope.launch { db.factJobs().markSeen(n.id) }
+        FactWorker.clearDone(ctx, n.id)
     }
     fun runFactCheck() {
-        if (factBusy) return
-        factBusy = true; factSheet = false; factFromCache = false
+        if (factBusy) { snack("正在后台校对，完成后会通知你"); return }
+        factSheet = false
+        // Android 13+ 第一次用时要通知权限
+        if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            runCatching { notifPerm.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
         scope.launch {
-            try {
-                val r = withContext(Dispatchers.IO) { FactCheck.run(ctx, n.title, n.body, n.model) }
-                persistFact(r)
-                factFromCache = false
-                factSheet = true
-                if (r.issues.isEmpty()) snack("没有发现硬事实问题")
-            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: CleanParse.BadFormat) { snack("校对结果格式不对，请重试", false, "重试") { runFactCheck() } }
-            catch (e: Throwable) { snackErr(e, "事实校对失败：", "重试") { runFactCheck() } }
-            finally { factBusy = false }
+            try { withContext(Dispatchers.IO) { FactWorker.start(ctx, n.id, n.title, fresh = true) }; snack("已开始后台校对，可以继续阅读，完成后会通知你") }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Throwable) { snackErr(e, "事实校对没能开始：") }
         }
     }
     fun onFactIcon() {
-        if (factBusy) return
+        if (factBusy) { val j = factJob; snack("正在校对" + (if (j != null && j.total > 0) " ${j.done}/${j.total}" else "") + "，完成后会通知你"); return }
         if (factReport != null) openFactSheet(fromCache = true)
         else runFactCheck()
     }
+    // 从「校对完成」通知点进来：直接弹出这篇的结果
+    val openFact by AppState.openFact.collectAsState()
+    LaunchedEffect(openFact, factReport) { if (openFact == n.id && factReport != null) { AppState.openFact.value = 0L; openFactSheet(fromCache = false) } }
     fun applyFactFixes(list: List<FactIssue>) {
         val body2 = FactCheck.applyFixes(n.body, list)
         val title2 = list.fold(n.title) { t, iss -> if (iss.span.isNotBlank() && t.contains(iss.span) && iss.correction.isNotBlank()) t.replaceFirst(iss.span, iss.correction) else t }
@@ -194,8 +201,9 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 if (tab == 1) Text("配图", Modifier.frosted(elevation = 6.dp, dark = pal.dark).padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = pal.text)
             }
             if (tab == 0) FloatGroup(pal.dark) {
-                FloatAction(Ic.search, if (factBusy) pal.accent else pal.text, "事实校对",
-                    badge = if (factReport != null) -1 else 0) { onFactIcon() } // 1.15.1：检测过就显示小红点，不显示数字
+                FloatAction(Ic.search, if (factBusy) pal.accent else pal.text, if (factBusy) "事实校对（进行中）" else "事实校对",
+                    badge = if (factState == FactBadge.S.DOT) -1 else 0,
+                    progress = if (factBusy) factJob?.let { j -> if (j.total > 0) j.done.toFloat() / j.total else -1f } ?: -1f else null) { onFactIcon() } // 1.17：没看过的结果才显示红点；跑着时显示细进度环
                 FloatAction(Ic.imgplus, pal.text, "文中插图") { il.start() }
                 FloatAction(Ic.text, if (showFont) pal.accent else pal.text, "阅读设置") { showFont = !showFont }
                 FloatAction(Ic.write, pal.text, "编辑") { editing = true }
@@ -233,7 +241,6 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                     // 1.16：正文铺满全屏，状态栏下一道柔和渐隐
                     Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(with(androidx.compose.ui.platform.LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() } + 28.dp)
                         .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(pal.bg, pal.bg.copy(alpha = .85f), pal.bg.copy(alpha = 0f)))))
-                    FactProgressChip(factBusy, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp))
                 }
                 else Box(Modifier.padding(top = pad.calculateTopPadding())) { Gallery(imgs, style, { style = it; s.style = it }, spacing, { spacing = it; s.cardSpacing = it }, ratio, { ratio = it; s.cardRatio = it }, s.imgOn, bgBusy, aiBg != null, pal, pad.calculateBottomPadding(),
                     cardBusy = cardBusy, cardErr = cardErr, onAiBg = { genBg() }, clearBg = { aiBg = null },
