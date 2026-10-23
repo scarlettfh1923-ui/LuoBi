@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.*
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -113,9 +114,7 @@ data class GenJob(
  */
 class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
     /** 1.18.1：只有 Android 11 及以下的加急任务才会走到这里；任何异常都退回不带类型的通知，绝不抛出 */
-    override suspend fun getForegroundInfo(): ForegroundInfo = try { fgInfo() } catch (_: Throwable) {
-        ForegroundInfo(NID_PROGRESS, NotificationCompat.Builder(applicationContext, "gen").setSmallIcon(R.drawable.ic_stat_notify).setContentTitle("正在写文章…").build())
-    }
+    override suspend fun getForegroundInfo(): ForegroundInfo = try { fgInfo() } catch (_: Throwable) { Notif.fallback(applicationContext, NID_PROGRESS, Notif.CH_GEN, "正在写文章…") }
     private fun fgInfo(): ForegroundInfo {
         val nm = applicationContext.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("gen", "文章生成中", NotificationManager.IMPORTANCE_LOW))
@@ -127,13 +126,21 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
     override suspend fun doWork(): Result {
         val ctx = applicationContext
         val job = try { GenJob.parse(ctx.getSharedPreferences("gen", Context.MODE_PRIVATE).getString("job", "{}") ?: "{}") } catch (e: Exception) { return Result.failure() }
+        // 2.0.1：前台 dataSync 通知，锁屏 / 切应用也不被系统停掉；不允许（后台启动限制等）时照常以加急任务继续
+        runCatching { setForeground(fgInfo()) }
         return try {
             if (job.kind != "rewrite") { GenCard.clear(ctx); report(GenProgress(1)) }
             var last = 0L
-            val id = if (job.kind == "rewrite") Ai.rewrite(ctx, job.noteId, job.instruction, job.model) else Ai.write(ctx, job) { acc ->
-                // 约每秒 4 次把进度交给界面
-                val now = System.currentTimeMillis()
-                if (now - last >= 250) { last = now; val pr = StreamPeek.progress(acc); kotlinx.coroutines.runBlocking { report(pr) } }
+            // 2.0.1：流式回调里只放最新进度（不阻塞读流），另一个协程每 250ms 异步上报
+            val latest = kotlinx.coroutines.flow.MutableStateFlow<GenProgress?>(null)
+            val id = kotlinx.coroutines.coroutineScope {
+                val reporter = launch { latest.collect { p -> if (p != null) { report(p); kotlinx.coroutines.delay(250) } } }
+                try {
+                    if (job.kind == "rewrite") Ai.rewrite(ctx, job.noteId, job.instruction, job.model) else Ai.write(ctx, job) { acc ->
+                        val now = System.currentTimeMillis()
+                        if (now - last >= 250) { last = now; latest.value = StreamPeek.progress(acc) }
+                    }
+                } finally { reporter.cancel() }
             }
             val note = AppDb.get(ctx).notes().get(id)
             val title = note?.title ?: ""

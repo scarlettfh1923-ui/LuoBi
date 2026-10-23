@@ -186,7 +186,11 @@ object Notion {
         if (token.isBlank() || s.notionTarget.isBlank()) throw ConfigError("还没有配置 Notion。请到「设定 → 发布渠道 → Notion」填集成 Token 和目标页面 / 数据库。")
         val cover = firstImage(pics, Export.paras(body).size)?.let { coverSourceOf(it) }
         // 摘要只在数据库目标、且发布时现生成（用写作模型）；失败不挡发布
-        val summarize: () -> String = { kotlinx.coroutines.runBlocking { Summary.make(ctx, title, body, writerModel) } }
+        // 2.0.1：摘要只在 IO 线程按需生成，最多等 60 秒；绝不在主线程阻塞
+        val summarize: () -> String = {
+            check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) { "摘要不能在主线程生成" }
+            kotlinx.coroutines.runBlocking { kotlinx.coroutines.withTimeoutOrNull(60_000) { Summary.make(ctx, title, body, writerModel) }.orEmpty() }
+        }
         publishFull(token, s.notionType, s.notionTarget, s.notionTitleProp, s.notionTagsProp, title, blocks(body, tags, pics, s.showCredit), tags, cover,
             Meta(category, summarize))
     }

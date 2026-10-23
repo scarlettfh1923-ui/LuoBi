@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         CrashGuard.onLaunch(this)
         enableEdgeToEdge()
-        if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        Notif.ensureChannels(this) // 2.0.1：通知权限改到第一次生成 / 校对前再问
         if (savedInstanceState == null) take(intent)
         Share.cleanDocs(this) // 1.10：启动时清理上次分享留下的临时文件
         Motion.init(this); Glass.init(this); if (CrashGuard.recovered) Glass.blur = false
@@ -104,7 +104,8 @@ fun App() {
     val genProg = if (running && runningKind != "rewrite") CopyWorker.progressOf(info!!.progress) else null
     LaunchedEffect(running, runningKind) { if (running && runningKind == "rewrite") snackBusy("正在改写…可以先做别的，改好会提醒你") }
     LaunchedEffect(Unit) { GenCard.load(ctx) }
-    val startGen: (GenJob) -> Unit = { j -> genErr = null; if (running) snack("正在写一篇，写完再开始下一篇", false) else CopyWorker.start(ctx, j) }
+    val notifGate = rememberNotifGate()
+    val startGen: (GenJob) -> Unit = { j -> genErr = null; if (running) snack("正在写一篇，写完再开始下一篇", false) else notifGate { CopyWorker.start(ctx, j) } }
     LaunchedEffect(info?.id, info?.state) {
         val i = info ?: return@LaunchedEffect
         if (!i.state.isFinished) return@LaunchedEffect

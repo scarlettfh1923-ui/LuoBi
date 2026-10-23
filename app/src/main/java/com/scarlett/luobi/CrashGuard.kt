@@ -19,8 +19,9 @@ object CrashGuard {
         val app = c.applicationContext
         try {
             val sp = p(app)
-            val bad = sp.getBoolean(K_LAUNCHING, false) || sp.getBoolean(K_CRASHED, false) || sp.getInt("ver", 0) < 24
-            if (bad) { recovered = true; reset(app) }
+            // 2.0.1：只认未捕获异常写下的 K_CRASHED；划掉应用 / HyperOS 杀后台不算闪退
+            val bad = sp.getBoolean(K_CRASHED, false) || sp.getInt("ver", 0) < 24
+            recovered = bad; if (bad) reset(app)
             sp.edit().putBoolean(K_LAUNCHING, true).putBoolean(K_CRASHED, false).putInt("ver", BuildConfig.VERSION_CODE).commit()
         } catch (_: Throwable) {}
         if (!installed) {
@@ -41,7 +42,8 @@ object CrashGuard {
 
     /** 清掉进行中的生成 / 校对与进度卡（文章本身已在数据库里，不删） */
     const val FACT_CRASH = "上次应用异常退出，校对已中断，请重新检测"
-    fun failFactJobs(c: Context) { Thread { runCatching { kotlinx.coroutines.runBlocking { AppDb.get(c).factJobs().failRunning(FACT_CRASH) } } }.apply { start(); join(3000) } }
+    /** 2.0.1：后台线程执行，不再在主线程等待 */
+    fun failFactJobs(c: Context) { Thread { runCatching { kotlinx.coroutines.runBlocking { AppDb.get(c).factJobs().failRunning(FACT_CRASH) } } }.apply { isDaemon = true; start() } }
     fun reset(c: Context) {
         try { val wm = WorkManager.getInstance(c); wm.cancelUniqueWork(CopyWorker.NAME); wm.cancelAllWorkByTag(FactWorker.TAG); wm.cancelAllWorkByTag(FactWorker::class.java.name); wm.pruneWork() } catch (_: Throwable) {}
         try { failFactJobs(c) } catch (_: Throwable) {}

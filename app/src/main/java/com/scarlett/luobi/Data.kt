@@ -142,7 +142,7 @@ data class FactJob(
     @Query("UPDATE fact_jobs SET status='failed', error=:why, updatedAt=:at WHERE status='running'") suspend fun failRunning(why: String, at: Long = System.currentTimeMillis()): Int
 }
 
-@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class, FactJob::class], version = 6, exportSchema = false)
+@Database(entities = [Note::class, Template::class, CleanTpl::class, Channel::class, FactJob::class], version = 6, exportSchema = true)
 abstract class AppDb : RoomDatabase() {
     abstract fun notes(): NoteDao
     abstract fun templates(): TemplateDao
@@ -152,8 +152,12 @@ abstract class AppDb : RoomDatabase() {
     companion object {
         @Volatile private var inst: AppDb? = null
         fun get(c: Context): AppDb = inst ?: synchronized(this) {
-            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "luobi.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { inst = it }
+            inst ?: run { DbBackup.beforeOpen(c.applicationContext, NAME, VERSION)
+                // 不用 fallbackToDestructiveMigration：缺迁移时宁可报错，也绝不清空文章（备份在 files/db-backup）
+                Room.databaseBuilder(c.applicationContext, AppDb::class.java, NAME).addMigrations(*MIGRATIONS).build() }.also { inst = it }
         }
+        const val NAME = "luobi.db"; const val VERSION = 6
+        val MIGRATIONS get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
     }
 }
 
@@ -445,3 +449,19 @@ val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
 }
 
 data class CategoryCount(val name: String, val count: Int)
+
+/** 2.0.1：数据库要升级（磁盘上版本 < 当前版本）时，先整份复制 db/-wal/-shm 到 files/db-backup，最多留 3 份 */
+object DbBackup {
+    fun diskVersion(f: java.io.File): Int = if (!f.exists()) 0 else runCatching {
+        android.database.sqlite.SQLiteDatabase.openDatabase(f.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY).use { it.version }
+    }.getOrDefault(0)
+    fun beforeOpen(c: Context, name: String, target: Int): java.io.File? = runCatching {
+        val f = c.getDatabasePath(name); val v = diskVersion(f)
+        if (v <= 0 || v >= target) return null
+        val dir = java.io.File(c.filesDir, "db-backup").apply { mkdirs() }
+        val base = "$name.v$v.${System.currentTimeMillis()}"
+        listOf("", "-wal", "-shm").forEach { s -> java.io.File(f.path + s).takeIf { it.exists() }?.copyTo(java.io.File(dir, base + s), overwrite = true) }
+        dir.listFiles { x -> x.name.endsWith(".db") || x.name.matches(Regex(".*\\.\\d+$")) }?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { old -> listOf("", "-wal", "-shm").forEach { java.io.File(old.path + it).delete() } }
+        java.io.File(dir, base)
+    }.getOrNull()
+}

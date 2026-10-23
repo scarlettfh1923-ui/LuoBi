@@ -18,7 +18,7 @@ import androidx.work.*
 class FactWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
     private val noteId get() = inputData.getLong(K_NOTE, 0L)
 
-    override suspend fun getForegroundInfo(): ForegroundInfo = try { info(applicationContext, noteId, inputData.getString(K_TITLE).orEmpty(), 0, 0) } catch (_: Throwable) { ForegroundInfo(nidProgress(noteId), androidx.core.app.NotificationCompat.Builder(applicationContext, "gen").setSmallIcon(R.drawable.ic_stat_notify).setContentTitle("正在校对…").build()) }
+    override suspend fun getForegroundInfo(): ForegroundInfo = try { info(applicationContext, noteId, inputData.getString(K_TITLE).orEmpty(), 0, 0) } catch (_: Throwable) { Notif.fallback(applicationContext, nidProgress(noteId), CH_PROGRESS, "正在校对…") }
 
     override suspend fun doWork(): Result {
         val ctx = applicationContext

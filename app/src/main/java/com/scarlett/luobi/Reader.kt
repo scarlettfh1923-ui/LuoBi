@@ -154,7 +154,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     var catSheet by remember { mutableStateOf(false) }
     var factPreErr by remember { mutableStateOf<String?>(null) }
     var factCancelAsk by remember { mutableStateOf(false) }
-    val notifPerm = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+    val notifGate = rememberNotifGate()
     fun persistFact(r: FactReport?) {
         factReport = r
         val json = r?.let { FactCheck.encodeReport(it) }.orEmpty()
@@ -170,10 +170,8 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     fun runFactCheck() {
         if (factBusy) { snack("正在后台校对，完成后会通知你"); return }
         factSheet = false
-        // Android 13+ 第一次用时要通知权限
-        if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
-            runCatching { notifPerm.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
-        scope.launch {
+        // 2.0.1：第一次校对前才问通知权限；拒绝也照常校对
+        notifGate { scope.launch {
             try {
                 val pre = withContext(Dispatchers.IO) { FactPreflight.check(ctx, n.model) }
                 if (pre.fatal != null) { factPreErr = pre.fatal; return@launch }
@@ -181,7 +179,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 snack(pre.warn?.let { "已开始后台校对 · $it" } ?: "已开始后台校对，可以继续阅读，完成后会通知你") }
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Throwable) { snackErr(e, "事实校对没能开始：") }
-        }
+        } }
     }
     fun onFactIcon() {
         if (factBusy) { factCancelAsk = true; return }

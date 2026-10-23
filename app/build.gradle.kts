@@ -15,7 +15,7 @@ android {
   compileSdk = 35
   defaultConfig {
     applicationId = "com.scarlett.luobi"
-    minSdk = 29; targetSdk = 35; versionCode = 25; versionName = "2.0"
+    minSdk = 29; targetSdk = 35; versionCode = 26; versionName = "2.0.1"
   }
   signingConfigs {
     if (signProps.isNotEmpty()) create("release") {
@@ -32,11 +32,15 @@ android {
       if (signProps.isNotEmpty()) signingConfig = signingConfigs.getByName("release")
     }
   }
+  // 2.0.1：Room schema 导出，供迁移测试读取
+  sourceSets.getByName("debug").assets.srcDir("$projectDir/schemas")
+  sourceSets.getByName("test").assets.srcDir("$projectDir/schemas")
   buildFeatures { compose = true; buildConfig = true }
   compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
   kotlinOptions { jvmTarget = "17" }
   testOptions { unitTests.isReturnDefaultValues = true; unitTests.isIncludeAndroidResources = true; unitTests.all { it.systemProperty("roborazzi.test.record", "true"); it.maxHeapSize = "2g" } }
 }
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 dependencies {
   val bom = platform("androidx.compose:compose-bom:2024.09.00")
   implementation(bom)
@@ -61,4 +65,5 @@ dependencies {
   debugImplementation("androidx.compose.ui:ui-test-manifest")
   testImplementation("org.json:json:20231013")
   testImplementation("androidx.work:work-testing:2.9.1")
+  testImplementation("androidx.room:room-testing:2.6.1")
 }
