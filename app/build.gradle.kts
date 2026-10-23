@@ -15,7 +15,7 @@ android {
   compileSdk = 35
   defaultConfig {
     applicationId = "com.scarlett.luobi"
-    minSdk = 29; targetSdk = 35; versionCode = 23; versionName = "1.18.0"
+    minSdk = 29; targetSdk = 35; versionCode = 24; versionName = "1.18.1"
   }
   signingConfigs {
     if (signProps.isNotEmpty()) create("release") {
@@ -53,7 +53,7 @@ dependencies {
   implementation("androidx.security:security-crypto:1.1.0-alpha06")
   ksp("androidx.room:room-compiler:2.6.1")
   testImplementation("junit:junit:4.13.2")
-  testImplementation("org.robolectric:robolectric:4.13")
+  testImplementation("org.robolectric:robolectric:4.15.1")
   testImplementation("io.github.takahirom.roborazzi:roborazzi:1.32.2")
   testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.32.2")
   testImplementation(bom)

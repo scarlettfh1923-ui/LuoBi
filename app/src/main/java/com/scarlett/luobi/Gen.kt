@@ -36,7 +36,9 @@ object GenCard {
     private fun p(c: Context) = c.getSharedPreferences("gen", Context.MODE_PRIVATE)
     fun load(c: Context) {
         val j = p(c).getString("card", null)
-        state.value = if (j == null) null else try { JSONObject(j).let { GenCardState(it.getLong("id"), it.optString("t"), it.optInt("w"), it.optBoolean("v")) } } catch (_: Exception) { null }
+        val s = if (j == null) null else try { JSONObject(j).let { GenCardState(it.getLong("id"), it.optString("t"), it.optInt("w").coerceAtLeast(0), it.optBoolean("v")) } } catch (_: Exception) { null }
+        // 1.18.1：坏的 / 无效的卡片状态直接清掉
+        if (j != null && (s == null || s.noteId <= 0)) { p(c).edit().remove("card").apply(); state.value = null } else state.value = s
     }
     private fun save(c: Context, s: GenCardState?) {
         state.value = s
@@ -110,7 +112,11 @@ data class GenJob(
  * 生成完照样存进文案库；后台完成时发通知。（沿用小红书助手 Gen.kt 的做法）
  */
 class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
-    override suspend fun getForegroundInfo(): ForegroundInfo {
+    /** 1.18.1：只有 Android 11 及以下的加急任务才会走到这里；任何异常都退回不带类型的通知，绝不抛出 */
+    override suspend fun getForegroundInfo(): ForegroundInfo = try { fgInfo() } catch (_: Throwable) {
+        ForegroundInfo(NID_PROGRESS, NotificationCompat.Builder(applicationContext, "gen").setSmallIcon(R.drawable.ic_stat_notify).setContentTitle("正在写文章…").build())
+    }
+    private fun fgInfo(): ForegroundInfo {
         val nm = applicationContext.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("gen", "文章生成中", NotificationManager.IMPORTANCE_LOW))
         val n: Notification = NotificationCompat.Builder(applicationContext, "gen").setSmallIcon(R.drawable.ic_stat_notify)
@@ -154,7 +160,7 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
         const val P_STEP = "ps"; const val P_WORDS = "pw"; const val P_TITLE = "pt"; const val P_LINE = "pl"
         const val DONE_TITLE = "文章写好了"
         fun doneText(title: String, w: Int) = "《$title》${fmtWords(w)} 字，已放进案头"
-        fun progressOf(d: Data) = GenProgress(d.getInt(P_STEP, 1), d.getInt(P_WORDS, 0), d.getString(P_TITLE).orEmpty(), d.getString(P_LINE).orEmpty())
+        fun progressOf(d: Data) = GenProgress(d.getInt(P_STEP, 1).coerceIn(1, 3), d.getInt(P_WORDS, 0).coerceAtLeast(0), d.getString(P_TITLE).orEmpty(), d.getString(P_LINE).orEmpty())
         fun fmtWords(n: Int) = String.format(java.util.Locale.US, "%,d", n)
         const val NAME = "copy"
         const val K_LABEL = "label"; const val K_NOTE = "note"; const val K_KIND = "kind"
@@ -168,7 +174,7 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
                 .setInputData(workDataOf(K_LABEL to job.label))
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .build()
-            WorkManager.getInstance(c).enqueueUniqueWork(NAME, ExistingWorkPolicy.KEEP, req)
+            try { WorkManager.getInstance(c).enqueueUniqueWork(NAME, ExistingWorkPolicy.KEEP, req) } catch (_: Throwable) {}
         }
         fun cancel(c: Context) { WorkManager.getInstance(c).cancelUniqueWork(NAME) }
         fun clearDoneNotice(c: Context) { NotificationManagerCompat.from(c).cancel(NID_DONE) }

@@ -236,7 +236,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
         }
     }) { pad ->
         Box(Modifier.fillMaxSize()) {
-            Crossfade(tab, Modifier.fillMaxSize().backdropSource(backdrop), label = "tab") { t ->
+            Crossfade(tab, Modifier.fillMaxSize().backdropSource(backdrop), label = "tab") { t -> CompositionLocalProvider(LocalBackdrop provides null) { // 1.18.1：来源内部不取样
                 if (t == 0) Box(Modifier.fillMaxSize()) {
                     ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding() + 16.dp, top = pad.calculateTopPadding(), openVersions = { verMenu = true }, onTags = { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } }, il = il, editCaption = { capEdit = it },
                         highlights = emptyList() /* 1.15.1：阅读优先，不在正文上画黄色高亮 */, focusSpan = factFocus, onCategory = { catSheet = true })
@@ -247,7 +247,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 else Box(Modifier.padding(top = pad.calculateTopPadding())) { Gallery(imgs, style, { style = it; s.style = it }, spacing, { spacing = it; s.cardSpacing = it }, ratio, { ratio = it; s.cardRatio = it }, s.imgOn, bgBusy, aiBg != null, pal, pad.calculateBottomPadding(),
                     cardBusy = cardBusy, cardErr = cardErr, onAiBg = { genBg() }, clearBg = { aiBg = null },
                     save = { scope.launch { val c = withContext(Dispatchers.IO) { Share.save(ctx, imgs) }; snack("已保存 $c 张图片到相册「落笔」") } }) }
-            }
+            } }
             Column(Modifier.padding(top = pad.calculateTopPadding())) {
                 if (tab == 0) AnalyzingCard(il)
                 AnimatedVisibility(showFont && tab == 0, enter = Motion.cardIn, exit = Motion.cardOut) { AaPanel(font, { font = it; s.fontSize = it }, fontId, { fontId = it; s.readFont = it }, mode, { mode = it; s.readMode = it }, pal) }

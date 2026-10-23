@@ -18,7 +18,7 @@ import androidx.work.*
 class FactWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
     private val noteId get() = inputData.getLong(K_NOTE, 0L)
 
-    override suspend fun getForegroundInfo(): ForegroundInfo = info(applicationContext, noteId, inputData.getString(K_TITLE).orEmpty(), 0, 0)
+    override suspend fun getForegroundInfo(): ForegroundInfo = try { info(applicationContext, noteId, inputData.getString(K_TITLE).orEmpty(), 0, 0) } catch (_: Throwable) { ForegroundInfo(nidProgress(noteId), androidx.core.app.NotificationCompat.Builder(applicationContext, "gen").setSmallIcon(R.drawable.ic_stat_notify).setContentTitle("正在校对…").build()) }
 
     override suspend fun doWork(): Result {
         val ctx = applicationContext
@@ -52,6 +52,7 @@ class FactWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
         const val K_NOTE = "note"; const val K_TITLE = "title"; const val K_BAD = "bad"; const val K_PART = "part"; const val K_ERR = "err"
         const val RUNNING = "running"; const val DONE = "done"; const val FAILED = "failed"
         const val CH_PROGRESS = "fact"; const val CH_DONE = "fact_done"
+        const val TAG = "fact"
         fun name(id: Long) = "fact-$id"
         fun nidProgress(id: Long) = 3000 + (id % 1000).toInt()
         fun nidDone(id: Long) = 5000 + (id % 1000).toInt()
@@ -85,7 +86,7 @@ class FactWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
             if (!(cur?.status == RUNNING && isActive(c, id))) {
                 dao.put(FactJob(id, title, RUNNING, 0, 0, if (fresh) "" else cur?.stateJson.orEmpty().takeIf { cur?.status == RUNNING }.orEmpty(), seen = cur?.seen ?: true))
             }
-            val req = OneTimeWorkRequestBuilder<FactWorker>().setInputData(workDataOf(K_NOTE to id, K_TITLE to title))
+            val req = OneTimeWorkRequestBuilder<FactWorker>().setInputData(workDataOf(K_NOTE to id, K_TITLE to title)).addTag(TAG)
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
             WorkManager.getInstance(c).enqueueUniqueWork(name(id), ExistingWorkPolicy.KEEP, req)

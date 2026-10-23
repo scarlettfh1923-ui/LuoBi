@@ -42,11 +42,12 @@ class MainActivity : ComponentActivity() {
     companion object { const val EXTRA_NOTE = "noteId"; const val EXTRA_FACT = "openFact" }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashGuard.onLaunch(this)
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         if (savedInstanceState == null) take(intent)
         Share.cleanDocs(this) // 1.10：启动时清理上次分享留下的临时文件
-        Motion.init(this); Glass.init(this)
+        Motion.init(this); Glass.init(this); if (CrashGuard.recovered) Glass.blur = false
         setContent { AppTheme { App() } }
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); take(intent) }
@@ -55,6 +56,7 @@ class MainActivity : ComponentActivity() {
         if (id > 0) { if (i?.getBooleanExtra(EXTRA_FACT, false) == true) { AppState.openFact.value = id; i.removeExtra(EXTRA_FACT) }; AppState.openNote.value = id; i?.removeExtra(EXTRA_NOTE) }
         if (i?.action == Intent.ACTION_SEND) i.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let { AppState.sharedText.value = it }
     }
+    override fun onResume() { super.onResume(); CrashGuard.healthyLater(this) }
     override fun onStart() { super.onStart(); AppState.visible++ }
     override fun onStop() { super.onStop(); AppState.visible-- }
 }
@@ -142,14 +144,14 @@ fun App() {
         }, label = "nav") { r ->
             when (r) {
                 is Route.Tab -> { val bd = rememberBackdrop(); CompositionLocalProvider(LocalBackdrop provides bd) { Scaffold(containerColor = P3.bg, bottomBar = { if (!(r.i == 1 && libManaging)) FloatingNav(r.i) { libManaging = false; tab(it) } }) { pad ->
-                    Box(Modifier.fillMaxSize().backdropSource(bd).padding(top = pad.calculateTopPadding())) {
+                    Box(Modifier.fillMaxSize().backdropSource(bd).padding(top = pad.calculateTopPadding())) { CompositionLocalProvider(LocalBackdrop provides null) { // 1.18.1：模糊来源内部的玻璃不能再取样自己（Haze 递归绘制 → 闪退）
                         val bottom = pad.calculateBottomPadding()
                         when (r.i) {
                             0 -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) }, genProg, { CopyWorker.cancel(ctx) }) { go(Route.Read(it)) }
                             1 -> LibraryScreen(db, bottom, { tab(0) }, libManaging, { libManaging = it }) { go(Route.Read(it)) }
                             else -> SettingsHome(db, bottom) { go(Route.Sub(it)) }
                         }
-                    }
+                    } }
                 } } }
                 is Route.Read -> ReaderScreen(db, r.id, running, ::back, { route = Route.Read(it) }, { go(Route.Sub(it)) }, startGen)
                 is Route.Sub -> SubPage(db, r, ::back) { go(it) }
