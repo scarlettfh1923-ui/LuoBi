@@ -127,6 +127,8 @@ fun App() {
                 val f = Friendly(o.getString(CopyWorker.K_ERR_TITLE) ?: "生成失败", o.getString(CopyWorker.K_ERR_DETAIL) ?: "生成没有完成，请重试。",
                     o.getString(CopyWorker.K_ERR_RAW) ?: "", o.getBoolean(CopyWorker.K_ERR_SET, false))
                 val job = try { GenJob.parse(genPrefs.getString("job", "{}") ?: "{}") } catch (_: Exception) { null }
+                // 2.0.2：输入框在开始生成时已清空；失败且输入框仍空着时，把原文放回去，方便改了再试
+                if (job != null && job.kind == "write" && ws.raw.isBlank() && job.raw.isNotBlank()) { ws.raw = job.raw; ws.saveRaw() }
                 genErr = GenErr(f) { if (job != null) startGen(job) }
                 if (job?.kind == "rewrite") snack("改写失败：${f.title}", false, "重试") { startGen(job) }
             }
@@ -159,7 +161,7 @@ fun App() {
             }
         }
         // 1.9：意图卡底部弹层画在最外层（不在 Scaffold 里），键盘留白只算一次
-        if (route == Route.Tab(0)) IntentSheet(db, ws, { go(Route.Sub("models")) }, { go(Route.Sub("length")) }, { go(Route.Sub("template:$it")) }) { j -> ws.sheet = false; startGen(j) }
+        if (route == Route.Tab(0)) IntentSheet(db, ws, { go(Route.Sub("models")) }, { go(Route.Sub("length")) }, { go(Route.Sub("template:$it")) }) { j -> ws.sheet = false; val busy = running; startGen(j); if (!busy && j.kind == "write") ws.clearAfterSubmit() }
         SnackbarHost(host, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = 96.dp)) { SoftSnackbar(it) }
     }
 }

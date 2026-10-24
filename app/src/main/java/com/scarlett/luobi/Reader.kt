@@ -354,7 +354,12 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
             DropdownMenuItem({ Text("复制段落") }, { paraMenu = -1; cm.setText(androidx.compose.ui.text.AnnotatedString(headText(p).replace("**", ""))); snack("已复制段落") }, leadingIcon = { SvgIcon(Ic.copy, P3.text2, 18.dp) })
         }
     }
-    Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 24.dp)) {
+    // 2.0.2：正文按「整字格」排版——可用宽度取单字步进（字号 + 字距）的整数倍，余量左右平分，
+    // 这样每行首字和末字到屏幕边的距离一致（以前左边固定 24dp、右边剩下零头，最多差 15dp，看起来像左边被切）
+    val dens = androidx.compose.ui.platform.LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val side = remember(maxWidth, font, dens.fontScale) { readerSide(maxWidth.value, font, dens.fontScale).dp }
+    Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = side)) {
         Spacer(Modifier.height(top + 12.dp))
         // 1.15 方案 A：去掉灰色模板/模型/版本行（移到「更多」面板）；标题上方是分类标签
         CategoryLabel(n.category, pal.accent, pal.sub, onCategory)
@@ -371,8 +376,8 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
         paras.forEachIndexed { i, p ->
           val hit = highlights.firstOrNull { it.isNotBlank() && p.contains(it) }
           val focused = focusSpan != null && focusSpan.isNotBlank() && p.contains(focusSpan)
-          Box(Modifier.fillMaxWidth().riseIn(i, fresh).bringIntoViewRequester(bringers[i]).clip(Sq.s)
-              .background(when { focused || hit != null -> Color(0xFFFFF3CD); paraMenu == i -> pal.soft; else -> Color.Transparent })
+          Box(Modifier.fillMaxWidth().riseIn(i, fresh).bringIntoViewRequester(bringers[i])
+              .background(when { focused || hit != null -> Color(0xFFFFF3CD); paraMenu == i -> pal.soft; else -> Color.Transparent }, Sq.s)
               .combinedClickable(onClick = {}, onLongClick = { paraMenu = i }).padding(vertical = if (hit != null) 4.dp else 0.dp)) {
            Column {
             val ml = Md.line(p, paras.size)
@@ -387,6 +392,15 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
         Text("— 完 —", Modifier.fillMaxWidth(), color = pal.sub, textAlign = TextAlign.Center, fontSize = 13.sp)
         Spacer(Modifier.height(bottom + 24.dp))
     }
+    }
+}
+
+/** 2.0.2：阅读页左右留白（dp）。最少 24dp，正文宽度取单字步进的整数倍，零头左右平分 */
+fun readerSide(widthDp: Float, font: Float, fontScale: Float, min: Float = 24f): Float {
+    val adv = (font + 0.2f) * fontScale
+    val n = kotlin.math.floor((widthDp - 2 * min) / adv).coerceAtLeast(1f)
+    // +0.5dp 容差，避免浮点误差让最后一个字被挤到下一行
+    return ((widthDp - n * adv - 0.5f) / 2f).coerceAtLeast(min - 0.25f)
 }
 
 /** 分享到小红书：流程和小红书助手 ShareSheet + Share.sendImages 完全一样（先依次复制 标题 / 标签 / 正文，再把卡片交给小红书） */

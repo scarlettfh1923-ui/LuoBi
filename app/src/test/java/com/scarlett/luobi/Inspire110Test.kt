@@ -39,5 +39,10 @@ class Inspire110Test {
         val r = Inspire.Result(listOf(Topic("t", "微博", "a", "v")), 5L, listOf("抖音热榜"), "n")
         assertEquals(r, Inspire.decode(Inspire.encode(r)))
     }
-    @Test fun fillText() { assertEquals("我想写：a\n话题：t（微博）\n我的观点：v", Inspire.fillText(Topic("t", "微博", "a", "v"))) }
+    @Test fun fillText() { 
+        assertEquals("我想写：t，a\n我的观点：v", Inspire.fillText(Topic("t", "微博", "a", "v")))
+        assertEquals("我想写：t\n我的观点：v\n我的疑惑：d", Inspire.fillText(Topic("t", "知乎", "", "v", "d")))
+        assertEquals("我想写：聊聊t的事", Inspire.fillText(Topic("t", "知乎", "聊聊t的事")))
+        val all = Inspire.fillText(Topic("减负", "知乎", "角度", "观点", "疑惑"))
+        assertFalse(all.contains("话题")); assertFalse(all.contains("知乎")) }
 }

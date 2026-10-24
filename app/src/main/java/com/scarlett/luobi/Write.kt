@@ -57,6 +57,8 @@ class WriteState(ctx: Context) {
         .putLong("recommendId", recommendId).putLong("templateId", templateId).putString("model", model).putBoolean("sheet", sheet).apply()
     fun map() = LinkedHashMap<String, String>().also { out -> Compose.FIELDS.forEach { (k, _) -> values[k]?.trim()?.takeIf { it.isNotEmpty() }?.let { out[k] = it } } }
     fun reset() { values.clear(); extractedFor = ""; recommendId = 0; templateId = 0; sheet = false; err = null; save() }
+    /** 2.0.2：开始生成后，输入框回到最初状态（原文、意图、草稿全部清掉，不会再被恢复）；生成用的是已提交的 GenJob 快照 */
+    fun clearAfterSubmit() { raw = ""; reset() }
 
     companion object {
         fun loadMap(s: String): Map<String, String> = try { val j = JSONObject(s); j.keys().asSequence().associateWith { j.optString(it) } } catch (_: Exception) { emptyMap() }

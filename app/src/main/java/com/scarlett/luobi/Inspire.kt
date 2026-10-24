@@ -14,7 +14,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /** 1.10「灵感」：每天抓公开热榜 → 一次 DeepSeek 调用按她的风格挑 10 个选题。没有服务器，结果按天缓存。 */
-data class Topic(val title: String, val source: String, val angle: String = "", val view: String = "")
+data class Topic(val title: String, val source: String, val angle: String = "", val view: String = "", val doubt: String = "")
 data class HotItem(val title: String, val source: String, val extra: String = "")
 
 /**
@@ -75,10 +75,10 @@ object Inspire {
 1. 优先选和我写过的领域、常用模板相契合，并且有讨论空间、能写出观点的话题；
 2. 避开纯娱乐八卦、灾难伤亡、敏感时政和无法核实的传闻；
 3. 同一件事只保留一条，尽量覆盖不同来源；
-4. 每个选题给出：title（选题标题，可在热榜原题基础上改写得更像一篇文章的题目，不超过 24 字）、source（来源平台：微博/知乎/抖音/B站）、angle（可以写的角度，一句话）、view（一个可能的观点，一句话，要有立场）。
+4. 每个选题给出：title（选题标题，可在热榜原题基础上改写得更像一篇文章的题目，不超过 24 字）、source（来源平台：微博/知乎/抖音/B站）、angle（可以写的角度，一句话）、view（一个可能的观点，一句话，要有立场）、doubt（读者或作者可能有的一个疑惑，一句话，可留空）。
 
 只输出一个 JSON 对象，不要解释：
-{"topics": [{"title": "……", "source": "……", "angle": "……", "view": "……"}]}"""
+{"topics": [{"title": "……", "source": "……", "angle": "……", "view": "……", "doubt": "……"}]}"""
 
     private fun today() = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date())
 
@@ -92,9 +92,9 @@ object Inspire {
     private fun store(ctx: Context, r: Result) = ctx.getSharedPreferences("inspire", Context.MODE_PRIVATE).edit().putString("date", today()).putString("data", encode(r)).apply()
 
     fun encode(r: Result): String = JSONObject().put("at", r.updatedAt).put("note", r.note).put("failed", JSONArray(r.failed))
-        .put("topics", JSONArray(r.topics.map { JSONObject().put("title", it.title).put("source", it.source).put("angle", it.angle).put("view", it.view) })).toString()
+        .put("topics", JSONArray(r.topics.map { JSONObject().put("title", it.title).put("source", it.source).put("angle", it.angle).put("view", it.view).put("doubt", it.doubt) })).toString()
     fun decode(s: String): Result { val j = JSONObject(s); val t = j.getJSONArray("topics")
-        return Result((0 until t.length()).map { t.getJSONObject(it).let { o -> Topic(o.optString("title"), o.optString("source"), o.optString("angle"), o.optString("view")) } },
+        return Result((0 until t.length()).map { t.getJSONObject(it).let { o -> Topic(o.optString("title"), o.optString("source"), o.optString("angle"), o.optString("view"), o.optString("doubt")) } },
             j.optLong("at"), j.optJSONArray("failed")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(), j.optString("note")) }
 
     /** 解析模型回复（容错：```json 围栏、topics/选题/list 键、直接数组） */
@@ -105,7 +105,7 @@ object Inspire {
         if (arr == null) return emptyList()
         return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.map { o ->
             fun g(vararg k: String) = k.firstNotNullOfOrNull { o.optString(it).takeIf { v -> v.isNotBlank() && v != "null" } } ?: ""
-            Topic(g("title", "标题", "选题"), g("source", "来源", "平台"), g("angle", "可以写", "角度"), g("view", "观点", "opinion"))
+            Topic(g("title", "标题", "选题"), g("source", "来源", "平台"), g("angle", "可以写", "角度"), g("view", "观点", "opinion"), g("doubt", "疑惑", "疑问"))
         }.filter { it.title.isNotBlank() }.distinctBy { it.title }.take(10)
     }
 
@@ -140,7 +140,11 @@ object Inspire {
 
     /** 点选题 → 填进输入框的文字 */
     fun fillText(t: Topic) = buildString {
-        append("我想写：").append(t.angle.ifBlank { t.title }); append("\n话题：").append(t.title).append("（").append(t.source).append("）")
-        if (t.view.isNotBlank()) append("\n我的观点：").append(t.view)
+        // 2.0.2：只填 我想写 / 我的观点 / 我的疑惑；不再带「话题」行和来源平台
+        val a = t.angle.trim(); val ti = t.title.trim()
+        val want = when { a.isBlank() -> ti; ti.isBlank() || a.contains(ti) -> a; else -> "$ti，$a" }
+        if (want.isNotBlank()) append("我想写：").append(want)
+        if (t.view.isNotBlank()) { if (isNotEmpty()) append("\n"); append("我的观点：").append(t.view.trim()) }
+        if (t.doubt.isNotBlank()) { if (isNotEmpty()) append("\n"); append("我的疑惑：").append(t.doubt.trim()) }
     }
 }
