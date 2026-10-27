@@ -53,12 +53,9 @@ class Fact117Shot {
         rule.mainClock.advanceTimeBy(900); rule.waitForIdle()
         rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
         shot("360-sheet-top")
-        rule.onAllNodes(hasScrollAction()).onLast().performScrollToNode(hasText("埃利亚斯", substring = true))
-        rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
-        shot("360-sheet-elias")
-        rule.onAllNodes(hasScrollAction()).onLast().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.ScrollBy) { it(0f, 9000f) }
-        rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
-        shot("360-sheet-bottom")
+        // 2.1：新的校对页：每条说法一行
+        rule.onNodeWithTag("factList").assertExists()
+        rule.onAllNodesWithText("社会越复杂", substring = true).onFirst().assertExists()
     }
 
     @Test fun running() {

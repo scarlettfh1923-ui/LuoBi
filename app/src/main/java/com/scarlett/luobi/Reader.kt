@@ -1,6 +1,7 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 package com.scarlett.luobi
 
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.contentDescription
 
 import androidx.compose.ui.semantics.semantics
@@ -73,6 +74,9 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     var fontId by remember { mutableStateOf(s.readFont) }
     var tab by remember { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf(false) }
+    // 2.1：从事实校对「手动改」进来时要选中的原句；存完回到校对页
+    var editSel by remember { mutableStateOf<String?>(null) }
+    var factReturn by remember { mutableStateOf(false) }
     var showFont by remember { mutableStateOf(false) }
     var xhsSheet by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf(false) }
@@ -153,7 +157,6 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     var factFocus by remember { mutableStateOf<String?>(null) }
     var catSheet by remember { mutableStateOf(false) }
     var factPreErr by remember { mutableStateOf<String?>(null) }
-    var factCancelAsk by remember { mutableStateOf(false) }
     val notifGate = rememberNotifGate()
     fun persistFact(r: FactReport?) {
         factReport = r
@@ -176,13 +179,14 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
                 val pre = withContext(Dispatchers.IO) { FactPreflight.check(ctx, n.model) }
                 if (pre.fatal != null) { factPreErr = pre.fatal; return@launch }
                 withContext(Dispatchers.IO) { FactWorker.start(ctx, n.id, n.title, fresh = true) }
+                factSheet = true  // 2.1：结果逐条流进列表
                 snack(pre.warn?.let { "已开始后台校对 · $it" } ?: "已开始后台校对，可以继续阅读，完成后会通知你") }
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Throwable) { snackErr(e, "事实校对没能开始：") }
         } }
     }
     fun onFactIcon() {
-        if (factBusy) { factCancelAsk = true; return }
+        if (factBusy) { factSheet = true; return }
         if (factReport != null) openFactSheet(fromCache = true)
         else runFactCheck()
     }
@@ -304,22 +308,29 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
     if (panel) SharePanel(channels, act, { panel = false; goSub("sharebar") }, onFactCheck = { panel = false; onFactIcon() },
         info = ArticleInfo.line(n), versionsLabel = if (versions.size > 1) "共 ${versions.size} 版 ›" else "", onVersions = { panel = false; verMenu = true }) { panel = false; barTick++ }
     factPreErr?.let { m -> GlassAlert("事实校对没能开始", m, listOf(AlertAction("知道了", AlertAction.Role.Default) {}), { factPreErr = null }) }
-    if (factCancelAsk) { val j = factJob
-        GlassAlert("正在后台校对" + (if (j != null && j.total > 0) " ${j.done}/${j.total}" else ""), "完成后会通知你。要中途停下吗？",
-            listOf(AlertAction("取消校对", AlertAction.Role.Destructive) { scope.launch { withContext(Dispatchers.IO) { FactWorker.cancel(ctx, n.id) }; snack("已取消校对") } },
-                AlertAction("继续校对", AlertAction.Role.Cancel) {}), { factCancelAsk = false }) }
     if (catSheet) CategorySheet(n.category, n.categoryAi, onPick = { c -> scope.launch { db.notes().setCategory(n.root, c) } }) { catSheet = false }
-    if (factSheet && factReport != null) FactSheet(
-        report = factReport!!,
-        fromCache = factFromCache,
-        articleTitle = n.title,
-        onJump = { factFocus = it.span; factSheet = false; scope.launch { kotlinx.coroutines.delay(400); factSheet = true } },
-        onApply = { applyFactFixes(it) },
-        onReCheck = { runFactCheck() },
-        onChange = { persistFact(it) },
-        onDismiss = { factSheet = false },
-    )
-    if (editing) EditScreen(n, { editing = false }) { scope.launch { db.notes().update(it) }; editing = false; snack("已保存修改") }
+    if (factSheet) {
+        val st = remember(factJob?.stateJson) { FactPipeline.decodeState(factJob?.stateJson.orEmpty()) }
+        val j = factJob
+        val view = FactView(
+            claims = if (factBusy) st?.claims.orEmpty() else factReport?.claims ?: st?.claims.orEmpty(),
+            triage = if (factBusy) st?.triage else factReport?.triage ?: st?.triage,
+            running = factBusy,
+            stopped = if (!factBusy && factReport == null && j != null && j.status == FactWorker.FAILED)
+                (j.error.ifBlank { "已停止" } + if (j.total > 0) " · 已查 ${j.done}/${j.total}" else "") else null,
+            report = if (factBusy) null else factReport)
+        FactScreen(view, n.title, n.body,
+            onBack = { factSheet = false },
+            onStop = { scope.launch { withContext(Dispatchers.IO) { FactWorker.cancel(ctx, n.id) } } },
+            onReCheck = { runFactCheck() },
+            onReport = { persistFact(it) },
+            onApply = { t, b, r -> factReport = r; val json = FactCheck.encodeReport(r); scope.launch { db.notes().update(n.copy(title = t, body = b, factReportJson = json)) } },
+            onManual = { c -> factSheet = false; editSel = c.span; factReturn = true; editing = true },
+            llm = { sys, user -> FactPipeline.llm(ctx, n.model).ask(sys, user, true) },
+            openClaim = factFocus.also { factFocus = null })
+    }
+    if (editing) EditScreen(n, { editing = false; editSel = null; if (factReturn) { factReturn = false; factSheet = true } }, select = editSel) {
+        scope.launch { db.notes().update(it) }; editing = false; editSel = null; snack("已保存修改"); if (factReturn) { factReturn = false; factSheet = true } }
 }
 
 @Composable
@@ -584,12 +595,17 @@ private fun PagerBlock(imgs: List<Bitmap>, ratio: Int, pal: ReadPalette, cardErr
 }
 
 @Composable
-fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
+fun EditScreen(n: Note, dismiss: () -> Unit, select: String? = null, save: (Note) -> Unit) {
     val cs = MaterialTheme.colorScheme
-    var t by remember { mutableStateOf(n.title) }; var b by remember { mutableStateOf(n.body) }; var g by remember { mutableStateOf(n.tagList()) }
+    var t by remember { mutableStateOf(n.title) }
+    // 2.1：「手动改」进来时选中那句原文
+    var bv by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(n.body,
+        select?.let { s -> n.body.indexOf(s).takeIf { it >= 0 }?.let { androidx.compose.ui.text.TextRange(it, it + s.length) } } ?: androidx.compose.ui.text.TextRange(0))) }
+    val b = bv.text
+    val bodyFocus = remember { androidx.compose.ui.focus.FocusRequester() }; var g by remember { mutableStateOf(n.tagList()) }
     val changed = t != n.title || b != n.body || g != n.tagList()
     var confirm by remember { mutableStateOf(false) }
-    var armed by remember { mutableStateOf(false) }
+    var armed by remember { mutableStateOf(select != null && n.body.contains(select)) }
     // 1.15.1：进入时不弹键盘；点空白 / 返回 / 保存都收起键盘
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
     val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -607,7 +623,7 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
                 android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
         // 1.16：新版 Compose 的 Dialog 打开时会把初始焦点给第一个输入框，进来就清掉（不弹键盘）
-        LaunchedEffect(Unit) { focus.clearFocus(force = true); kb?.hide() }
+        LaunchedEffect(Unit) { if (armed) { delay(200); runCatching { bodyFocus.requestFocus() } } else { focus.clearFocus(force = true); kb?.hide() } }
         Surface(Modifier.fillMaxSize(), color = cs.background) {
             // 1.16：用户第一次按下屏幕之前，输入框不可获得焦点（挡住 Dialog 的自动初始焦点）
             Column(Modifier.fillMaxSize().statusBarsPadding().imePadding().navigationBarsPadding()
@@ -629,7 +645,7 @@ fun EditScreen(n: Note, dismiss: () -> Unit, save: (Note) -> Unit) {
                     // 1.18.2：正文用 BasicTextField 自带的内部滚动（不再外套 verticalScroll）。
                     // 外套 verticalScroll 时输入框被量成全文高度，光标移动不会触发滚动，键盘弹出后光标被挡住。
                     // 内部滚动会自动把光标行滚到可见区（区域高度 = 屏幕 − 键盘，由外层 imePadding 决定）。
-                    BasicTextField(b, { b = it }, Modifier.fillMaxWidth().weight(1f).testTag("editBody").focusProperties { canFocus = armed },
+                    BasicTextField(bv, { bv = it }, Modifier.fillMaxWidth().weight(1f).testTag("editBody").focusRequester(bodyFocus).focusProperties { canFocus = armed },
                         textStyle = TextStyle(fontSize = 16.sp, lineHeight = 27.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary),
                         decorationBox = { inner -> Box { if (b.isEmpty()) Text("正文", fontSize = 16.sp, color = t3()); inner() } })
                     Text("正文 ${b.length} 字" + if (changed) " · 未保存" else "", Modifier.fillMaxWidth().padding(vertical = 8.dp), textAlign = TextAlign.End, fontSize = 12.sp, color = t3())

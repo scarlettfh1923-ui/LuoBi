@@ -62,6 +62,15 @@ data class FactReport(
     val sources: List<String> = emptyList(),
     /** 1.19：每个检索源这次的状态（成功 / 限流 / Key 错 / 连不上…），报告顶部显示 */
     val status: String = "",
+    /** 2.1：分拣计数 */
+    val triage: FactTriage? = null,
+    /** 2.1：第一次采纳前自动存的校对前版本 */
+    val snap: FactFix.Snap? = null,
+    /** 2.1：已做的改动（风格把关只看这些地方） */
+    val edits: List<FactFix.Edit> = emptyList(),
+    /** 2.1：风格把关建议；styleRan = 已跑过 */
+    val style: List<FactFix.Tip> = emptyList(),
+    val styleRan: Boolean = false,
 ) {
     /** 未应用的问题数（角标） */
     fun pendingCount() = issues.count { !it.applied && it.span.isNotBlank() }
@@ -422,6 +431,7 @@ object FactCheck {
             .put("claims", FactPipeline.encodeClaims(r.claims))
             .put("status", r.status)
             .put("sources", JSONArray(r.sources))
+            .apply { FactFix.encodeExtra(r, this) }
             .toString()
     }
 
@@ -460,6 +470,7 @@ object FactCheck {
             val srcA = j.optJSONArray("sources") ?: JSONArray()
             FactReport(issues, skipped, j.optString("searchNote"), queries, j.optLong("checkedAt", System.currentTimeMillis()),
                 FactPipeline.decodeClaims(j.optJSONArray("claims")), (0 until srcA.length()).map { srcA.optString(it) }, j.optString("status"))
+                .let { FactFix.decodeExtra(j, it) }
         }.getOrNull()
     }
 

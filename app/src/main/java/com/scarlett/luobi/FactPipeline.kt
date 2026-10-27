@@ -32,9 +32,17 @@ data class FactDetail(
     val applied: Boolean = false,
     /** 判「无法核实」时列出两轮用过的查询 */
     val tried: List<String> = emptyList(),
+    /** 2.1：无法核实时更稳妥的说法（模型给的；空则本地兜底） */
+    val soft: String = "",
 )
 
-data class FactClaim(val id: String, val span: String, val claim: String, val details: List<FactDetail>, val done: Boolean = false)
+data class FactClaim(val id: String, val span: String, val claim: String, val details: List<FactDetail>, val done: Boolean = false,
+    /** 2.1：逐条处理结果：""=待处理 / applied=已采纳 / ignored=已忽略 / manual=手动改 */
+    val fix: String = "",
+    /** 2.1：「换个改法」得到的备选；fixText = 当前选中的改法（空 = 用默认建议） */
+    val alts: List<String> = emptyList(), val fixText: String = "")
+/** 2.1：分拣结果（硬事实 / 观点 / 描写句数） */
+data class FactTriage(val facts: Int, val opinions: Int, val descriptions: Int)
 
 /**
  * 1.17 事实校对流水线（按 factcheck-dryrun/report.md 验证过的做法）：
@@ -116,12 +124,21 @@ object FactPipeline {
         val chain0 = FactQuotes.chain(order, ::keyOf, ctx) { (budget.getAndDecrement() > 0).also { if (!it) status.notes += "元宝本篇额度用完" } }
         val chain = wikiGate(chain0, status)
         val kimi = s.key("kimi")
-        val llm = Llm { sys, user, judge ->
-            try { Ai.chatText(target, sys, user, true, if (judge && ds.think) null else if (judge) 4096 else 8192, if (judge) ds else null) }
-            catch (e: ApiError) { throw FactCheck.refineFactModelError(e, check) ?: e }
-        }
+        val llm = llmFor(target, check, ds)
         return Env(llm, chain, { u -> if (kimi.isNotBlank()) runCatching { FactSources.kimiFetch(kimi, u) }.getOrDefault("") else plainPage(u) },
             "校对模型 ${check.label} · ${check.sub}" + if (ds.think && check.ref == "p:deepseek") "（深度思考）" else "", status)
+    }
+
+    /** 2.1：只要模型、不要检索链（换个改法 / 风格把关用）；judge=true 时遵守深度思考开关与温度 */
+    @Volatile var llmOverride: Llm? = null
+    fun llm(ctx: Context, writerDisplay: String): Llm {
+        llmOverride?.let { return it }
+        val check = FactCheck.resolveCheckModel(Settings(ctx), writerDisplay)
+        return llmFor(Ai.target(ctx, check.ref), check, Ai.dsGen(ctx))
+    }
+    private fun llmFor(target: Ai.Target, check: ModelRef, ds: Ai.DsGen) = Llm { sys, user, judge ->
+        try { Ai.chatText(target, sys, user, true, if (judge && ds.think) null else if (judge) 4096 else 8192, if (judge) ds else null) }
+        catch (e: ApiError) { throw FactCheck.refineFactModelError(e, check) ?: e }
     }
 
     const val WIKI_PROBE = "https://zh.wikipedia.org/w/api.php?action=query&meta=siteinfo&format=json"
@@ -143,13 +160,13 @@ object FactPipeline {
 
     // ---------------- 1 抽取 + 写查询 ----------------
     const val EXTRACT_SYS = "你是事实校对编辑。只输出一个合法 JSON 对象。"
-    fun extractPrompt(title: String, body: String) = """把文章里的说法逐条拿出来，每条拆成原子细节，并为每个细节写 2–3 条检索查询。
-细节维度：人物 / 时间 / 地点 / 地名 / 事件 / 关系 / 引述归属 / 范围 / 因果 / 状态。
-类型只能是：可核实事实、引述归属（某人/某书说过、主张过）、修辞渲染（夸张、概括、氛围）、观点（作者自己的判断）。
+    fun extractPrompt(title: String, body: String) = """先把文章逐句分拣成三类：硬事实（数字、日期、人物、机构、引语、事件——可以用公开资料核对的）、观点（作者自己的判断）、描写（文学描写、氛围、比喻、个人经历感受）。
+只把「硬事实」拿出来核查；观点和描写只计数，不要放进 claims。
+每条 claim 对应原文里一句话（span 必须是原文里一字不差的片段，尽量是完整的一句），只含一个最值得核对的要点；同一句有多个要点可拆成多个 details。
+aspect 只能是：数字 / 日期 / 人物 / 机构 / 引语 / 事件。
 entities 里同一人物/事物的别名、简称、外文原名都列出来（如「胡适」「胡适之」「Hu Shih」）。
-查询规则：每条查询必须含该细节的具体人名/书名/地名/年份；不要用文章标题或文章主题（如「民国 开放 保守」）当查询；外国人名、书名另写一条英文原名查询。
-span 必须是原文里一字不差的片段。
-输出：{"claims":[{"span":"原文片段","claim":"这句说了什么","details":[{"aspect":"地点","text":"发生在北平","type":"可核实事实","entities":["丁玲","北平"],"queries":["丁玲 胡也频 1925 北京 同居","冯雪峰 丁玲 1928 杭州 葛岭"]}]}]}
+每个细节写 2–3 条检索查询：必须含具体人名/机构名/书名/地名/年份；不要用文章标题或主题当查询；外国人名、书名另写一条英文原名查询。
+输出：{"triage":{"facts":6,"opinions":9,"descriptions":14},"claims":[{"span":"原文片段","claim":"这句说了什么","details":[{"aspect":"数字","text":"红果短剧月活 3 亿","type":"可核实事实","entities":["红果短剧"],"queries":["红果短剧 月活跃用户 2024","红果短剧 MAU QuestMobile"]}]}]}
 
 标题：$title
 正文：
@@ -168,14 +185,18 @@ $body"""
         return out.filter { it.isNotBlank() }
     }
     /** 逐块抽取（每块失败重试 1 次），合并并重新编号 */
-    suspend fun extractAll(title: String, body: String, env: Env): List<FactClaim> {
+    /** 2.1：最近一次抽取的分拣计数（extractAll 写入） */
+    fun triageOf(reply: String): FactTriage? = obj(reply)?.optJSONObject("triage")?.let { FactTriage(it.optInt("facts"), it.optInt("opinions"), it.optInt("descriptions")) }
+    suspend fun extractAll(title: String, body: String, env: Env, triage: (FactTriage) -> Unit = {}): List<FactClaim> {
+        var tri = FactTriage(0, 0, 0)
         val parts = chunks(body)
         val all = mutableListOf<FactClaim>(); var failed = 0; var lastErr: Throwable? = null
         for ((i, part) in parts.withIndex()) {
             val tag = if (parts.size > 1) "（全文第 ${i + 1}/${parts.size} 段）" else ""
             var got: List<FactClaim>? = null
             for (attempt in 0..1) {
-                try { got = parseClaims(env.llm.ask(EXTRACT_SYS, extractPrompt(title + tag, part), false), body, title); break }
+                try { val reply = env.llm.ask(EXTRACT_SYS, extractPrompt(title + tag, part), false); got = parseClaims(reply, body, title)
+                    triageOf(reply)?.let { t -> tri = FactTriage(tri.facts + t.facts, tri.opinions + t.opinions, tri.descriptions + t.descriptions) }; break }
                 catch (e: kotlinx.coroutines.CancellationException) { throw e }
                 catch (e: ApiError) { if (e.code in listOf(401, 402, 403)) throw e; lastErr = e }
                 catch (e: Throwable) { lastErr = e }
@@ -184,7 +205,8 @@ $body"""
         }
         if (all.isEmpty() && failed > 0) throw lastErr!!
         if (failed > 0) env.status.notes += "有 $failed 段没能拆出说法"
-        return all.mapIndexed { n, c -> val cid = "c${n + 1}"
+        triage(tri)
+        return prioritize(all).mapIndexed { n, c -> val cid = "c${n + 1}"
             c.copy(id = cid, details = c.details.mapIndexed { k, d -> d.copy(id = "$cid.d${k + 1}") }) }
     }
 
@@ -213,6 +235,27 @@ $body"""
         t.contains("观点") -> T_OPINION
         else -> T_FACT
     }
+
+    // ---------------- 2.1 分类与优先级 ----------------
+    val KINDS = listOf("数字", "引语", "日期", "人物", "机构", "事件")
+    private val digitRe = Regex("\\d")
+    /** 列表上显示的类别：数字 / 引语 / 日期 / 人物 / 机构 / 事件 */
+    fun kindOf(c: FactClaim): String {
+        val a = c.details.map { it.aspect }
+        KINDS.firstOrNull { k -> a.any { it.contains(k) } }?.let { return it }
+        return when {
+            a.any { it.contains("引述") } || c.span.contains("“") || c.span.contains("「") -> "引语"
+            a.any { it.contains("时间") || it.contains("年代") } -> "日期"
+            a.any { it.contains("地") } -> "事件"
+            digitRe.containsMatchIn(c.span) -> "数字"
+            else -> "事件"
+        }
+    }
+    /** 数字、引语最容易错，先查 */
+    fun priority(c: FactClaim): Int = KINDS.indexOf(kindOf(c)).let { if (it < 0) 9 else it }
+    fun prioritize(cs: List<FactClaim>): List<FactClaim> = cs.withIndex().sortedWith(compareBy({ priority(it.value) }, { it.index })).map { it.value }
+    /** 只含观点/渲染的说法不进核查列表 */
+    fun checkable(c: FactClaim) = c.details.any { it.type != T_OPINION && it.type != T_RHET }
 
     // ---------------- 隐含检查 ----------------
     private val yearRe = Regex("(1[89]\\d{2})\\s*年")
@@ -367,9 +410,11 @@ $body"""
         sb.append("""
 裁决只能是：已印证 / 部分对 / 有出入 / 无法核实 / 渲染无出处 / 观点不校。
 - 引述归属按「意思」判：那本书/那个人是否真这样主张，不看关键词重合；意思被拔高、简化或换了说法就是「部分对」。
-- 已印证 / 部分对 / 有出入 必须给出资料编号 evidence 和资料里一字不差的原句 quote；部分对、有出入要给 rewrite（可直接替换原文片段的改写）。
+- 只能依据上面给出的资料，不许凭记忆下结论；资料里没有直接说到的一律「无法核实」。
+- 已印证 / 部分对 / 有出入 必须给出资料编号 evidence 和资料里一字不差的原句 quote；部分对、有出入要给 rewrite：对原文片段做最小改动，只改错的那几个字词，句式、语气、标点保持原样，可直接替换原文片段。
+- 无法核实时给 soft：更稳妥的说法（如加「据报道」、去掉具体数字改成约数），同样只做最小改动。
 - 修辞渲染找不到资料支撑 → 渲染无出处；观点 → 观点不校；资料不够 → 无法核实。
-输出：{"details":[{"id":"${c.details.first().id}","verdict":"部分对","evidence":"E1","quote":"…","reason":"一句话说明","rewrite":"…"}]}""")
+输出：{"details":[{"id":"${c.details.first().id}","verdict":"部分对","evidence":"E1","quote":"…","reason":"一句话说明","rewrite":"…","soft":""}]}""")
         return sb.toString()
     }
 
@@ -411,11 +456,13 @@ $body"""
             var hit = (listOfNotNull(cited) + es).firstOrNull { quoteIn(quote, it.text) }
             var reason = o.optString("reason")
             if (hit == null && v in listOf(OK, PART, BAD)) (listOfNotNull(cited) + es).firstOrNull { quoteNear(quote, it.text) }?.let { hit = it; reason += FUZZY_NOTE }
+            if (v in listOf(OK, PART, BAD) && hit != null && !hit!!.url.startsWith("http")) { hit = null }
             if (v in listOf(OK, PART, BAD) && hit == null) { v = UNK; reason = "裁决给的引文在资料里找不到，不采信" + if (reason.isNotBlank()) "（原判断：$reason）" else "" }
             if (v == RHET && d.type != T_RHET && hit == null && es.isEmpty()) v = UNK
             val rw = if (v in listOf(PART, BAD)) o.optString("rewrite").trim() else ""
             d.copy(verdict = v, quote = if (hit != null) quote else "", url = hit?.url.orEmpty(), sourceTitle = hit?.title.orEmpty(), via = hit?.via.orEmpty(),
-                reason = reason, rewrite = rw, selected = rw.isNotBlank() && c.span.isNotBlank())
+                reason = reason, rewrite = rw, selected = rw.isNotBlank() && c.span.isNotBlank(),
+                soft = if (v == UNK) o.optString("soft").trim().takeIf { it.isNotBlank() && it != c.span }.orEmpty() else "")
         })
     }
 
@@ -446,25 +493,27 @@ $body"""
     }
 
     // ---------------- 编排 ----------------
-    class State(val claims: List<FactClaim>, val sources: List<String>)
+    class State(val claims: List<FactClaim>, val sources: List<String>, val triage: FactTriage? = null)
 
     suspend fun run(title: String, body: String, env: Env, resume: State? = null,
                     save: suspend (State) -> Unit = {}, progress: suspend (Int, Int) -> Unit = { _, _ -> }): FactReport = coroutineScope {
+        var tri: FactTriage? = resume?.triage
         val claims0 = resume?.claims?.takeIf { it.isNotEmpty() }
-            ?: implicit(title, body, extractAll(title, body, env))
+            ?: prioritize(implicit(title, body, extractAll(title, body, env) { tri = it }).filter(::checkable)).mapIndexed { n, c -> val cid = "c${n + 1}"
+                c.copy(id = cid, details = c.details.mapIndexed { k, d -> d.copy(id = "$cid.d${k + 1}") }) }
         val used: MutableSet<String> = ConcurrentHashMap.newKeySet<String>().apply { resume?.sources?.let { addAll(it) } }
         val cur = claims0.toMutableList()
         val lock = Mutex()
-        save(State(cur.toList(), used.toList()))
+        save(State(cur.toList(), used.toList(), tri))
         progress(cur.count { it.done }, cur.size)
         val sem = Semaphore(CONCURRENCY)
         cur.indices.filter { !cur[it].done }.map { i ->
             async { sem.withPermit {
                 val r = checkSafe(cur[i], title, env, used)
-                lock.withLock { cur[i] = r; save(State(cur.toList(), used.toList())); progress(cur.count { it.done }, cur.size) }
+                lock.withLock { cur[i] = r; save(State(cur.toList(), used.toList(), tri)); progress(cur.count { it.done }, cur.size) }
             } }
         }.awaitAll()
-        report(cur, used.toList(), env.label, env.status.summary())
+        report(cur, used.toList(), env.label, env.status.summary()).copy(triage = tri ?: FactTriage(cur.size, 0, 0))
     }
 
     const val UNDONE = "未完成："
@@ -499,10 +548,10 @@ $body"""
 
     // ---------------- 序列化 ----------------
     fun encodeClaims(cs: List<FactClaim>): JSONArray = JSONArray().apply { cs.forEach { c ->
-        put(JSONObject().put("id", c.id).put("span", c.span).put("claim", c.claim).put("done", c.done).put("details", JSONArray().apply { c.details.forEach { d ->
+        put(JSONObject().put("id", c.id).put("span", c.span).put("claim", c.claim).put("done", c.done).put("fix", c.fix).put("alts", JSONArray(c.alts)).put("fixText", c.fixText).put("details", JSONArray().apply { c.details.forEach { d ->
             put(JSONObject().put("id", d.id).put("aspect", d.aspect).put("text", d.text).put("type", d.type).put("entities", JSONArray(d.entities)).put("queries", JSONArray(d.queries))
                 .put("verdict", d.verdict).put("quote", d.quote).put("url", d.url).put("sourceTitle", d.sourceTitle).put("via", d.via).put("reason", d.reason)
-                .put("rewrite", d.rewrite).put("selected", d.selected).put("applied", d.applied).put("tried", JSONArray(d.tried)))
+                .put("rewrite", d.rewrite).put("selected", d.selected).put("applied", d.applied).put("tried", JSONArray(d.tried)).put("soft", d.soft))
         } }))
     } }
     fun decodeClaims(a: JSONArray?): List<FactClaim> = if (a == null) emptyList() else (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { o ->
@@ -510,11 +559,13 @@ $body"""
         FactClaim(o.optString("id"), o.optString("span"), o.optString("claim"), (0 until ds.length()).mapNotNull { ds.optJSONObject(it) }.map { d ->
             FactDetail(d.optString("id"), d.optString("aspect"), d.optString("text"), d.optString("type"), strs(d.optJSONArray("entities")), strs(d.optJSONArray("queries")),
                 d.optString("verdict"), d.optString("quote"), d.optString("url"), d.optString("sourceTitle"), d.optString("via"), d.optString("reason"),
-                d.optString("rewrite"), d.optBoolean("selected"), d.optBoolean("applied"), strs(d.optJSONArray("tried")))
-        }, o.optBoolean("done"))
+                d.optString("rewrite"), d.optBoolean("selected"), d.optBoolean("applied"), strs(d.optJSONArray("tried")), d.optString("soft"))
+        }, o.optBoolean("done"), o.optString("fix"), strs(o.optJSONArray("alts")), o.optString("fixText"))
     }
-    fun encodeState(s: State): String = JSONObject().put("claims", encodeClaims(s.claims)).put("sources", JSONArray(s.sources)).toString()
-    fun decodeState(json: String): State? = if (json.isBlank()) null else runCatching { val j = JSONObject(json); State(decodeClaims(j.optJSONArray("claims")), strs(j.optJSONArray("sources"))) }.getOrNull()
+    fun encodeState(s: State): String = JSONObject().put("claims", encodeClaims(s.claims)).put("sources", JSONArray(s.sources))
+        .apply { s.triage?.let { put("triage", JSONObject().put("facts", it.facts).put("opinions", it.opinions).put("descriptions", it.descriptions)) } }.toString()
+    fun decodeState(json: String): State? = if (json.isBlank()) null else runCatching { val j = JSONObject(json)
+        State(decodeClaims(j.optJSONArray("claims")), strs(j.optJSONArray("sources")), j.optJSONObject("triage")?.let { FactTriage(it.optInt("facts"), it.optInt("opinions"), it.optInt("descriptions")) }) }.getOrNull()
 
     /** 旧报告（1.12–1.16）没有 claims：每条 issue 当一个单细节说法 */
     fun claimsOf(r: FactReport): List<FactClaim> = r.claims.ifEmpty {

@@ -16,7 +16,7 @@ class FactPipeline117Test {
 
     @Test fun claimsSplitIntoAtomicDetailsWithImplicitChecks() {
         val r = run()
-        val c1 = r.claims.first()
+        val c1 = r.claims.first { it.span.startsWith("1920年代") }
         assertTrue(c1.details.map { it.aspect }.toString(), c1.details.map { it.aspect }.containsAll(listOf("人物", "地点", "范围", "地名")))
         assertTrue("民国初年 口径检查", r.claims.flatMap { it.details }.any { it.aspect == "时间口径" })
         assertEquals(1, FactFixture.extractCalls)

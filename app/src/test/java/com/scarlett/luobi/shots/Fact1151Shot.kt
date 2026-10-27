@@ -57,11 +57,9 @@ class Fact1151Shot {
         rule.onAllNodesWithContentDescription("事实校对").onFirst().performClick()
         rule.mainClock.advanceTimeBy(900); rule.waitForIdle()
         shot("360-sheet-low-checked")
-        rule.onAllNodes(hasScrollAction()).onLast().performScrollToNode(hasText("其他 ·", substring = true))
-        rule.onAllNodesWithText("其他 ·", substring = true).onFirst().performClick()
-        rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
-        rule.onAllNodes(hasScrollAction()).onLast().performScrollToNode(hasText("纽约", substring = true))
-        rule.mainClock.advanceTimeBy(600); rule.waitForIdle()
+        // 2.1：旧报告（只有 issues）也能在新列表里显示
+        rule.onAllNodesWithText("由王家卫执导", substring = true).onFirst().assertExists()
+        rule.onAllNodesWithText("○ 无法核实", substring = true).onFirst().assertExists()
         shot("360-sheet-unverifiable")
     }
     @Test fun settingsSearchSection() {

@@ -34,7 +34,9 @@ class FactWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
             val report = FactPipeline.run(title, note.body, env, resume,
                 save = { st -> dao.progress(noteId, st.claims.count { it.done }, st.claims.size, FactPipeline.encodeState(st)) },
                 progress = { d, n -> runCatching { setForeground(info(ctx, noteId, title, d, n)) } })
-            db.notes().setFactReport(noteId, FactCheck.encodeReport(report))
+            // 2.1：上一轮已存的「校对前版本」带过来，重查之后还能一键还原到最初
+            val keep = FactCheck.decodeReport(db.notes().get(noteId)?.factReportJson.orEmpty())?.snap
+            db.notes().setFactReport(noteId, FactCheck.encodeReport(report.copy(snap = keep)))
             dao.put(FactJob(noteId, title, DONE, report.claims.size, report.claims.size, "", seen = false))
             val bad = FactPipeline.count(report, FactPipeline.BAD); val part = FactPipeline.count(report, FactPipeline.PART)
             notifyDone(ctx, noteId, doneText(title, bad, part), "点开查看每条细节的依据和改法")
