@@ -215,7 +215,7 @@ object Ai {
 
     /** 1.9：意图提取。优先 DeepSeek；没填 DeepSeek Key 时用所选模型 */
     suspend fun extract(ctx: Context, raw: String, fallbackRef: String): CleanResult {
-        val db = AppDb.get(ctx); Defaults.ensure(db)
+        val db = AppDb.get(ctx); Defaults.ensure(db, ctx)
         val ct = db.cleans().active()
         val t = try { target(ctx, "p:deepseek") } catch (e: ConfigError) {
             val s = Settings(ctx)
@@ -228,7 +228,10 @@ object Ai {
         val base = ct?.prompt?.takeIf { it.isNotBlank() && !Defaults.isOldClean(it) } ?: Defaults.INTENT
         val prompt = Vars.fillClean(base, raw, list) + IntentParse.FORMAT
         val txt = chatText(t, "你是中文写作助理。只输出一个合法 JSON 对象。" + Prompts22.NO_FAB_LINE, prompt, true)
-        return IntentParse.parse(txt, raw)
+        val r = IntentParse.parse(txt, raw)
+        // 2.3：模型偶尔还会推荐旧类型名 → 换成最接近的方向
+        val names = db.templates().list().map { it.name }.toSet()
+        return if (r.recommend.isNotBlank() && r.recommend !in names && Prompts23.MAP[r.recommend] in names) r.copy(recommend = Prompts23.MAP[r.recommend]!!) else r
     }
 
     val OUT_RULE = "只输出一个 JSON 对象：{\"title\":\"标题\",\"body\":\"正文 Markdown：段落之间空一行；小标题单独一行，以 ## 开头（下一级用 ###）；小标题必须是有内容的短语（概括这一节讲什么），不要只写数字或序号（如 ## 1、## 一、## 01）；全文挑 1–3 句最有力的金句用 **加粗**（金句放在段落里加粗，或单独一行用 > 引用；金句绝不能用 # 当标题）；需要时可用 > 引用、- 列表、--- 分隔线；不要表格和代码块\",\"tags\":[\"标签1\",\"标签2\"],\"category\":\"分类\"}，tags 为 4–5 个不带 # 的主题标签；category 必须从下列 15 个里原样选 1 个：" + Categories.LIST.joinToString("、") + "，不要输出其它内容。"
@@ -240,29 +243,74 @@ object Ai {
         return if (Lengths.inTemplate(tpl)) body else body + "\n" + Lengths.hint(length, range)
     }
 
-    /** 用模板库里当前版本重建提示词；模板已删则返回 null（沿用快照） */
+    /** 用模板库里当前版本重建提示词；模板已删或是旧类型 / 已移除的模板 → 按名字落到最接近的 2.3 方向 */
     suspend fun current(ctx: Context, d: GenJob): String? {
-        if (d.kind != "write" || d.templateId <= 0) return null
-        val db = AppDb.get(ctx); val tpl = db.templates().get(d.templateId) ?: return null
-        val s = Settings(ctx)
-        return Compose.prompt(tpl.name, tpl.desc, tpl.prompt, d.values, d.raw, s.length, s.lengthRange(), xhs = s.xhsMode)
+        if (d.kind != "write") return null
+        val db = AppDb.get(ctx); val s = Settings(ctx)
+        val tpl = if (d.templateId > 0) db.templates().get(d.templateId) else null
+        if (tpl != null) return Compose.prompt(tpl.name, tpl.desc, tpl.prompt, d.values, d.raw, s.length, s.lengthRange(), xhs = s.xhsMode)
+        val name = tpl?.name ?: d.templateName
+        if (name.isBlank()) return null
+        val dir = Prompts23.nearest(name)
+        val live = db.templates().list().firstOrNull { it.builtIn && it.name == dir.name }
+        return Compose.prompt(dir.name, live?.desc ?: dir.desc, live?.prompt ?: dir.module, d.values, d.raw, s.length, s.lengthRange(), xhs = s.xhsMode || Prompts23.isXhs(name))
     }
 
-    /** 第 ③ 步：生成并存入文案库，返回 note id */
-    suspend fun write(ctx: Context, d: GenJob, onDelta: ((String) -> Unit)? = null): Long {
+    /** 2.3 生成阶段：1 定提纲，2 成文，3 校对（可选） */
+    object Stage { const val OUTLINE = 1; const val WRITE = 2; const val POLISH = 3
+        fun names(total: Int) = listOf("定提纲", "成文", "校对").take(total) }
+    /** 2.3：提纲存在本机（按文章 id），阅读页可折叠查看；不进数据库 */
+    object Outline {
+        private fun p(c: Context) = c.getSharedPreferences("outline", Context.MODE_PRIVATE)
+        fun save(c: Context, id: Long, o: String) { if (o.isNotBlank()) p(c).edit().putString(id.toString(), o).apply() }
+        fun get(c: Context, id: Long): String? = p(c).getString(id.toString(), null)
+        /** 提纲 JSON → 给人看的几行（解析失败就原样） */
+        fun pretty(o: String): String = try {
+            val j = JSONObject(o.substring(o.indexOf('{'), o.lastIndexOf('}') + 1))
+            val lab = linkedMapOf("core" to "核心观点", "angle" to "切口", "hook" to "开头", "conflict" to "冲突", "answer" to "回答疑惑", "sections" to "小节", "gold" to "金句", "ending" to "结尾")
+            lab.mapNotNull { (k, n) -> val v = j.opt(k) ?: return@mapNotNull null
+                val t = if (v is JSONArray) (0 until v.length()).joinToString("\n") { "· " + v.optString(it) } else v.toString()
+                if (t.isBlank()) null else "$n：" + (if (v is JSONArray) "\n$t" else t) }.joinToString("\n\n")
+        } catch (_: Exception) { o.trim() }
+    }
+
+    /**
+     * 第 ③ 步：生成并存入文案库，返回 note id。
+     * 2.3：两步——① 定提纲（JSON，非流式）→ ② 按提纲成文（流式，进度卡实时字数）；设置里打开「校对」再加 ③ 最小改动校对（解析失败就用初稿）。
+     * 任何一步失败都整篇失败（不存半成品）；取消时协程取消直接抛出。
+     */
+    suspend fun write(ctx: Context, d: GenJob, onDelta: ((String) -> Unit)? = null, onStage: (Int, Int) -> Unit = { _, _ -> }): Long {
         val t = target(ctx, d.model)
+        val s = Settings(ctx)
         // 1.4：每次（含失败重试）都按「当前」模板重新拼提示词，不用排队时存下的旧快照
         val prompt = current(ctx, d) ?: d.finalPrompt
+        val polish = s.polish23
+        val total = if (polish) 3 else 2
         val fin = arrayOf("")
-        val mt = if (t.pid == "deepseek") writeTokens(Settings(ctx).lengthRange().second) else null
-        val txt = if (onDelta != null) chatStream(t, Prompts22.system(), prompt, true, dsGen(ctx), mt, fin, onDelta)
-            else chatText(t, Prompts22.system(), prompt, true, mt, dsGen(ctx), fin)
-        val a = ArticleParse.parse(txt, d.cleaned.take(20))
+        val mt = if (t.pid == "deepseek") writeTokens(s.lengthRange().second) else null
+        val sys = Prompts23.system()
+        onStage(Stage.OUTLINE, total)
+        val outline = chatText(t, sys, Prompts23.outlinePrompt(prompt), true, if (t.pid == "deepseek") 4096 else null, dsGen(ctx))
+        kotlin.coroutines.coroutineContext.ensureActive()
+        onStage(Stage.WRITE, total)
+        val wp = Prompts23.writePrompt(prompt, outline)
+        var txt = if (onDelta != null) chatStream(t, sys, wp, true, dsGen(ctx), mt, fin, onDelta) else chatText(t, sys, wp, true, mt, dsGen(ctx), fin)
+        var a = ArticleParse.parse(txt, d.cleaned.take(20))
         if (a.body.isBlank()) throw AiFormatError("缺少正文", txt.take(200))
+        if (polish && fin[0] != "length") {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            onStage(Stage.POLISH, total)
+            val f2 = arrayOf("")
+            val p = try { chatText(t, sys, Prompts23.polishPrompt(prompt, txt), true, mt, dsGen(ctx), f2) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { "" }
+            val b = if (p.isBlank() || f2[0] == "length") null else ArticleParse.parse(p, a.title)
+            // 校对稿明显变短（少于初稿六成）或没正文 → 当它失败，用初稿
+            if (b != null && b.body.isNotBlank() && b.body.length >= a.body.length * 0.6) { a = b.copy(tags = b.tags.ifEmpty { a.tags }, category = b.category.ifBlank { a.category }); txt = p }
+        }
         val db = AppDb.get(ctx)
         val n = Note(title = a.title, body = a.body, tags = a.tags.joinToString(" "), raw = d.raw, cleaned = d.cleaned,
             intent = JSONObject(d.values as Map<*, *>).toString(), category = a.category, categoryAi = a.category, templateId = d.templateId, templateName = d.templateName, model = "${t.name} · ${t.model}", finalPrompt = prompt)
         val id = db.notes().insert(n); db.notes().update(n.copy(id = id, rootId = id))
+        Outline.save(ctx, id, outline)
         if (fin[0] == "length") Truncated.mark(ctx, id)
         return id
     }
@@ -280,12 +328,12 @@ object Ai {
         val cont = instruction == CONTINUE
         val txt: String; val a: Article
         if (cont) {
-            txt = chatText(t, Prompts22.system(), Prompts22.continuePrompt(n.title, n.body), false, mt, dsGen(ctx), fin)
+            txt = chatText(t, Prompts23.system(), Prompts22.continuePrompt(n.title, n.body), false, mt, dsGen(ctx), fin)
             val more = Sanitize.body(txt.replace(Regex("^\\s*[{\\[][\\s\\S]*\"body\"\\s*:\\s*\""), ""), n.title)
             a = Article(n.title, n.body.trimEnd() + more.let { if (n.body.trimEnd().lastOrNull()?.let { c -> c in "。！？”…」）" } == true) "\n\n$it" else it }, n.tagList(), n.category)
         } else {
             val prompt = "下面是一篇文章，请按要求修改。\n修改要求：$instruction\n保持事实和观点不变，不要添加原文没有的信息。\n\n标题：${n.title}\n\n正文：\n${n.body}\n\n标签：${n.tagList().joinToString(" ")}"
-            txt = chatText(t, Prompts22.system() + "\n\n你现在是在修改一篇已有的文章。", prompt, true, mt, dsGen(ctx), fin)
+            txt = chatText(t, Prompts23.system() + "\n\n你现在是在修改一篇已有的文章。", prompt, true, mt, dsGen(ctx), fin)
             a = ArticleParse.parse(txt, n.title)
         }
         val v = (db.notes().maxVersion(n.root) ?: n.version) + 1

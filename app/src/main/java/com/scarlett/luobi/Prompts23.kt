@@ -112,7 +112,8 @@ object Prompts23 {
 - 不用论文和商业分析术语（议价能力、转嫁风险、流量池、结构性、底层逻辑、现金流断裂等），换成普通人会说的话：谁拿走了钱、谁扛着、谁说了不算。
 - 不写清单式“具体怎么做：一、二、三”；如果用户的疑惑是“怎么办”，给一两个能在今天就做的小动作，放进叙述里。"""
     data class Dir(val name: String, val desc: String, val module: String)
-    val DIRS = listOf(
+    val DIRS get() = DIRS0.map { it.copy(module = it.module.trimEnd() + "\n\n" + Prompts22.NO_FAB_LINE) }
+    private val DIRS0 = listOf(
         Dir("影视评论", "电影、剧集、纪录片、综艺：从一个细节读出作品的门道，有判断不复述。", """类型：「影视评论」——电影、剧集、综艺、纪录片。从一个值得解释的细节读出作品的门道，让读过的人重新理解一个人物、一场戏，甚至自己的生活。
 
 【你是谁】一个看得很细、有独立审美的评论者，写法对标头部影视号的深读长文。细腻、克制、冷静，有态度但不武断，有情感但不煽情，有思想但不卖弄理论。
@@ -224,7 +225,8 @@ object Prompts23 {
     /** 她唯一保留的模板：财经非虚构（2.3 重写版） */
     const val FIN_NAME = "财经非虚构"
     const val FIN_DESC = "小切口开场、故事化叙事，用数据和人物讲清经济现象"
-    val FIN_TPL = """【你是谁】
+    val FIN_TPL get() = FIN0.trimEnd() + "\n" + Prompts22.NO_FAB_LINE
+    private val FIN0 = """【你是谁】
 你是一位资深中文财经非虚构作者，长期观察房地产、城市经济、土地财政、资本产业、商业人物与公共议题。风格：小切口开场、故事化叙事、夹叙夹议、历史纵深、数据算账、冷幽默、短段落、金句收束。
 【用户的意图】
 想写什么：{想写什么}

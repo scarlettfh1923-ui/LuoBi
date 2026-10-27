@@ -826,6 +826,17 @@ fun LengthPage(back: () -> Unit) {
             Text("篇幅如何影响生成：第 ③ 步不再单独选篇幅，生成时一律使用这里的默认篇幅，写进提示词的【篇幅】一节（模板里另写的篇幅以这里为准）。数字只是约束提示，实际字数可能有少量偏差。",
                 Modifier.padding(top = 14.dp).fillMaxWidth().clip(Sq.l).background(P3.surface2).padding(14.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 20.sp)
         }
+        item { GroupLabel("生成步骤") }
+        item {
+            var pol by remember { mutableStateOf(s.polish23) }
+            Row(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("成文后再校对一遍", fontSize = 15.sp, color = P3.text, fontWeight = FontWeight.Medium)
+                    Text("更不容易编造细节，慢约 8 秒，文章可能更平", fontSize = 12.sp, color = P3.text3, lineHeight = 17.sp)
+                }
+                Switch(pol, { pol = it; s.polish23 = it }, colors = SwitchDefaults.colors(checkedTrackColor = P3.accent))
+            }
+        }
         item { GroupLabel("平台写法") }
         item {
             var xhs by remember { mutableStateOf(s.xhsMode) }

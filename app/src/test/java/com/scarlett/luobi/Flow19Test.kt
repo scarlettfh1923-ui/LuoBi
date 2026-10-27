@@ -42,15 +42,16 @@ class TplHeader19Test {
         val out = Compose.prompt("x", "", TplHeader.migrate("x", "正文"), emptyMap(), "r", 0)
         assertFalse(out.contains("【这篇要表达什么】")); assertTrue(out.contains("【这类文章怎么写】")); assertTrue(out.contains("正文"))
     }
-    @Test fun noHeaderTemplateGetsBuilderSections() {   // 2.2 段落顺序：意图 → 篇幅 → 素材 → 写法 → 自检
+    @Test fun noHeaderTemplateGetsBuilderSections() {   // 2.3 段落顺序：意图 → 篇幅 → 素材 → 写法（自检移到第二步 STEP2）
         val out = Compose.prompt("答疑解惑", "", "我的看法：{观点}\n要求：讲明白", mapOf("想写什么" to "W", "观点" to ""), "r", 0)
-        val idx = listOf("【这篇要表达什么】", "【篇幅】", "【素材", "【这类文章怎么写】", "【交稿前").map { out.indexOf(it) }
+        val idx = listOf("【这篇要表达什么】", "【篇幅】", "【素材", "【这类文章怎么写】").map { out.indexOf(it) }
         assertEquals(idx.sorted(), idx); assertTrue(idx.all { it >= 0 })
         assertTrue(out.lines().contains("我的看法：")); assertTrue(out.contains("短篇"))
     }
-    @Test fun builtinsHaveHeaderAndKnownVars() {   // 2.2：8 个类型模块，不再带旧的模板头
-        assertEquals(8, Defaults.templates.size)
-        assertEquals(Prompts22.TYPES.map { it.name }, Defaults.templates.map { it.name })
+    @Test fun builtinsHaveHeaderAndKnownVars() {   // 2.3：4 个方向 + 1 个我的模板（财经非虚构）
+        assertEquals(5, Defaults.templates.size)
+        assertEquals(Prompts23.DIRS.map { it.name } + "财经非虚构", Defaults.templates.map { it.name })
+        assertEquals(4, Defaults.templates.count { it.builtIn })
     }
 }
 

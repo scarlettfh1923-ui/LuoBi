@@ -10,7 +10,7 @@ class Templates114Test {
 
     @Test fun defaultsEqualHerTextPlusAllowedAdditions() {
         // 2.2：内置换成 8 个类型；1.14 的出厂文本仍保留，用来判断她有没有改过（迁移用）
-        assertEquals(Prompts22.TYPES.map { it.name }, Defaults.templates.sortedBy { it.sort }.map { it.name })
+        assertEquals(Prompts23.DIRS.map { it.name } + "财经非虚构", Defaults.templates.sortedBy { it.sort }.map { it.name })
         assertEquals(TAG, DefaultTemplates114.TAG_LINE)
         map.forEach { (name, k) ->
             val expected = (if (k == "t88u") "【你是谁】\n" else "") + her(k) + "\n" + TAG
