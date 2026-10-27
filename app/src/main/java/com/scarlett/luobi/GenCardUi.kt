@@ -67,14 +67,21 @@ private fun GenRunning(p: GenProgress, onCancel: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(6.dp).clip(Sq.full).background(DS.accent))
             Text("写作", Modifier.padding(start = 6.dp), fontSize = DS.Type.sub, fontWeight = FontWeight.SemiBold, color = DS.accent)
-            Text(" · 第 ${p.step} 步 / 共 3 步", fontSize = DS.Type.caption, color = P3.text3, maxLines = 1)
+            // 2.3：阶段条 定提纲 · 成文 [· 校对]，当前阶段高亮
+            Text(" · ", fontSize = DS.Type.caption, color = P3.text3, maxLines = 1)
+            p.stageNames.forEachIndexed { i, n ->
+                if (i > 0) Text(" · ", fontSize = DS.Type.caption, color = P3.text3, maxLines = 1)
+                val on = i + 1 == p.stage && p.step < 3
+                Text((if (i + 1 < p.stage || p.step >= 3) "✓" else "") + n, fontSize = DS.Type.caption, maxLines = 1,
+                    color = if (on) P3.accent else P3.text3, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+            }
             Spacer(Modifier.weight(1f))
             Text("${CopyWorker.fmtWords(p.words)} 字", Modifier.testTag("genWords"), fontSize = DS.Type.callout, fontWeight = FontWeight.SemiBold, color = P3.text)
             Box(Modifier.padding(start = 6.dp).size(32.dp).clip(Sq.full).clickable(onClick = onCancel).testTag("genCancel"), contentAlignment = Alignment.Center) {
                 Box(Modifier.size(24.dp).clip(Sq.full).background(Color(0x142A2016)), contentAlignment = Alignment.Center) { Text("×", fontSize = 15.sp, color = P3.text2, lineHeight = 15.sp) }
             }
         }
-        val head = when { p.step >= 3 -> "正在整理，放进案头…"; p.title.isNotBlank() -> "正在写：${p.title}"; else -> "正在构思标题…" }
+        val head = when { p.step >= 3 -> "正在整理，放进案头…"; p.stage == 1 -> "正在定提纲…"; p.stage == 3 -> "正在校对：${p.title}"; p.title.isNotBlank() -> "正在写：${p.title}"; else -> "正在构思标题…" }
         Text(head, Modifier.padding(top = 2.dp, end = 8.dp), fontSize = DS.Type.headline, fontWeight = FontWeight.SemiBold, color = P3.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(Modifier.padding(top = 6.dp, end = 8.dp).height(20.dp), verticalAlignment = Alignment.CenterVertically) {
             // 只显示最后打出来的那一截：右对齐 + 左侧渐隐
@@ -85,7 +92,8 @@ private fun GenRunning(p: GenProgress, onCancel: () -> Unit) {
             }
             Cursor()
         }
-        val target = when (p.step) { 1 -> .08f; 2 -> .15f + .75f * (p.words / 3000f).coerceAtMost(1f); else -> .96f }
+        val target = when { p.step >= 3 -> .96f; p.stage == 1 -> .08f; p.stage == 3 -> .9f
+            else -> { val span = if (p.stages == 3) .65f else .75f; .15f + span * (p.words / 3000f).coerceAtMost(1f) } }
         val f by animateFloatAsState(target, if (Motion.reduced) snap() else tween(DS.Dur.LONG, easing = DS.Standard), label = "genP")
         Box(Modifier.padding(top = 10.dp, end = 8.dp).fillMaxWidth().height(3.dp).clip(Sq.full).background(Color(0x122A2016))) {
             Box(Modifier.fillMaxWidth(f).fillMaxHeight().clip(Sq.full).background(DS.accent))

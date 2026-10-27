@@ -405,6 +405,7 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
         Spacer(Modifier.height(16.dp))
         if (truncated) TruncatedNote(pal, onContinue, onIgnore)
         else Text("— 完 —", Modifier.fillMaxWidth(), color = pal.sub, textAlign = TextAlign.Center, fontSize = 13.sp)
+        OutlineNote(n.id, n.root, pal)
         Spacer(Modifier.height(bottom + 24.dp))
     }
     }
@@ -713,6 +714,21 @@ fun GlyphCentered(text: String, tf: android.graphics.Typeface?, size: androidx.c
         val r = android.graphics.Rect(); paint.getTextBounds(text, 0, text.length, r)
         val x = this.size.width / 2f - r.exactCenterX(); val y = this.size.height / 2f - r.exactCenterY()
         drawContext.canvas.nativeCanvas.drawText(text, x, y, paint)
+    }
+}
+
+/** 2.3：生成时的提纲，默认收起，点开看 */
+@Composable
+fun OutlineNote(id: Long, root: Long, pal: ReadPalette) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    // 2.3 修复：改写出的新版本 id 不同，回退到首版（root）的提纲；读 prefs 放到 IO 线程
+    val o by produceState<String?>(null, id, root) { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { (Ai.Outline.get(ctx, id) ?: Ai.Outline.get(ctx, root))?.let { Ai.Outline.pretty(it) } } }
+    val text = o ?: return
+    var open by remember(id) { mutableStateOf(false) }
+    Spacer(Modifier.height(20.dp))
+    Column(Modifier.fillMaxWidth().clip(Sq.l).hairline(Sq.l, pal.sub.copy(alpha = .3f)).clickable { open = !open }.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(if (open) "写作提纲 ▴" else "写作提纲 ▾", color = pal.sub, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        if (open) { Spacer(Modifier.height(8.dp)); Text(text, color = pal.sub, fontSize = 13.sp, lineHeight = 20.sp) }
     }
 }
 

@@ -191,7 +191,7 @@ object Defaults {
 
     /** 1.9：意图提取提示词（替代清洗：不再输出清洗后文字，口头禅交给生成时处理） */
     const val INTENT_NAME = "意图提取"
-    val INTENT get() = Prompts22.INTENT
+    val INTENT get() = Prompts23.INTENT
     /** 2.1 及以前的意图提取默认（只用于识别她没改过） */
     val INTENT21 = """你是一名中文写作助理。下面是用户的一段口播、语音转写或随手记下的想法，口语化，可能有口头禅和识别错误。请从中提取写作意图，并推荐一个模板。
 
@@ -216,7 +216,10 @@ object Defaults {
     private val templates19 get() = rawTemplates.map { t -> t.copy(prompt = TplHeader.header(t.name) + t.prompt.lines().filter { it.startsWith("写作要求") }.joinToString("\n")) }
     /** 1.14 内置默认：她的 5 个模板 + 标签指令。只用于全新安装和「恢复默认」；已有用户的模板不覆盖 */
     /** 2.2 内置默认：8 个写作类型（模块正文存进模板库，可编辑；底座在代码里） */
-    val templates get() = Prompts22.TYPES.mapIndexed { i, t -> Template(name = t.name, desc = t.desc, builtIn = true, sort = i, prompt = t.module) }
+    val templates22 get() = Prompts22.TYPES.mapIndexed { i, t -> Template(name = t.name, desc = t.desc, builtIn = true, sort = i, prompt = t.module) }
+    /** 2.3 内置默认：4 个方向（内置）+ 她的财经非虚构（我的模板） */
+    val templates get() = Prompts23.DIRS.mapIndexed { i, t -> Template(name = t.name, desc = t.desc, builtIn = true, sort = i, prompt = t.module) } +
+        Template(name = Prompts23.FIN_NAME, desc = Prompts23.FIN_DESC, builtIn = false, sort = 10, prompt = Prompts23.FIN_TPL)
     /** 2.2 退役的旧内置 → 新类型（没改过的直接换成新类型；null = 退役删除） */
     val RETIRED: Map<String, String?> = mapOf("豆瓣影评" to "影评剧评", "财经非虚构" to "社会观察", "专栏评论" to "观点评论", "通用非虚构" to null,
         "小红书风格" to null, "口播转文章" to null, "观点表达" to "观点评论", "答疑解惑" to "干货科普")
@@ -244,6 +247,61 @@ object Defaults {
             }
         }
         Prompts22.TYPES.forEachIndexed { i, ty -> if (ty.name !in taken) { db.templates().insert(Template(name = ty.name, desc = ty.desc, builtIn = true, sort = i, prompt = ty.module)); log += "新增：${ty.name}" } }
+        return log
+    }
+    /** 某个模板名所有「出厂」文本（1.x 种子 + 2.2 类型模块），任一相同 = 她没改过 */
+    fun factory23(name: String): Set<String> = (factoryTexts(name) + listOfNotNull(Prompts22.type(name)?.module?.trim())).toSet()
+    /**
+     * 2.3 模板迁移（幂等）：
+     * - 2.2 的 8 个内置类型：没改过 → 就地换成最接近的方向（保留 id）；方向已有就删掉；她改过的 → 原文不动转成「我的模板」；
+     * - 她的 4 个模板（豆瓣影评、专栏评论、通用非虚构、小红书风格，含 1.x 旧名）：从 App 移除；改过的正文先交给 backup 存一份；
+     * - 财经非虚构：没改过 → 换成 2.3 重写版（旧文交给 backup）；改过的正文不动（生成时自动套 2.3 底座）；只保留一份；
+     * - 第一次迁到 2.3 时（库里还没有任何方向）如果没有财经非虚构就补上；之后她删了也不再补；
+     * - 缺哪个方向补哪个；她自己新建的模板一律不动。
+     */
+    suspend fun migrate23(db: AppDb, backup: (String, String) -> Unit = { _, _ -> }): List<String> {
+        val log = mutableListOf<String>()
+        val dirNames = Prompts23.DIRS.map { it.name }.toSet()
+        // 已经叫方向名的内置先处理，保住它的 id（旧文章 templateId 还能对上）
+        val all = db.templates().list().sortedBy { if (it.builtIn && it.name in dirNames) 0 else 1 }
+        val old22 = Prompts22.TYPES.map { it.name }.toSet() + RETIRED.keys
+        val first = all.any { it.builtIn && it.name in old22 - dirNames }
+        val taken = mutableSetOf<String>()
+        var fin = false
+        for (t in all) {
+            val edited = t.prompt.trim() !in factory23(t.name)
+            when {
+                t.builtIn && t.name in dirNames -> {
+                    val d = Prompts23.dir(t.name)!!
+                    when {
+                        t.name in taken -> { db.templates().delete(t); log += "去重：${t.name}" }
+                        t.prompt.trim() == d.module.trim() -> taken += t.name
+                        t.prompt.trim() == Prompts22.type(t.name)?.module?.trim() || !edited -> { db.templates().update(t.copy(desc = d.desc, prompt = d.module, sort = Prompts23.DIRS.indexOf(d))); taken += t.name; log += "升级：${t.name}" }
+                        else -> taken += t.name // 她改过的 2.3 方向：不动
+                    }
+                }
+                t.name == Prompts23.FIN_NAME -> {
+                    if (fin) { if (edited && t.prompt.trim() != Prompts23.FIN_TPL.trim()) backup(t.name, t.prompt); db.templates().delete(t); log += "去重：${t.name}"; continue }
+                    fin = true
+                    when {
+                        t.prompt.trim() == Prompts23.FIN_TPL.trim() -> if (t.builtIn) db.templates().update(t.copy(builtIn = false))
+                        !edited -> { backup(t.name, t.prompt); db.templates().update(t.copy(builtIn = false, desc = Prompts23.FIN_DESC, prompt = Prompts23.FIN_TPL, updatedAt = System.currentTimeMillis())); log += "升级：${t.name}" }
+                        else -> { if (t.builtIn) db.templates().update(t.copy(builtIn = false)); log += "保留她改过的：${t.name}" }
+                    }
+                }
+                t.name in Prompts23.REMOVED -> { if (edited) backup(t.name, t.prompt); db.templates().delete(t); log += "移除：${t.name}" }
+                t.builtIn && t.name in old22 -> {
+                    val target = Prompts23.nearest(t.name)
+                    when {
+                        edited -> { db.templates().update(t.copy(builtIn = false, updatedAt = System.currentTimeMillis())); log += "保留为我的模板：${t.name}" }
+                        target.name !in taken -> { db.templates().update(t.copy(name = target.name, desc = target.desc, prompt = target.module, sort = Prompts23.DIRS.indexOf(target))); taken += target.name; log += "换成方向：${t.name} → ${target.name}" }
+                        else -> { db.templates().delete(t); log += "退役：${t.name}" }
+                    }
+                }
+            }
+        }
+        Prompts23.DIRS.forEachIndexed { i, d -> if (d.name !in taken) { db.templates().insert(Template(name = d.name, desc = d.desc, builtIn = true, sort = i, prompt = d.module)); log += "新增：${d.name}" } }
+        if (first && !fin) { db.templates().insert(Template(name = Prompts23.FIN_NAME, desc = Prompts23.FIN_DESC, builtIn = false, sort = 10, prompt = Prompts23.FIN_TPL)); log += "新增：${Prompts23.FIN_NAME}" }
         return log
     }
     /** 旧内置名（口播转文章/观点表达/答疑解惑）→ 1.14 新名 */
@@ -281,11 +339,11 @@ object Defaults {
 参考原文：{原文}"""),
     )
 
-    suspend fun ensure(db: AppDb) {
+    suspend fun ensure(db: AppDb, ctx: Context? = null) {
         if (db.templates().count() == 0) templates.forEach { db.templates().insert(it) }
         db.notes().repairRoots()
         migrateHeaders(db)
-        migrate22(db)
+        migrate23(db) { n, t -> ctx?.let { TplBackup.add(it, n, t) } }
         if (db.cleans().count() == 0) db.cleans().insert(CleanTpl(name = INTENT_NAME, prompt = INTENT, fields = Vars.DEFAULT_FIELDS.joinToString("\n"), builtIn = true, active = true))
         // 1.9：没改过的内置清洗提示词自动换成意图提取；她改过的原样保留（解析兼容旧格式），页面上提示可恢复默认
         db.cleans().all().first().filter { it.builtIn && it.prompt.trim() == CLEAN.trim() }.forEach {
@@ -297,19 +355,19 @@ object Defaults {
             db.cleans().update(it.copy(name = INTENT_NAME, prompt = INTENT, fields = Vars.DEFAULT_FIELDS.joinToString("\n")))
         }
         // 2.2：没改过的旧意图提取提示词换成 8 类型版；她改过的不动
-        db.cleans().all().first().filter { it.builtIn && it.prompt.trim() == INTENT21.trim() }.forEach { db.cleans().update(it.copy(prompt = INTENT)) }
+        db.cleans().all().first().filter { it.builtIn && (it.prompt.trim() == INTENT21.trim() || it.prompt.trim() == Prompts22.INTENT.trim()) }.forEach { db.cleans().update(it.copy(prompt = INTENT)) }
         if (db.cleans().active() == null) db.cleans().all().first().firstOrNull { it.builtIn }?.let { db.cleans().activate(it.id) }
     }
     /** 旧版清洗提示词：要求输出 cleaned / 清洗后文字 */
     fun isOldClean(p: String) = p.contains("\"cleaned\"") || p.contains("清洗文本") || (p.contains("清洗") && !p.contains("\"想写什么\""))
-    fun builtinPrompt(name: String) = Prompts22.type(name)?.module
-    fun builtinDesc(name: String) = Prompts22.type(name)?.desc
+    fun builtinPrompt(name: String) = Prompts23.dir(name)?.module
+    fun builtinDesc(name: String) = Prompts23.dir(name)?.desc
     /** 1.9 迁移：每个模板开头补【你是谁】【用户的意图】，正文逐字节保留；已有头的不动（幂等） */
     suspend fun migrateHeaders(db: AppDb): Int {
         var n = 0
         val list = db.templates().list()
         // 2.2 起模板不再需要头：已经有 2.2 内置类型（迁移过 / 新装）就不再给任何模板加头
-        if (list.any { t -> t.builtIn && Prompts22.type(t.name) != null }) return 0
+        if (list.any { t -> t.builtIn && (Prompts22.type(t.name) != null || Prompts23.dir(t.name) != null) }) return 0
         list.forEach { t ->
             // 从没改过的 1.8 内置默认 → 直接换成 1.9 默认；其余（她自己的正文）只在开头加头
             val old = rawTemplates.firstOrNull { it.name == t.name && it.prompt == t.prompt }
@@ -318,6 +376,17 @@ object Defaults {
         }
         return n
     }
+}
+
+/** 2.3：迁移时被替换 / 移除的模板旧文（不丢她的文字）；存在本机 prefs，可在模板页恢复 */
+object TplBackup {
+    private fun p(c: Context) = c.getSharedPreferences("tpl_backup", Context.MODE_PRIVATE)
+    fun add(c: Context, name: String, text: String) {
+        val a = list(c); if (a.any { it.second == text }) return
+        val j = org.json.JSONArray(); (a + (name to text)).forEach { j.put(org.json.JSONObject().put("n", it.first).put("t", it.second)) }
+        p(c).edit().putString("items", j.toString()).apply()
+    }
+    fun list(c: Context): List<Pair<String, String>> = try { val j = org.json.JSONArray(p(c).getString("items", "[]")); (0 until j.length()).map { j.getJSONObject(it).let { o -> o.optString("n") to o.optString("t") } } } catch (_: Exception) { emptyList() }
 }
 
 /** 加密存储：所有 Key / Token 只存在本机（EncryptedSharedPreferences，AES256-GCM，主钥匙在 Android Keystore） */
@@ -409,6 +478,8 @@ class Settings(val c: Context) {
     /** 1.16.2 DeepSeek 文案生成：深度思考（默认关）+ 温度（默认 0.7，范围 0–2，新键，老用户自然落到 0.7） */
     /** 2.2：小红书平台写法（叠加在任何类型上） */
     var xhsMode get() = p.getBoolean("xhsMode", false); set(v) = put("xhsMode", v)
+    /** 2.3：第三步校对（默认关：更不容易编造细节，慢约 8 秒，文章可能更平） */
+    var polish23 get() = p.getBoolean("polish23", false); set(v) = put("polish23", v)
     var dsThink get() = p.getBoolean("dsThink", false); set(v) = put("dsThink", v)
     var dsTemp: Float get() = p.getFloat("dsTemp", 0.7f).coerceIn(0f, 2f); set(v) = put("dsTemp", (Math.round(v.coerceIn(0f, 2f) * 10) / 10f))
     var attachRaw get() = p.getBoolean("attachRaw", true); set(v) = put("attachRaw", v)

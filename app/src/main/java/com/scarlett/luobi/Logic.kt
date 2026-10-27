@@ -465,7 +465,7 @@ object Compose {
         val desc = tplDesc.trim().trimEnd('。')
         secs += "【这类文章怎么写】\n类型：「$tplName」" + (if (desc.isNotEmpty()) "——$desc" else "") + "\n" + how
         if (xhs) secs += Prompts22.XHS
-        secs += Prompts22.SELF_CHECK
+        // 2.3：自查写在第二步（STEP2）里，这里不再追加
         return secs.filter { it.isNotBlank() }.joinToString("\n\n")
     }
 }

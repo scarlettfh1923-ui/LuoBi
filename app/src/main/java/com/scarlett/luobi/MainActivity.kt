@@ -76,7 +76,7 @@ class GenErr(val f: Friendly, val retry: () -> Unit)
 fun App() {
     val ctx = LocalContext.current
     val db = remember { AppDb.get(ctx) }
-    LaunchedEffect(Unit) { Defaults.ensure(db) }
+    LaunchedEffect(Unit) { Defaults.ensure(db, ctx) }
     var route by remember { mutableStateOf<Route>(Route.Tab(0)) }
     val stack = remember { mutableStateListOf<Route>() }
     var navDir by remember { mutableIntStateOf(0) }

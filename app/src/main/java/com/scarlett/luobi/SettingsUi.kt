@@ -107,6 +107,7 @@ private fun NewButton(onClick: () -> Unit) {
 @Composable
 fun TemplatesPage(db: AppDb, back: () -> Unit, go: (String) -> Unit) {
     val scope = rememberCoroutineScope()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     val list by db.templates().all().collectAsState(initial = emptyList())
     val active by db.cleans().activeFlow().collectAsState(initial = null)
     val fields = Vars.DEFAULT_FIELDS // 1.9：意图卡固定三项
@@ -134,6 +135,25 @@ fun TemplatesPage(db: AppDb, back: () -> Unit, go: (String) -> Unit) {
                             TextAction("复制") { scope.launch { val nm = Names.unique(t.name + "（副本）", list.map { it.name }); db.templates().insert(t.copy(id = 0, name = nm, builtIn = false, sort = 100, updatedAt = System.currentTimeMillis())); snack("已复制为「$nm」") } }
                             if (t.builtIn && Defaults.builtinPrompt(t.name) != null && Defaults.builtinPrompt(t.name) != t.prompt) TextAction("恢复默认", P3.text2) { scope.launch { val nn = Defaults.builtinName(t.name).takeIf { n -> n == t.name || list.none { it.name == n } } ?: t.name; db.templates().update(t.copy(name = nn, desc = Defaults.builtinDesc(t.name) ?: t.desc, prompt = Defaults.builtinPrompt(t.name)!!, updatedAt = System.currentTimeMillis())); snack("已恢复默认") } }
                             if (!t.builtIn) TextAction("删除", P3.danger) { del = t }
+                        }
+                    }
+                }
+            }
+        }
+        // 2.3 修复：迁移时被替换/移除的旧模板原文，之前只存不显示；这里可以一键恢复成「我的模板」
+        val bak = TplBackup.list(ctx)
+        if (bak.isNotEmpty()) {
+            item { GroupLabel("升级前的旧模板") }
+            item { Text("升级到 2.3 时被替换或移除的模板原文都留在这里，点「恢复」会加回「我的模板」。", Modifier.padding(start = 4.dp, bottom = 8.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 17.sp) }
+            bak.forEachIndexed { i, (n, txt) ->
+                item(key = "bak$i") {
+                    Card(Modifier.padding(bottom = 8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(n, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(txt.replace("\n", " ").take(60), fontSize = 12.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            TextAction("恢复") { scope.launch { val nm = Names.unique("$n（旧版）", list.map { it.name }); db.templates().insert(Template(name = nm, desc = "升级前的旧模板", builtIn = false, sort = 100, prompt = txt, updatedAt = System.currentTimeMillis())); snack("已恢复为「$nm」") } }
                         }
                     }
                 }
@@ -825,6 +845,17 @@ fun LengthPage(back: () -> Unit) {
         item {
             Text("篇幅如何影响生成：第 ③ 步不再单独选篇幅，生成时一律使用这里的默认篇幅，写进提示词的【篇幅】一节（模板里另写的篇幅以这里为准）。数字只是约束提示，实际字数可能有少量偏差。",
                 Modifier.padding(top = 14.dp).fillMaxWidth().clip(Sq.l).background(P3.surface2).padding(14.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 20.sp)
+        }
+        item { GroupLabel("生成步骤") }
+        item {
+            var pol by remember { mutableStateOf(s.polish23) }
+            Row(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("成文后再校对一遍", fontSize = 15.sp, color = P3.text, fontWeight = FontWeight.Medium)
+                    Text("更不容易编造细节，慢约 8 秒，文章可能更平", fontSize = 12.sp, color = P3.text3, lineHeight = 17.sp)
+                }
+                Switch(pol, { pol = it; s.polish23 = it }, colors = SwitchDefaults.colors(checkedTrackColor = P3.accent))
+            }
         }
         item { GroupLabel("平台写法") }
         item {

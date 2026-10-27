@@ -52,7 +52,10 @@ object GenCard {
 }
 
 /** 生成进度（Worker → UI）：第几步、已写字数、标题、正在打的那一行 */
-data class GenProgress(val step: Int = 1, val words: Int = 0, val title: String = "", val line: String = "")
+/** 2.3：stage = 当前阶段（1 定提纲 / 2 成文 / 3 校对），stages = 共几段（2 或 3） */
+data class GenProgress(val step: Int = 1, val words: Int = 0, val title: String = "", val line: String = "", val stage: Int = 1, val stages: Int = 2) {
+    val stageNames get() = Ai.Stage.names(stages)
+}
 object StreamPeek {
     /** 从还没写完的 JSON 里取出某个字符串字段（容忍截断、转义） */
     fun field(acc: String, name: String): String? {
@@ -129,17 +132,22 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
         // 2.0.1：前台 dataSync 通知，锁屏 / 切应用也不被系统停掉；不允许（后台启动限制等）时照常以加急任务继续
         runCatching { setForeground(fgInfo()) }
         return try {
-            if (job.kind != "rewrite") { GenCard.clear(ctx); report(GenProgress(1)) }
+            val stages = if (Settings(ctx).polish23) 3 else 2
+            if (job.kind != "rewrite") { GenCard.clear(ctx); report(GenProgress(1, stages = stages)) }
             var last = 0L
+            var stage = 1; var lastP = GenProgress(1, stages = stages)
             // 2.0.1：流式回调里只放最新进度（不阻塞读流），另一个协程每 250ms 异步上报
             val latest = kotlinx.coroutines.flow.MutableStateFlow<GenProgress?>(null)
             val id = kotlinx.coroutines.coroutineScope {
                 val reporter = launch { latest.collect { p -> if (p != null) { report(p); kotlinx.coroutines.delay(250) } } }
                 try {
-                    if (job.kind == "rewrite") Ai.rewrite(ctx, job.noteId, job.instruction, job.model) else Ai.write(ctx, job) { acc ->
+                    if (job.kind == "rewrite") Ai.rewrite(ctx, job.noteId, job.instruction, job.model) else Ai.write(ctx, job, { acc ->
                         val now = System.currentTimeMillis()
-                        if (now - last >= 250) { last = now; latest.value = StreamPeek.progress(acc) }
-                    }
+                        if (now - last >= 250) { last = now; lastP = StreamPeek.progress(acc).copy(stage = stage, stages = stages); latest.value = lastP }
+                    }) { st, n -> stage = st
+                        // 校对阶段：字数和标题保留成文时的，进度条停在后段
+                        lastP = if (st == Ai.Stage.POLISH) lastP.copy(step = 2, stage = st, stages = n, line = "") else GenProgress(1, stage = st, stages = n)
+                        latest.value = lastP }
                 } finally { reporter.cancel() }
             }
             val note = AppDb.get(ctx).notes().get(id)
@@ -147,7 +155,7 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
             if (job.kind == "rewrite") { if (AppState.visible <= 0) notify(ctx, "改写好了", "《$title》已存为新版本", id) }
             else {
                 val w = StreamPeek.words(note?.body.orEmpty())
-                report(GenProgress(3, w, title))
+                report(GenProgress(3, w, title, stage = stages, stages = stages))
                 GenCard.done(ctx, id, title, w)
                 notify(ctx, DONE_TITLE, doneText(title, w) + (if (Ai.Truncated.has(ctx, id)) "（没写完，被截断了，打开可以续写）" else ""), id)
             }
@@ -161,13 +169,13 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
         }
     }
 
-    private suspend fun report(p: GenProgress) = try { setProgress(workDataOf(P_STEP to p.step, P_WORDS to p.words, P_TITLE to p.title, P_LINE to p.line.takeLast(60))) } catch (_: Exception) {}
+    private suspend fun report(p: GenProgress) = try { setProgress(workDataOf(P_STEP to p.step, P_WORDS to p.words, P_TITLE to p.title, P_LINE to p.line.takeLast(60), P_STAGE to p.stage, P_STAGES to p.stages)) } catch (_: Exception) {}
 
     companion object {
-        const val P_STEP = "ps"; const val P_WORDS = "pw"; const val P_TITLE = "pt"; const val P_LINE = "pl"
+        const val P_STEP = "ps"; const val P_STAGE = "pg"; const val P_STAGES = "pn"; const val P_WORDS = "pw"; const val P_TITLE = "pt"; const val P_LINE = "pl"
         const val DONE_TITLE = "文章写好了"
         fun doneText(title: String, w: Int) = "《$title》${fmtWords(w)} 字，已放进案头"
-        fun progressOf(d: Data) = GenProgress(d.getInt(P_STEP, 1).coerceIn(1, 3), d.getInt(P_WORDS, 0).coerceAtLeast(0), d.getString(P_TITLE).orEmpty(), d.getString(P_LINE).orEmpty())
+        fun progressOf(d: Data) = GenProgress(d.getInt(P_STEP, 1).coerceIn(1, 3), d.getInt(P_WORDS, 0).coerceAtLeast(0), d.getString(P_TITLE).orEmpty(), d.getString(P_LINE).orEmpty(), d.getInt(P_STAGE, 1).coerceIn(1, 3), d.getInt(P_STAGES, 2).coerceIn(2, 3))
         fun fmtWords(n: Int) = String.format(java.util.Locale.US, "%,d", n)
         const val NAME = "copy"
         const val K_LABEL = "label"; const val K_NOTE = "note"; const val K_KIND = "kind"

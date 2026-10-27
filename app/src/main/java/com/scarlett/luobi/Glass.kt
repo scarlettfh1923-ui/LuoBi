@@ -62,6 +62,10 @@ object Glass {
     val tintDark = Color(0xFF221F1B).copy(alpha = .74f)
     val fallbackDark = Color(0xFF221F1B).copy(alpha = .94f)
     val rim = Color(0xFFFFFDF8).copy(alpha = .95f)
+    /** 2.3 底部导航：更强模糊 + 更不透明的宣纸色 + #E5DDCF 发丝描边，与密集内容拉开层次 */
+    val navTint = Color(0xFFFFFCF6).copy(alpha = .86f)
+    val navFallback = Color(0xFFFFFCF6).copy(alpha = .97f)
+    val navBlur = 30.dp
     fun init(ctx: android.content.Context) {
         val am = ctx.getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
         blur = Build.VERSION.SDK_INT >= 31 && am?.isLowRamDevice != true
@@ -70,15 +74,16 @@ object Glass {
 
 val Hairline = Color(0xFFE5DDCF)
 /** 浮动层玻璃：阴影 + 圆角 + 背景模糊（或半透明兜底）+ 白色描边 */
-fun Modifier.frosted(shape: androidx.compose.ui.graphics.Shape = Sq.full, elevation: Dp = 6.dp, tint: Color = Color.White, dark: Boolean = false): Modifier = composed {
+fun Modifier.frosted(shape: androidx.compose.ui.graphics.Shape = Sq.full, elevation: Dp = 6.dp, tint: Color = Color.White, dark: Boolean = false,
+    lightTint: Color = Glass.tintLight, lightFallback: Color = Glass.fallbackLight, blur: Dp = 18.dp, rim: Color = Glass.rim): Modifier = composed {
     val b = LocalBackdrop.current
     val base = this.softShadow(shape, elevation).clip(shape)
     val filled = if (b != null && Glass.blur) base.hazeChild(b.haze, shape = shape, style = HazeStyle(
             backgroundColor = if (dark) Color(0xFF221F1B) else P3.bg,
-            tint = HazeTint(if (dark) Glass.tintDark else Glass.tintLight), blurRadius = 18.dp, noiseFactor = 0f,
-            fallbackTint = HazeTint(if (dark) Glass.fallbackDark else Glass.fallbackLight)))
-        else base.background(if (dark) Glass.fallbackDark else Glass.fallbackLight)
-    filled.hairline(shape, if (dark) Color.White.copy(alpha = .12f) else Glass.rim)
+            tint = HazeTint(if (dark) Glass.tintDark else lightTint), blurRadius = blur, noiseFactor = 0f,
+            fallbackTint = HazeTint(if (dark) Glass.fallbackDark else lightFallback)))
+        else base.background(if (dark) Glass.fallbackDark else lightFallback)
+    filled.hairline(shape, if (dark) Color.White.copy(alpha = .12f) else rim)
 }
 
 /** 分享栏 / 导航的统一网格（detail.png）：等宽格；图标框 24dp（图标 20dp 居中）；间距 3dp；标签行高 14dp；整组垂直居中；整格可点 */
@@ -117,11 +122,11 @@ val FloatingBarSpace = 64.dp + 8.dp + 12.dp + 12.dp
 fun FloatingNav(sel: Int, onSel: (Int) -> Unit) {
     val items = listOf(Triple("创作", Ic.write, 0), Triple("案头", Ic.library, 1), Triple("设定", Ic.settings, 2))
     Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp)) {
-        BoxWithConstraints(Modifier.fillMaxWidth().height(66.dp).frosted(elevation = 10.dp)) {
+        BoxWithConstraints(Modifier.fillMaxWidth().height(66.dp).frosted(elevation = 14.dp, lightTint = Glass.navTint, lightFallback = Glass.navFallback, blur = Glass.navBlur, rim = Hairline)) {
             val cw = (maxWidth - 12.dp) / items.size
             val x by animateDpAsState(cw * sel, Motion.springDp(), label = "tabPill")
             // 选中胶囊（同心圆角：外 33 − 内边距 6 = 27）
-            Box(Modifier.padding(6.dp).offset(x = x).width(cw).fillMaxHeight().softShadow(Sq.full, 2.dp).clip(Sq.full).background(P3.surface))
+            Box(Modifier.padding(6.dp).offset(x = x).width(cw).fillMaxHeight().clip(Sq.full).background(P3.accent.copy(alpha = .10f)))
             Row(Modifier.fillMaxSize().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 items.forEach { (l, ic, i) -> GridCell(ic, l, sel == i, P3.text3, P3.text3, pill = false) { onSel(i) } }
             }
