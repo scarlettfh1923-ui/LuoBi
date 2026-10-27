@@ -15,7 +15,7 @@ android {
   compileSdk = 35
   defaultConfig {
     applicationId = "com.scarlett.luobi"
-    minSdk = 29; targetSdk = 35; versionCode = 29; versionName = "2.2.0"
+    minSdk = 29; targetSdk = 35; versionCode = 30; versionName = "2.3.0"
   }
   signingConfigs {
     if (signProps.isNotEmpty()) create("release") {
