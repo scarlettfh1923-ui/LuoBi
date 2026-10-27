@@ -57,6 +57,20 @@ class Migrate23Test {
         assertFalse(l.first { it.name == "财经非虚构" }.builtIn)
         assertTrue(Defaults.migrate23(db).isEmpty())   // 幂等
     }
+    /** 2.3.0 审查：模拟 2.2.0（vc29）真实状态——8 个内置类型，其中一个她改过；再加一篇用旧类型写的文章 */
+    @Test fun upgradeFrom22State() = runBlocking {
+        val db = mem()
+        Defaults.templates22.forEach { db.templates().insert(it) }
+        val t0 = db.templates().list().first(); db.templates().update(t0.copy(prompt = t0.prompt + "\n她加的一句"))
+        val nid = db.notes().insert(Note(title = "旧文", body = "正文", tags = "", templateName = t0.name))
+        Defaults.ensure(db, ctx)
+        val l = db.templates().list()
+        assertTrue(l.map { it.name }.containsAll(dirs)); assertEquals(1, l.count { it.name == "财经非虚构" })
+        assertTrue("她改过的保留", l.any { it.prompt.endsWith("她加的一句") && !it.builtIn })
+        assertEquals(dirs.size, l.count { it.builtIn })
+        assertTrue(Defaults.migrate23(db).isEmpty())   // 第二次启动不再变
+        assertEquals("旧文", db.notes().recent(10).first { it.id == nid }.title)
+    }
     @Test fun seedsUpgradeEditedKept() = runBlocking {
         val db = mem()
         Defaults.templates22.forEach { db.templates().insert(it) }
