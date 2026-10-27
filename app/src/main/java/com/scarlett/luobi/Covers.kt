@@ -14,20 +14,20 @@ enum class CoverKind(val label: String, val sub: String) {
     MAG("杂志", "刊头 + 衬线大字 + 双栏导语"),
     PAPER("书页纸感", "暖纸色 + 细框 + 居中宋体"),
     QUOTE("引语卡", "大引号金句 + 玻璃标题条"),
-    BLOCK("极简色块", "顶部蓝块放关键数字");
+    BLOCK("极简色块", "顶部色块放关键数字");
     companion object { fun of(i: Int) = entries.getOrElse(i) { BIG } }
 }
 
 /** 1.19 正文页版式（mockups/v1.19/body-pages.png）：都不再画标题条 */
 enum class BodyKind(val label: String, val sub: String, val bg: Int, val bg2: Int, val ink: Int, val head: Int, val sub2: Int) {
-    PLAIN("只留页码", "底部居中 2 / 6", 0xFFF6F5F1.toInt(), 0xFFF6F5F1.toInt(), 0xFF2B2F38.toInt(), 0xFF14171F.toInt(), 0xFF9AA0AA.toInt()),
-    PROGRESS("底部进度条", "细进度条 + 页码", 0xFFF7F8FA.toInt(), 0xFFF7F8FA.toInt(), 0xFF2B2F38.toInt(), 0xFF14171F.toInt(), 0xFF9AA0AA.toInt()),
+    PLAIN("只留页码", "底部居中 2 / 6", 0xFFF6F3EC.toInt(), 0xFFF6F3EC.toInt(), 0xFF2E2923.toInt(), 0xFF1A1714.toInt(), 0xFFA39A8D.toInt()),
+    PROGRESS("底部进度条", "细进度条 + 页码", 0xFFF7F4EE.toInt(), 0xFFF7F4EE.toInt(), 0xFF2E2923.toInt(), 0xFF1A1714.toInt(), 0xFFA39A8D.toInt()),
     BOOK("书页", "宋体纸感，右下 — 2 —", 0xFFF1EADB.toInt(), 0xFFE9DFC9.toInt(), 0xFF3B3429.toInt(), 0xFF26211A.toInt(), 0xFFA39883.toInt());
     companion object { fun of(i: Int) = entries.getOrElse(i) { PLAIN } }
 }
 
 object Covers {
-    const val ACCENT = 0xFF2F6BFF.toInt()
+    const val ACCENT = 0xFF2E5E6B.toInt()
     private val serifBold: Typeface get() = Typeface.create(Typeface.SERIF, 700, false)
     private val serif: Typeface get() = Typeface.create(Typeface.SERIF, 400, false)
     private fun tp(size: Float, color: Int, tf: Typeface = Typeface.DEFAULT, ls: Float = 0f) = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = size; this.color = color; typeface = tf; letterSpacing = ls }
@@ -161,8 +161,8 @@ object Covers {
     }
 
     private fun quoteCard(c: Canvas, w: Int, h: Int, t: String, body: String, heavy: Typeface) {
-        fill(c, w, h, 0xFFF1F4F9.toInt(), 0xFFE2E8F2.toInt())
-        val m = 110f; val ink = 0xFF161A22.toInt()
+        fill(c, w, h, 0xFFEFF3F1.toInt(), 0xFFE0E8E6.toInt())
+        val m = 110f; val ink = 0xFF161A1A.toInt()
         val qp = tp(220f, ACCENT, serifBold)
         c.drawText("“", m - 10f, h * .25f, qp)
         val q = quote(t, body)
@@ -170,7 +170,7 @@ object Covers {
         val qTop = h * .29f
         draw(c, ql, m, qTop)
         val at = "—— 摘自《" + android.text.TextUtils.ellipsize(t, tp(30f, 0), 520f, android.text.TextUtils.TruncateAt.END) + "》"
-        c.drawText(at, m, qTop + ql.height + 74f, tp(30f, 0xFF8A93A3.toInt()))
+        c.drawText(at, m, qTop + ql.height + 74f, tp(30f, 0xFF7D8682.toInt()))
         // 玻璃标题条
         val bw = w - 2 * 72f
         val tl = fit(t, tp(44f, ink, Typeface.create(heavy, 800, false)), (bw - 88).toInt(), 44f, 34f, 2, 140, 1.3f)
@@ -184,7 +184,7 @@ object Covers {
     }
 
     private fun block(c: Canvas, w: Int, h: Int, t: String, tags: List<String>, body: String, heavy: Typeface) {
-        c.drawColor(0xFFF8F9FB.toInt())
+        c.drawColor(0xFFF8F6F1.toInt())
         val m = 96f
         val bh = h * .38f
         c.drawRect(0f, 0f, w.toFloat(), bh, Paint().apply { color = ACCENT })

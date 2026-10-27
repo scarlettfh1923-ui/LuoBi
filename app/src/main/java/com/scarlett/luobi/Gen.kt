@@ -97,7 +97,7 @@ data class GenJob(
     fun json(): String = JSONObject().put("kind", kind).put("raw", raw).put("cleaned", cleaned).put("values", JSONObject(values as Map<*, *>))
         .put("templateId", templateId).put("templateName", templateName).put("model", model).put("finalPrompt", finalPrompt)
         .put("noteId", noteId).put("instruction", instruction).toString()
-    val label get() = if (kind == "rewrite") "改写：$instruction" else templateName
+    val label get() = if (kind == "rewrite") (if (instruction == Ai.CONTINUE) "续写" else "改写：$instruction") else templateName
     companion object {
         fun parse(s: String): GenJob = JSONObject(s).let { j ->
             val v = j.optJSONObject("values"); val m = LinkedHashMap<String, String>()
@@ -149,7 +149,7 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
                 val w = StreamPeek.words(note?.body.orEmpty())
                 report(GenProgress(3, w, title))
                 GenCard.done(ctx, id, title, w)
-                notify(ctx, DONE_TITLE, doneText(title, w), id)
+                notify(ctx, DONE_TITLE, doneText(title, w) + (if (Ai.Truncated.has(ctx, id)) "（没写完，被截断了，打开可以续写）" else ""), id)
             }
             Result.success(workDataOf(K_NOTE to id, K_KIND to job.kind))
         } catch (e: kotlinx.coroutines.CancellationException) {

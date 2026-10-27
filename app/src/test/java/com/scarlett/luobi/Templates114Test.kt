@@ -9,14 +9,14 @@ class Templates114Test {
     private val TAG = "每篇文章另给 4–5 个主题标签，放在输出 JSON 的 tags 数组里（不带 #，每个不超过 8 个字），不要写进正文。"
 
     @Test fun defaultsEqualHerTextPlusAllowedAdditions() {
-        assertEquals(map.keys.toList(), Defaults.templates.sortedBy { it.sort }.map { it.name })
+        // 2.2：内置换成 8 个类型；1.14 的出厂文本仍保留，用来判断她有没有改过（迁移用）
+        assertEquals(Prompts22.TYPES.map { it.name }, Defaults.templates.sortedBy { it.sort }.map { it.name })
         assertEquals(TAG, DefaultTemplates114.TAG_LINE)
         map.forEach { (name, k) ->
             val expected = (if (k == "t88u") "【你是谁】\n" else "") + her(k) + "\n" + TAG
-            val actual = Defaults.templates.first { it.name == name }.prompt
+            val actual = DefaultTemplates114.prompt(name)!!
             assertArrayEquals(name, expected.toByteArray(Charsets.UTF_8), actual.toByteArray(Charsets.UTF_8))
-            assertTrue(actual.endsWith("\n$TAG"))
-            assertEquals(expected, Defaults.builtinPrompt(name))
+            assertTrue(actual.endsWith("\n$TAG")); assertTrue(Defaults.factoryTexts(name).contains(expected.trim()))
         }
         assertFalse(her("t88u").startsWith("【你是谁】"))
     }
@@ -29,19 +29,19 @@ class Templates114Test {
     }
     @Test fun substitutionFillsHerPlaceholdersAndOmitsEmpty() {
         map.keys.forEach { name ->
-            val tpl = Defaults.builtinPrompt(name)!!
+            val tpl = DefaultTemplates114.prompt(name)!!
             assertEquals(setOf("想写什么", "观点", "疑问"), Vars.referenced(tpl).toSet())
             val full = Compose.prompt(name, "", tpl, mapOf("想写什么" to "WWW", "观点" to "VVV", "疑问" to "QQQ"), "口播", 1)
             listOf("WWW", "VVV", "QQQ").forEach { assertTrue("$name $it", full.contains(it)) }
             assertFalse(name, Regex("\\{(想写什么|观点|疑问)\\}").containsMatchIn(full))
-            assertTrue(full.contains(TAG))
+            assertTrue(full.contains("【篇幅】"))
             val part = Compose.prompt(name, "", tpl, mapOf("想写什么" to "WWW", "观点" to "", "疑问" to ""), "口播", 1)
-            assertTrue(part.contains("想写什么：WWW"))
+            assertTrue(part.contains("WWW"))
             assertFalse(name, Regex("(他的|用户的)(观点|疑惑)：\\s*$", RegexOption.MULTILINE).containsMatchIn(part))
             assertFalse(part.contains("{观点}") || part.contains("{疑问}"))
             val none = Compose.prompt(name, "", tpl, emptyMap(), "口播", 1)
             assertFalse(name, none.contains("【用户的意图】"))
-            assertTrue(none.contains("【你是谁】"))
+            assertTrue(none.contains("【篇幅】"))
         }
     }
     @Test fun outRuleAsksFourToFiveTags() { assertTrue(Ai.OUT_RULE.contains("tags 为 4–5 个")) }

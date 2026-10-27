@@ -18,18 +18,18 @@ enum class CardRatio(val label: String, val sub: String, val w: Int, val h: Int)
 }
 
 /** 长图配色（沿用阅读模式配色） */
-data class LongPalette(val bg: Int = 0xFFFFFFFF.toInt(), val ink: Int = 0xFF111827.toInt(), val sub: Int = 0xFF8A94A6.toInt(), val accent: Int = 0xFF2F6BFF.toInt(), val tagBg: Int = 0xFFE6EEFF.toInt(), val tagText: Int = 0xFF1A3FA0.toInt())
+data class LongPalette(val bg: Int = 0xFFFFFFFF.toInt(), val ink: Int = 0xFF1E1B17.toInt(), val sub: Int = 0xFF776C5F.toInt(), val accent: Int = 0xFF2E5E6B.toInt(), val tagBg: Int = 0xFFE1EAEA.toInt(), val tagText: Int = 0xFF1E4651.toInt())
 
 object Render {
     const val W = 1080; const val H = 1440
-    /** P3：默认白底 + 电光蓝；另可选 冷白 / 雾灰 / 冰蓝 / 石墨 / 纸张（只换配色，版式不变） */
+    /** 2.2 宣纸·黛青：默认宣纸底 + 黛青；另可选 素白 / 雾灰 / 青瓷 / 石墨 / 纸张（只换配色，版式不变） */
     val styles = listOf(
-        CardStyle("白底", 0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt(), 0xFF111827.toInt(), 0xFF1F2937.toInt(), 0xFF2F6BFF.toInt(), 0xFFFFFFFF.toInt(), 0xFFE6EEFF.toInt()),
-        CardStyle("冷白", 0xFFF5F7FA.toInt(), 0xFFF5F7FA.toInt(), 0xFF111827.toInt(), 0xFF1F2937.toInt(), 0xFF2F6BFF.toInt(), 0xFFFFFFFF.toInt(), 0xFFE6EEFF.toInt()),
-        CardStyle("雾灰", 0xFFEEF0F3.toInt(), 0xFFEEF0F3.toInt(), 0xFF1F2430.toInt(), 0xFF374151.toInt(), 0xFF2F6BFF.toInt(), 0xFFF7F8FA.toInt(), 0xFFDCE3EE.toInt()),
-        CardStyle("冰蓝", 0xFFEAF1FF.toInt(), 0xFFEAF1FF.toInt(), 0xFF0F1F4A.toInt(), 0xFF1E2B4D.toInt(), 0xFF2F6BFF.toInt(), 0xFFF5F8FF.toInt(), 0xFFCFDDFF.toInt()),
-        CardStyle("石墨", 0xFF1B1F27.toInt(), 0xFF1B1F27.toInt(), 0xFFF3F5F8.toInt(), 0xFFD9DEE6.toInt(), 0xFF6F9BFF.toInt(), 0xFF232833.toInt(), 0x556F9BFF),
-        CardStyle("纸张", 0xFFF7F3EA.toInt(), 0xFFF7F3EA.toInt(), 0xFF2A2620.toInt(), 0xFF3A352D.toInt(), 0xFF2F6BFF.toInt(), 0xFFFBF8F2.toInt(), 0xFFE6EEFF.toInt()),
+        CardStyle("宣纸", 0xFFF7F3EC.toInt(), 0xFFF7F3EC.toInt(), 0xFF1E1B17.toInt(), 0xFF2E2923.toInt(), 0xFF2E5E6B.toInt(), 0xFFFFFCF6.toInt(), 0xFFE1EAEA.toInt()),
+        CardStyle("素白", 0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt(), 0xFF1E1B17.toInt(), 0xFF2E2923.toInt(), 0xFF2E5E6B.toInt(), 0xFFFAF7F1.toInt(), 0xFFE1EAEA.toInt()),
+        CardStyle("雾灰", 0xFFEDEBE6.toInt(), 0xFFEDEBE6.toInt(), 0xFF22201C.toInt(), 0xFF3A362F.toInt(), 0xFF2E5E6B.toInt(), 0xFFF6F4F0.toInt(), 0xFFDCE5E4.toInt()),
+        CardStyle("青瓷", 0xFFE6EEEC.toInt(), 0xFFE6EEEC.toInt(), 0xFF14282C.toInt(), 0xFF22363A.toInt(), 0xFF2E5E6B.toInt(), 0xFFF2F6F5.toInt(), 0xFFCFDFDD.toInt()),
+        CardStyle("石墨", 0xFF1D1B18.toInt(), 0xFF1D1B18.toInt(), 0xFFF2EEE6.toInt(), 0xFFDAD3C7.toInt(), 0xFF8DBDC7.toInt(), 0xFF27241F.toInt(), 0x558DBDC7),
+        CardStyle("纸张", 0xFFF7F3EA.toInt(), 0xFFF7F3EA.toInt(), 0xFF2A2620.toInt(), 0xFF3A352D.toInt(), 0xFF2B5864.toInt(), 0xFFFBF8F2.toInt(), 0xFFDDE4DF.toInt()),
     )
     private fun dark(st: CardStyle) = st.name == "石墨"
     /** 细描边 */
@@ -356,7 +356,7 @@ object Render {
         val bodyP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx; typeface = tf; color = ink; letterSpacing = 0.03f }
         val headP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 1.3f; typeface = boldTf; color = ink; letterSpacing = 0.02f }
         val h3P = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 1.12f; typeface = boldTf; color = ink; letterSpacing = 0.02f }
-        val quoteP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 0.95f; typeface = tf; color = 0xFF5B6576.toInt(); letterSpacing = 0.03f }
+        val quoteP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx * 0.95f; typeface = tf; color = 0xFF5C5348.toInt(); letterSpacing = 0.03f }
         fun rich(text: String): CharSequence {
             val sb = android.text.SpannableStringBuilder()
             Md.spans(text).forEach { (x, b) -> val st = sb.length; sb.append(kinsoku(x)); if (b) sb.setSpan(android.text.style.TypefaceSpan(boldTf), st, sb.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE) }
@@ -454,7 +454,7 @@ object Render {
     }
 
     private fun drawLong(c: Canvas, m: Int, titleL: StaticLayout, paras: List<String>, tags: List<String>, tagP: TextPaint, tagRowH: Float, tagGap: Float, tagBg: Int, accent: Int,
-                         eyebrow: TextPaint, metaP: TextPaint, blocks: List<LBlock>, ink: Int = 0xFF111827.toInt()) {
+                         eyebrow: TextPaint, metaP: TextPaint, blocks: List<LBlock>, ink: Int = 0xFF1E1B17.toInt()) {
         val w = W
         var y = 100f
         c.drawText("落笔", m.toFloat(), y, eyebrow); y += 48f
@@ -477,10 +477,10 @@ object Render {
         for (b in blocks) {
             if (b.deco == 1) {
                 val top = y + 8f
-                c.drawRoundRect(m.toFloat(), top, (w - m).toFloat(), top + b.decoH, 12f, 12f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFF1F4F8.toInt() })
-                c.drawRect(m.toFloat(), top, m + 6f, top + b.decoH, Paint().apply { color = 0xFFCBD5E1.toInt() })
+                c.drawRoundRect(m.toFloat(), top, (w - m).toFloat(), top + b.decoH, 12f, 12f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFF2ECE1.toInt() })
+                c.drawRect(m.toFloat(), top, m + 6f, top + b.decoH, Paint().apply { color = 0xFFD3C8B6.toInt() })
             }
-            if (b.deco == 2) c.drawRect(m.toFloat(), y + b.height / 2 - 1f, (w - m).toFloat(), y + b.height / 2 + 1f, Paint().apply { color = 0xFFE3E8EF.toInt() })
+            if (b.deco == 2) c.drawRect(m.toFloat(), y + b.height / 2 - 1f, (w - m).toFloat(), y + b.height / 2 + 1f, Paint().apply { color = 0xFFE5DDCF.toInt() })
             if (b.mark != null && b.layout != null) {
                 val mp = TextPaint(b.layout.paint).apply { color = ink }
                 c.drawText(b.mark, m.toFloat() + (if (b.mark == "•") 6f else 0f), y + b.padTop + b.layout.getLineBaseline(0), mp)

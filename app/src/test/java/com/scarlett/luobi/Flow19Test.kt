@@ -32,27 +32,25 @@ class TplHeader19Test {
         // 她正文的每一行都在（空占位只去掉占位本身，行保留——包括「我的观点：」这种短行）
         listOf("一、任务", "创作的主题围绕W，你要写一篇财经非虚构。  ", "我的观点：", "二、要求", "1. 不编造数据；", "篇幅：2000—5000字", "参考原文：口播原话")
             .forEach { assertTrue(it, out.lines().contains(it)) }
-        // 头里空的意图行省略，没有重复的角色 / 意图段
-        assertTrue(out.contains("想写什么：W")); assertFalse(out.contains("我的疑惑：")); assertFalse(out.contains("一、你是谁"))
-        assertEquals(1, Regex("【你是谁】").findAll(out).count())
-        // 顺序：头 → 你要创作什么 → 口播 → 正文；模板自带篇幅 → 不追加设置篇幅
-        val idx = listOf("【你是谁】", "【用户的意图】", "【你要创作什么】", "<<<\n口播原话\n>>>", "一、任务").map { out.indexOf(it) }
+        // 2.2：意图单独一段（空的省略），模板头里的意图段不再重复
+        assertTrue(out.contains("想写什么：W")); assertFalse(out.contains("我的疑惑：")); assertFalse(out.contains("【用户的意图】"))
+        val idx = listOf("【这篇要表达什么】", "【篇幅】", "<<<\n口播原话\n>>>", "【这类文章怎么写】", "一、任务").map { out.indexOf(it) }
         assertEquals(idx.sorted(), idx); assertTrue(idx.all { it >= 0 })
-        assertFalse(out.contains("中篇"))
+        assertTrue(out.contains("以这里为准"))   // 模板自带篇幅时，以设置为准并说明
     }
     @Test fun allIntentEmptyDropsIntentBlock() {
         val out = Compose.prompt("x", "", TplHeader.migrate("x", "正文"), emptyMap(), "r", 0)
-        assertFalse(out.contains("【用户的意图】")); assertTrue(out.contains("【你是谁】")); assertTrue(out.contains("正文"))
+        assertFalse(out.contains("【这篇要表达什么】")); assertTrue(out.contains("【这类文章怎么写】")); assertTrue(out.contains("正文"))
     }
-    @Test fun noHeaderTemplateGetsBuilderSections() {
+    @Test fun noHeaderTemplateGetsBuilderSections() {   // 2.2 段落顺序：意图 → 篇幅 → 素材 → 写法 → 自检
         val out = Compose.prompt("答疑解惑", "", "我的看法：{观点}\n要求：讲明白", mapOf("想写什么" to "W", "观点" to ""), "r", 0)
-        val idx = listOf("一、你是谁", "二、用户的意图", "三、你要创作什么", "四、素材", "五、写作模板").map { out.indexOf(it) }
+        val idx = listOf("【这篇要表达什么】", "【篇幅】", "【素材", "【这类文章怎么写】", "【交稿前").map { out.indexOf(it) }
         assertEquals(idx.sorted(), idx); assertTrue(idx.all { it >= 0 })
-        assertTrue(out.lines().contains("我的看法：")); assertTrue(out.contains("篇幅：短篇"))
+        assertTrue(out.lines().contains("我的看法：")); assertTrue(out.contains("短篇"))
     }
-    @Test fun builtinsHaveHeaderAndKnownVars() {
-        assertEquals(5, Defaults.templates.size)
-        Defaults.templates.forEach { assertTrue(it.name, TplHeader.has(it.prompt)); assertEquals(it.prompt, TplHeader.migrate(it.name, it.prompt)) }
+    @Test fun builtinsHaveHeaderAndKnownVars() {   // 2.2：8 个类型模块，不再带旧的模板头
+        assertEquals(8, Defaults.templates.size)
+        assertEquals(Prompts22.TYPES.map { it.name }, Defaults.templates.map { it.name })
     }
 }
 

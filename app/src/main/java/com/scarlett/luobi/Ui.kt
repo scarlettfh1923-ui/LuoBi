@@ -62,18 +62,18 @@ val TAG_LH = 18.sp
 @Composable
 fun SoftSnackbar(d: SnackbarData) {
     val m = d.visuals as? SnackMsg
-    Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(Sq.m).background(Color(0xFF111827)).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(Sq.m).background(DS.ink).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         when {
             m?.busy == true -> androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
             m?.ok != false -> SvgIcon(Ic.check, Color.White, 20.dp)
-            else -> SvgIcon(Ic.close, Color(0xFFF2A190), 20.dp)
+            else -> SvgIcon(Ic.close, Color(0xFFE3A08F), 20.dp)
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(d.visuals.message, color = Color.White, fontSize = 14.sp, lineHeight = 20.sp)
-            m?.sub?.let { Text(it, Modifier.padding(top = 3.dp), color = Color(0xFF9CA3AF), fontSize = 11.sp, lineHeight = 15.sp, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
+            m?.sub?.let { Text(it, Modifier.padding(top = 3.dp), color = Color(0xFFB3A898), fontSize = 11.sp, lineHeight = 15.sp, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
         }
-        d.visuals.actionLabel?.let { a -> Text(a, Modifier.padding(start = 10.dp).clickable { m?.onAction?.invoke(); d.performAction() }, color = Color(0xFF9DB8FF), fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+        d.visuals.actionLabel?.let { a -> Text(a, Modifier.padding(start = 10.dp).clickable { m?.onAction?.invoke(); d.performAction() }, color = Color(0xFFA9CDD5), fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
     }
 }
 
@@ -198,17 +198,17 @@ fun ErrorCard(f: Friendly, onRetry: (() -> Unit)?, onSettings: (() -> Unit)?, on
     val red = P3.danger
     val title = f.title; val detail = f.detail
     var rawOpen by remember(f) { mutableStateOf(false) }
-    Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(Sq.xl).background(Color(0xFFFDF1EE)).hairline(Sq.xl, Color(0xFFF2C9C0)).padding(14.dp)) {
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(Sq.xl).background(Color(0xFFF8ECE6)).hairline(Sq.xl, Color(0xFFE8CDC3)).padding(14.dp)) {
         Ico(R.drawable.ic_xcircle, red, 22)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(title, color = red, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text(detail, color = Color(0xFF8A4A3E), fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 2.dp))
-            if (f.raw.isNotBlank()) Text("原始信息：${f.raw}", Modifier.padding(top = 6.dp).clickable { rawOpen = !rawOpen }, color = Color(0xFF9A8A7C), fontSize = 11.sp, lineHeight = 15.sp,
+            Text(detail, color = Color(0xFF7F3E30), fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 2.dp))
+            if (f.raw.isNotBlank()) Text("原始信息：${f.raw}", Modifier.padding(top = 6.dp).clickable { rawOpen = !rawOpen }, color = Color(0xFF8A7B6C), fontSize = 11.sp, lineHeight = 15.sp,
                 maxLines = if (rawOpen) 12 else 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (onRetry != null) Text("重试", Modifier.clip(Sq.full).background(red).clickable { onRetry() }.padding(horizontal = 14.dp, vertical = 6.dp), color = Color.White, fontSize = 13.sp)
-                if (onSettings != null) Text("去设定", Modifier.clip(Sq.full).hairline(Sq.full, Color(0xFFE7B3A8)).clickable { onSettings() }.padding(horizontal = 14.dp, vertical = 5.dp), color = red, fontSize = 13.sp)
+                if (onSettings != null) Text("去设定", Modifier.clip(Sq.full).hairline(Sq.full, Color(0xFFDDB3A6)).clickable { onSettings() }.padding(horizontal = 14.dp, vertical = 5.dp), color = red, fontSize = 13.sp)
             }
         }
         Box(Modifier.size(28.dp).clip(Sq.full).clickable { onClose() }, contentAlignment = Alignment.Center) { Ico(R.drawable.ic_x, red.copy(alpha = .6f), 16, "关闭") }

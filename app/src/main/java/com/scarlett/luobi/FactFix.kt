@@ -106,7 +106,7 @@ object FactFix {
     }
 
     // ---------- 换个改法 ----------
-    const val ALT_SYS = "你是中文编辑，只做最小改动。只输出 JSON。"
+    const val ALT_SYS = "你是中文编辑，只做最小改动。只输出 JSON。" + Prompts22.NO_FAB_LINE
     fun altPrompt(span: String, problem: String, evidence: String, current: String) = """原句：$span
 问题：$problem
 资料原文：${evidence.ifBlank { "（没有查到资料）" }}
@@ -122,7 +122,7 @@ object FactFix {
 
     // ---------- 风格把关 ----------
     val TIP_KINDS = listOf("论点", "衔接", "语气")
-    const val STYLE_SYS = "你是一位克制的中文编辑：只看改过的地方，给最少、最必要的建议。只输出 JSON。"
+    const val STYLE_SYS = "你是一位克制的中文编辑：只看改过的地方，给最少、最必要的建议。只输出 JSON。" + Prompts22.NO_FAB_LINE
     fun stylePrompt(title: String, body: String, edits: List<Edit>, scope: List<Int>): String {
         val ps = paragraphs(body)
         val block = scope.joinToString("\n") { "[第 $it 段] ${ps[it - 1]}" }

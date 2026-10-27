@@ -37,9 +37,9 @@ class FactView(
     val stopped: String?, val report: FactReport?,
 )
 
-private val Pale = Color(0xFFB8BFCC)
-private val EvBg = Color(0xFFF1F2F5)
-private val StrikeBg = Color(0x14000000)
+private val Pale = Color(0xFFBDB2A2)
+private val EvBg = Color(0xFFF2ECE1)
+private val StrikeBg = Color(0x142A2016)
 
 @Composable
 fun FactScreen(
@@ -90,7 +90,7 @@ fun FactScreenBody(
     }
     androidx.activity.compose.BackHandler { when { sheet != null -> sheet = null; page == 1 -> page = 0; else -> onBack() } }
 
-    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEEF1F6), Color(0xFFF6F7F9), Color(0xFFECEFF4))))) {
+    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFF4F0E8), Color(0xFFF7F3EC), Color(0xFFEDE7DC))))) {
         AnimatedContent(page, transitionSpec = { if (targetState > initialState) Motion.push() else Motion.pop() }, label = "factPage") { pg ->
             if (pg == 0) FactList(v, claims, rep, onBack = onBack, onStop = { stopAsk = true }, onReCheck = onReCheck, onOpen = { sheet = it.id },
                 onStyle = { page = 1 }, onRestore = { restoreAsk = true })
@@ -152,14 +152,14 @@ private fun Header(title: String, onBack: () -> Unit, right: @Composable () -> U
 
 @Composable
 private fun Chip(t: String, filled: Boolean = false) =
-    Text(t, Modifier.clip(Sq.s).background(if (filled) P3.accent else Color(0xFFEDEFF3)).padding(horizontal = 8.dp, vertical = 3.dp),
+    Text(t, Modifier.clip(Sq.s).background(if (filled) P3.accent else Color(0xFFEDE7DC)).padding(horizontal = 8.dp, vertical = 3.dp),
         color = if (filled) Color.White else P3.text2, fontSize = DS.Type.micro, fontWeight = FontWeight.Medium, maxLines = 1)
 
 @Composable
 private fun Progress(label: String, d: Int, n: Int) = Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
     Text(label, fontSize = DS.Type.sub, color = P3.text2)
     val f by animateFloatAsState(if (n == 0) 0f else d.toFloat() / n, Motion.enter(), label = "p")
-    Box(Modifier.padding(horizontal = 10.dp).weight(1f).height(4.dp).clip(Sq.full).background(Color(0xFFE3E6EC))) {
+    Box(Modifier.padding(horizontal = 10.dp).weight(1f).height(4.dp).clip(Sq.full).background(Color(0xFFE5DDCF))) {
         Box(Modifier.fillMaxWidth(f).fillMaxHeight().clip(Sq.full).background(P3.accent))
     }
     Text("$d/$n", fontSize = DS.Type.sub, color = P3.text2, fontWeight = FontWeight.Medium)
@@ -276,14 +276,14 @@ private fun Label(t: String) = Text(t, Modifier.padding(top = 14.dp, bottom = 4.
 
 @Composable
 private fun GlassBtn(t: String, modifier: Modifier = Modifier, enabled: Boolean = true, busy: Boolean = false, onClick: () -> Unit) =
-    Box(modifier.height(44.dp).clip(Sq.m).background(Color.White).border(0.5.dp, Hairline, Sq.m).clickable(enabled = enabled && !busy, onClick = onClick), contentAlignment = Alignment.Center) {
+    Box(modifier.height(44.dp).clip(Sq.m).background(P3.surface).border(0.5.dp, Hairline, Sq.m).clickable(enabled = enabled && !busy, onClick = onClick), contentAlignment = Alignment.Center) {
         if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = P3.accent)
         else Text(t, fontSize = DS.Type.callout, fontWeight = FontWeight.Medium, color = if (enabled) P3.text else P3.text3)
     }
 
 @Composable
 private fun AccentBtn(t: String, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) =
-    Box(modifier.height(44.dp).clip(Sq.m).background(if (enabled) P3.accent else Color(0xFFE5E7EB)).clickable(enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
+    Box(modifier.height(44.dp).clip(Sq.m).background(if (enabled) P3.accent else Color(0xFFE5DDCF)).clickable(enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
         Text(t, fontSize = DS.Type.callout, fontWeight = FontWeight.SemiBold, color = if (enabled) Color.White else P3.text3)
     }
 
@@ -305,7 +305,7 @@ private fun FixSheet(c: FactClaim, idx: Int, total: Int, rep: FactReport?, runni
         .clickable(remember { MutableInteractionSource() }, null) {}.navigationBarsPadding().testTag("factSheet")) {
         Box(Modifier.fillMaxWidth().height(22.dp).draggable(rememberDraggableState { drag += it }, Orientation.Vertical,
             onDragStopped = { if (drag > 120f) onClose(); drag = 0f }), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(36.dp, 5.dp).clip(Sq.full).background(Color(0xFFD5D9E0)))
+            Box(Modifier.size(36.dp, 5.dp).clip(Sq.full).background(Color(0xFFD3C8B6)))
         }
         val maxH = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * .86f).dp
         Column(Modifier.fillMaxWidth().heightIn(max = maxH)) {

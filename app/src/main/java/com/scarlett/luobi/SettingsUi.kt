@@ -823,8 +823,19 @@ fun LengthPage(back: () -> Unit) {
         item { GroupLabel("默认篇幅") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Lengths.NAMES.forEachIndexed { i, l -> Pill(l, def == i) { def = i; s.length = i } } } }
         item {
-            Text("篇幅如何影响生成：第 ③ 步不再单独选篇幅，生成时一律使用这里的默认篇幅，并在最终提示词末尾追加一行「篇幅：中篇，正文字数控制在 400–800 字之间。」模型据此控制长度；数字只是约束提示，实际字数可能有少量偏差。",
+            Text("篇幅如何影响生成：第 ③ 步不再单独选篇幅，生成时一律使用这里的默认篇幅，写进提示词的【篇幅】一节（模板里另写的篇幅以这里为准）。数字只是约束提示，实际字数可能有少量偏差。",
                 Modifier.padding(top = 14.dp).fillMaxWidth().clip(Sq.l).background(P3.surface2).padding(14.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 20.sp)
+        }
+        item { GroupLabel("平台写法") }
+        item {
+            var xhs by remember { mutableStateOf(s.xhsMode) }
+            Row(Modifier.fillMaxWidth().clip(Sq.l).background(P3.surface).hairline(Sq.l, P3.border).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("按小红书的写法", fontSize = 15.sp, color = P3.text, fontWeight = FontWeight.Medium)
+                    Text("开头抓人、短段落、口语一点；叠加在任何类型上", fontSize = 12.sp, color = P3.text3, lineHeight = 17.sp)
+                }
+                Switch(xhs, { xhs = it; s.xhsMode = it }, colors = SwitchDefaults.colors(checkedTrackColor = P3.accent))
+            }
         }
     }
 }

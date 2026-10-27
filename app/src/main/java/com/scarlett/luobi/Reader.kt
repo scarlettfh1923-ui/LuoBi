@@ -134,6 +134,8 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
             bgBusy = false
         }
     }
+    // 2.2：上次生成被截断（finish_reason=length）→ 文末提示「续写」
+    var truncated by remember(n.id) { mutableStateOf(Ai.Truncated.has(ctx, n.id)) }
     fun rewrite(ins: String) { if (!running) start(GenJob(kind = "rewrite", noteId = n.id, instruction = ins, model = s.defaultModel)) }
     val il = remember { Illustrator(ctx, db, scope, goSub) }; il.note = n
     var capEdit by remember { mutableStateOf<Pic?>(null) }
@@ -231,7 +233,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
         }
     }, bottomBar = {
         // 1.4：毛玻璃悬浮胶囊（方案 B）。正文在胶囊下面滚动；ArticleView 底部留出 bottomBar 高度 + 余量
-        val glass = (if (pal.dark) pal.surface else Color.White).copy(alpha = .86f)
+        val glass = (if (pal.dark) pal.surface else pal.bg).copy(alpha = .86f)
         val rim = if (pal.dark) Color.White.copy(alpha = .10f) else Color.Black.copy(alpha = .07f)
         if (tab == 0 && il.props.isNotEmpty()) Capsule(glass, rim, pal.bg) {
                 Text("已插 ${il.inserted} · 待选 ${il.props.size}", Modifier.weight(1f).padding(start = 8.dp), fontSize = 13.sp, color = pal.sub, maxLines = 1, softWrap = false)
@@ -256,7 +258,7 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
         Box(Modifier.fillMaxSize()) {
             Crossfade(tab, Modifier.fillMaxSize().backdropSource(backdrop), label = "tab") { t -> CompositionLocalProvider(LocalBackdrop provides null) { // 1.18.1：来源内部不取样
                 if (t == 0) Box(Modifier.fillMaxSize()) {
-                    ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding() + 16.dp, top = pad.calculateTopPadding(), openVersions = { verMenu = true }, onTags = { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } }, il = il, editCaption = { capEdit = it },
+                    ArticleView(n, versions, font, pal, family, pad.calculateBottomPadding() + 16.dp, top = pad.calculateTopPadding(), truncated = truncated, onContinue = { if (running) snack("正在生成，稍后再续写", false) else { Ai.Truncated.clear(ctx, n.id); truncated = false; rewrite(Ai.CONTINUE) } }, onIgnore = { Ai.Truncated.clear(ctx, n.id); truncated = false }, openVersions = { verMenu = true }, onTags = { tags -> scope.launch { db.notes().update(n.copy(tags = tags.joinToString(" "))) } }, il = il, editCaption = { capEdit = it },
                         highlights = emptyList() /* 1.15.1：阅读优先，不在正文上画黄色高亮 */, focusSpan = factFocus, onCategory = { catSheet = true })
                     // 1.16：正文铺满全屏，状态栏下一道柔和渐隐
                     Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(with(androidx.compose.ui.platform.LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() } + 28.dp)
@@ -335,7 +337,8 @@ fun ReaderScreen(db: AppDb, id: Long, running: Boolean, back: () -> Unit, switch
 
 @Composable
 fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, family: FontFamily, bottom: Dp, top: Dp = 0.dp, openVersions: () -> Unit, onTags: (List<String>) -> Unit,
-                il: Illustrator? = null, editCaption: (Pic) -> Unit = {}, highlights: List<String> = emptyList(), focusSpan: String? = null, onCategory: () -> Unit = {}) {
+                il: Illustrator? = null, editCaption: (Pic) -> Unit = {}, highlights: List<String> = emptyList(), focusSpan: String? = null, onCategory: () -> Unit = {},
+                truncated: Boolean = false, onContinue: () -> Unit = {}, onIgnore: () -> Unit = {}) {
     val paras = Export.paras(n.body)
     val ctx = LocalContext.current
     val byPara = Pics.byPara(n.pics(), paras.size)
@@ -388,7 +391,7 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
           val hit = highlights.firstOrNull { it.isNotBlank() && p.contains(it) }
           val focused = focusSpan != null && focusSpan.isNotBlank() && p.contains(focusSpan)
           Box(Modifier.fillMaxWidth().riseIn(i, fresh).bringIntoViewRequester(bringers[i])
-              .background(when { focused || hit != null -> Color(0xFFFFF3CD); paraMenu == i -> pal.soft; else -> Color.Transparent }, Sq.s)
+              .background(when { focused || hit != null -> Color(0xFFF5E9C8); paraMenu == i -> pal.soft; else -> Color.Transparent }, Sq.s)
               .combinedClickable(onClick = {}, onLongClick = { paraMenu = i }).padding(vertical = if (hit != null) 4.dp else 0.dp)) {
            Column {
             val ml = Md.line(p, paras.size)
@@ -400,7 +403,8 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
           after(i)
         }
         Spacer(Modifier.height(16.dp))
-        Text("— 完 —", Modifier.fillMaxWidth(), color = pal.sub, textAlign = TextAlign.Center, fontSize = 13.sp)
+        if (truncated) TruncatedNote(pal, onContinue, onIgnore)
+        else Text("— 完 —", Modifier.fillMaxWidth(), color = pal.sub, textAlign = TextAlign.Center, fontSize = 13.sp)
         Spacer(Modifier.height(bottom + 24.dp))
     }
     }
@@ -673,9 +677,9 @@ fun ArticleBlock(ml: MdLine, next: MdKind?, font: Float, pal: ReadPalette, famil
             Box(Modifier.padding(start = 10.dp).width(28.dp).height(1.5.dp).background(pal.accent.copy(alpha = .7f)))
         } else if (ml.kind == MdKind.H2) { val hs = font * 1.24f; Text(mdAnnotated(ml.text), Modifier.padding(top = (font * 0.9f).dp, bottom = (font * 0.5f).dp), color = pal.text, fontWeight = FontWeight.Bold, fontSize = hs.sp, lineHeight = (hs * 1.45f).sp, fontFamily = family) }
           else { val hs = font * 1.08f; Text(mdAnnotated(ml.text), Modifier.padding(top = (font * 0.6f).dp, bottom = (font * 0.4f).dp), color = pal.text, fontWeight = FontWeight.Bold, fontSize = hs.sp, lineHeight = (hs * 1.45f).sp, fontFamily = family) }
-        MdKind.QUOTE -> Row(Modifier.padding(top = 4.dp, bottom = paraGap).fillMaxWidth().height(IntrinsicSize.Min).clip(Sq.rightS).background(if (pal.dark) pal.soft else Color(0xFFF1F4F8))) {
-            Box(Modifier.width(3.dp).fillMaxHeight().background(if (pal.dark) pal.sub else Color(0xFFCBD5E1)))
-            Text(mdAnnotated(ml.text), Modifier.padding(horizontal = 14.dp, vertical = 10.dp), style = body.copy(color = if (pal.dark) pal.sub else Color(0xFF5B6576), fontSize = (font * 0.95f).sp))
+        MdKind.QUOTE -> Row(Modifier.padding(top = 4.dp, bottom = paraGap).fillMaxWidth().height(IntrinsicSize.Min).clip(Sq.rightS).background(if (pal.dark) pal.soft else Color(0xFFF2ECE1))) {
+            Box(Modifier.width(3.dp).fillMaxHeight().background(if (pal.dark) pal.sub else Color(0xFFD3C8B6)))
+            Text(mdAnnotated(ml.text), Modifier.padding(horizontal = 14.dp, vertical = 10.dp), style = body.copy(color = if (pal.dark) pal.sub else Color(0xFF5C5348), fontSize = (font * 0.95f).sp))
         }
         MdKind.HR -> Box(Modifier.padding(vertical = (font * 0.8f).dp).fillMaxWidth().height(1.dp).background(pal.border))
         MdKind.BULLET, MdKind.NUM -> Row(Modifier.padding(bottom = if (next == MdKind.BULLET || next == MdKind.NUM) (font * 0.35f).dp else paraGap)) {
@@ -709,5 +713,22 @@ fun GlyphCentered(text: String, tf: android.graphics.Typeface?, size: androidx.c
         val r = android.graphics.Rect(); paint.getTextBounds(text, 0, text.length, r)
         val x = this.size.width / 2f - r.exactCenterX(); val y = this.size.height / 2f - r.exactCenterY()
         drawContext.canvas.nativeCanvas.drawText(text, x, y, paint)
+    }
+}
+
+/** 2.2：输出被截断时的文末提示（暖琥珀，与全局 warn 一致；夜读用半透明） */
+@Composable
+fun TruncatedNote(pal: ReadPalette, onContinue: () -> Unit, onIgnore: () -> Unit) {
+    val bg = if (pal.dark) Color(0x338A5513) else P3.warnBg
+    val fg = if (pal.dark) Color(0xFFE8C48A) else P3.warnText
+    Column(Modifier.fillMaxWidth().clip(Sq.l).background(bg).hairline(Sq.l, if (pal.dark) fg.copy(alpha = .35f) else P3.warnBorder).padding(horizontal = 16.dp, vertical = 14.dp)) {
+        Text("这篇没写完", color = fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        Text("模型的输出额度用完了，文章在这里被截断。可以让它接着写完，续写会存成新版本。", color = fg, fontSize = 13.sp, lineHeight = 19.sp)
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("续写", Modifier.clip(Sq.m).background(pal.accent).clickable(onClick = onContinue).padding(horizontal = 18.dp, vertical = 8.dp), color = if (pal.dark) Color(0xFF1B1916) else Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text("忽略", Modifier.clip(Sq.m).clickable(onClick = onIgnore).padding(horizontal = 12.dp, vertical = 8.dp), color = fg, fontSize = 14.sp)
+        }
     }
 }

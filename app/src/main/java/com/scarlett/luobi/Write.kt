@@ -1,5 +1,7 @@
 package com.scarlett.luobi
 
+import androidx.compose.animation.animateContentSize
+import kotlinx.coroutines.delay
 import androidx.compose.animation.core.animateFloat
 
 import androidx.compose.runtime.getValue
@@ -87,25 +89,53 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGen
         }
     }
 
-    // 1.10 灵感：每天第一次打开自动抓取（有当天缓存就直接用），下拉刷新强制重抓
+    // 2.2 灵感：打开先显示缓存（x 分钟前更新），旧了就后台刷新；刷新只抓原始热榜（不调 AI），哪个来源先到先显示；
+    // 点一条再用 AI 现场展开成角度 / 观点 / 疑惑并填进输入框
     var insp by remember { mutableStateOf(Inspire.cached(ctx)) }
     var inspBusy by remember { mutableStateOf(false) }
+    var picking by remember { mutableStateOf(false) }
     var inspErr by remember { mutableStateOf<Friendly?>(null) }
-    fun loadInspire(force: Boolean) {
+    var expanding by remember { mutableStateOf<String?>(null) }
+    fun loadInspire() {
         if (inspBusy) return
         inspBusy = true; inspErr = null
+        val hadCache = insp != null
         scope.launch {
-            try { insp = Inspire.load(ctx, force) }
+            var first = true
+            try { insp = Inspire.refresh(ctx) { part -> if (!hadCache || !first || part.topics.size >= 10) { insp = part; first = false } } }
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: CleanParse.BadFormat) { inspErr = Friendly("选题结果格式不对", "模型返回的不是约定的 JSON。可以下拉重试，或在「设定 → 每日选题提示词」恢复默认。", e.raw) }
-            catch (e: Throwable) { inspErr = Errors.explain(e) }
+            catch (e: Throwable) { if (insp == null) inspErr = Errors.explain(e) else snack("热榜刷新失败，先显示上次的结果", false) }
             finally { inspBusy = false }
         }
     }
-    LaunchedEffect(Unit) { if (insp == null) loadInspire(false) }
+    fun aiPick() {
+        if (picking) return
+        picking = true
+        scope.launch {
+            try { insp = Inspire.aiPick(ctx); snack("AI 挑好了 ${insp?.topics?.size ?: 0} 个选题") }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: CleanParse.BadFormat) { inspErr = Friendly("选题结果格式不对", "模型返回的不是约定的 JSON。可以再试一次，或在「设定 → 每日选题提示词」恢复默认。", e.raw) }
+            catch (e: Throwable) { inspErr = Errors.explain(e) }
+            finally { picking = false }
+        }
+    }
+    fun pickTopic(t: Topic) {
+        if (t.angle.isNotBlank() || t.view.isNotBlank()) { ws.raw = Inspire.fillText(t); ws.saveRaw(); snack("已填入选题，可以修改后提取意图"); return }
+        if (expanding != null) return
+        if (Inspire.expandHook == null && Inspire.target(ctx) == null) { ws.raw = Inspire.fillText(t); ws.saveRaw(); snack("已填入热点。填写 DeepSeek Key 后，点热点会自动生成角度和观点", false); return }
+        expanding = t.title
+        scope.launch {
+            try { val r = Inspire.expand(ctx, t); insp = insp?.let { c -> c.copy(topics = c.topics.map { if (it.title == t.title && it.source == t.source) r else it }) }
+                ws.raw = Inspire.fillText(r); ws.saveRaw(); snack("已填入选题，可以修改后提取意图") }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Throwable) { ws.raw = Inspire.fillText(t); ws.saveRaw(); snackErr(e, "角度没生成出来，先填入了热点标题：") }
+            finally { expanding = null }
+        }
+    }
+    LaunchedEffect(Unit) { val c = insp; if (c == null || System.currentTimeMillis() - c.updatedAt > Inspire.STALE_MS) loadInspire() }
 
     @OptIn(ExperimentalMaterial3Api::class)
-    androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing = inspBusy && insp != null, onRefresh = { loadInspire(true) }, modifier = Modifier.fillMaxSize()) {
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing = false, onRefresh = { loadInspire() }, modifier = Modifier.fillMaxSize()) {
         LazyColumnFill(bottom) {
             item { Text("今天写什么", Modifier.padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 14.dp), fontSize = 32.sp, fontWeight = FontWeight.Bold, lineHeight = 40.sp, color = P3.text) }
             item {
@@ -118,7 +148,7 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGen
                 val minH by androidx.compose.animation.core.animateDpAsState(if (focused || ws.raw.length > 60) 260.dp else 150.dp, Motion.springDp(), label = "expand")
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth()
                     .graphicsLayer { val s = 1f + breathe * 0.006f; scaleX = s; scaleY = s }
-                    .softShadow(Sq.card26, (6 + breathe * 6).dp).clip(Sq.card26).background(Color.White.copy(alpha = if (focused) .97f else .82f))
+                    .softShadow(Sq.card26, (6 + breathe * 6).dp).clip(Sq.card26).background(P3.surface.copy(alpha = if (focused) .97f else .82f))
                     .hairline(Sq.card26, if (focused) P3.accent.copy(alpha = .35f) else Glass.rim).padding(horizontal = 18.dp, vertical = 16.dp)) {
                     Box(Modifier.fillMaxWidth().heightIn(min = minH)) {
                         if (ws.raw.isEmpty()) TypewriterPlaceholder(focused)
@@ -159,35 +189,42 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGen
             item(key = "genCard") { GenCardSlot(genProg, onCancelGen, onOpenNote) }
             // ---- 灵感 ----
             item(key = "inspHead") {
-                Row(Modifier.padding(start = 24.dp, end = 20.dp, top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
+                Row(Modifier.padding(start = 24.dp, end = 16.dp, top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("灵感", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = P3.text)
-                    val sub = insp?.let { r -> "今日 ${r.topics.size} 个选题 · " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA).format(java.util.Date(r.updatedAt)) + " 更新" } ?: if (inspBusy) "正在挑选今天的选题…" else ""
-                    Text(sub, Modifier.weight(1f).padding(start = 10.dp, bottom = 2.dp), fontSize = 12.sp, color = P3.text3, maxLines = 1)
-                    Text(if (inspBusy) "刷新中…" else "刷新", Modifier.clip(Sq.s).clickable(enabled = !inspBusy) { loadInspire(true) }.padding(4.dp), fontSize = 12.sp, color = P3.accent)
+                    val sub = remember(insp, inspBusy) { when { inspBusy && insp == null -> "正在抓热榜…"; inspBusy -> "正在刷新…"; else -> insp?.let { Inspire.ago(it.updatedAt) } ?: "" } }
+                    Text(sub, Modifier.weight(1f).padding(start = 10.dp, top = 3.dp), fontSize = 12.sp, color = P3.text3, maxLines = 1)
+                    TextAction(if (picking) "AI 挑选中…" else "AI 帮我挑", enabled = !picking && insp != null) { aiPick() }
+                    TextAction(if (inspBusy) "刷新中…" else "刷新", enabled = !inspBusy) { loadInspire() }
                 }
             }
-            inspErr?.let { e -> item(key = "inspErr") { Box(Modifier.animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade())) { ErrorCard(e, { loadInspire(true) }, if (e.settings) goModels else null) { inspErr = null } } } }
+            inspErr?.let { e -> item(key = "inspErr") { Box(Modifier.animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade())) { ErrorCard(e, { loadInspire() }, if (e.settings) goModels else null) { inspErr = null } } } }
             val r = insp
             if (r == null && inspBusy) item(key = "inspLoading") {
                 Card(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade())) {
-                    repeat(4) { i -> if (i > 0) Spacer(Modifier.height(14.dp)); Box(Modifier.fillMaxWidth(if (i % 2 == 0) .85f else .6f).height(14.dp).clip(Sq.full).background(P3.surface2)) }
+                    repeat(5) { i -> if (i > 0) Spacer(Modifier.height(16.dp)); Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.width(16.dp).height(12.dp).clip(Sq.full).background(P3.surface2)); Spacer(Modifier.width(12.dp))
+                        Box(Modifier.fillMaxWidth(if (i % 2 == 0) .8f else .55f).height(14.dp).clip(Sq.full).background(P3.surface2)) } }
                 }
             }
             if (r != null) {
-                if (r.note.isNotBlank() || r.failed.isNotEmpty()) item(key = "inspNote") {
-                    Text(listOf(r.note, if (r.failed.isNotEmpty()) "${r.failed.joinToString("、")} 暂时没抓到，已跳过" else "").filter { it.isNotBlank() }.joinToString("；"),
-                        Modifier.padding(horizontal = 24.dp, vertical = 2.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp)
-                }
+                val note = listOf(r.note, if (r.failed.isNotEmpty()) "${r.failed.joinToString("、")} 暂时没抓到，已跳过" else "", if (!r.ai && r.topics.isNotEmpty()) "点一条，AI 帮你想角度和观点" else "").filter { it.isNotBlank() }.joinToString("；")
+                if (note.isNotBlank()) item(key = "inspNote") { Text(note, Modifier.padding(horizontal = 24.dp, vertical = 2.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp) }
                 item(key = "inspList") {
-                    Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade()), pad = 0.dp) {
+                    Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade()).animateContentSize(), pad = 0.dp) {
                         r.topics.forEachIndexed { i, t ->
                             if (i > 0) HorizontalDivider(Modifier.padding(start = 48.dp), thickness = Dp.Hairline, color = P3.border)
-                            Row(Modifier.fillMaxWidth().clickable { ws.raw = Inspire.fillText(t); ws.saveRaw(); snack("已填入选题，可以修改后提取意图") }.padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {
-                                Text("${i + 1}", Modifier.width(24.dp), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (i < 3) P3.accent else P3.text3)
+                            val busy = expanding == t.title
+                            Row(Modifier.fillMaxWidth().clickable(enabled = expanding == null) { pickTopic(t) }.padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {
+                                Text("${i + 1}", Modifier.width(24.dp), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (i < 3) P3.accent else P3.text3, fontFamily = Mono)
                                 Column(Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.Top) {
                                         Text(t.title, Modifier.weight(1f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text, lineHeight = 21.sp)
-                                        if (t.source.isNotBlank()) Text(t.source, Modifier.padding(start = 8.dp).clip(Sq.full).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.onAccentSoft, fontWeight = FontWeight.SemiBold)
+                                        if (t.source.isNotBlank()) Text(t.source, Modifier.padding(start = 8.dp, top = 1.dp).clip(Sq.full).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.onAccentSoft, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    if (t.heat.isNotBlank()) Text("热度 " + t.heat, Modifier.padding(top = 3.dp), fontSize = 12.sp, color = P3.text3, fontFamily = Mono)
+                                    if (busy) Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        androidx.compose.material3.CircularProgressIndicator(Modifier.size(12.dp), color = P3.accent, strokeWidth = 1.5.dp)
+                                        Text("AI 正在想角度…", Modifier.padding(start = 8.dp), fontSize = 13.sp, color = P3.accent)
                                     }
                                     if (t.angle.isNotBlank()) Text("可以写：" + t.angle, Modifier.padding(top = 4.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp)
                                     if (t.view.isNotBlank()) Text("观点：" + t.view, Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text3, lineHeight = 19.sp)
@@ -223,7 +260,7 @@ fun IntentSheet(db: AppDb, ws: WriteState, goModels: () -> Unit, goLength: () ->
     var modelMenu by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf(false) }
     val vals = ws.map()
-    val finalPrompt = tpl?.let { Compose.prompt(it.name, it.desc, it.prompt, vals, ws.raw, length, lenRange) } ?: ""
+    val finalPrompt = tpl?.let { Compose.prompt(it.name, it.desc, it.prompt, vals, ws.raw, length, lenRange, xhs = s.xhsMode) } ?: ""
 
     // 1.10：遮罩淡入、弹层从底部弹簧滑入；关闭时反向
     AnimatedVisibility(ws.sheet, enter = Motion.fadeIn, exit = Motion.fadeOut) {

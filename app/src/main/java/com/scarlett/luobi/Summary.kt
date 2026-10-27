@@ -4,7 +4,7 @@ import android.content.Context
 
 /** 1.15：发布时现生成 100–150 字摘要（用这篇文章的写作模型，不预先保存） */
 object Summary {
-    const val SYSTEM = "你是中文编辑。用 100–150 个汉字概括这篇文章的核心问题和主要观点，只输出摘要正文，不要标题、引号、列表或「本文」开头。"
+    const val SYSTEM = "你是中文编辑。用 100–150 个汉字概括这篇文章的核心问题和主要观点，只输出摘要正文，不要标题、引号、列表或「本文」开头。" + Prompts22.NO_FAB_LINE
     fun prompt(title: String, body: String) = "标题：$title\n\n正文：\n" + body.take(8000)
     /** 把模型输出清理成一段纯文本，最长 200 字 */
     fun clean(s: String): String = s.replace(Regex("<think>[\\s\\S]*?</think>"), "").replace(Regex("[#*>`]"), "")

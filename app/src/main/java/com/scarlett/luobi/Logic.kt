@@ -152,12 +152,32 @@ data class Article(val title: String, val body: String, val tags: List<String>, 
 
 /** 写作结果：优先读 JSON {title, body, tags}，失败时把纯文本当正文 */
 object ArticleParse {
-    fun parse(text: String, fallbackTitle: String): Article {
+    fun parse(text: String, fallbackTitle: String): Article = clean(raw(text, fallbackTitle))
+    /** 2.2：所有结果都过 Sanitize；正文仍像 JSON 时再抠一次字段，绝不把原始 JSON 给用户看 */
+    private fun clean(a: Article): Article {
+        var body = a.body; var title = a.title; var tags = a.tags; var cat = a.category
+        if (Salvage.looksJson(body)) {
+            Salvage.field(body, "body")?.takeIf { it.isNotBlank() }?.let { b ->
+                title = Salvage.field(body, "title")?.takeIf { it.isNotBlank() } ?: title
+                if (tags.isEmpty()) tags = cleanTags(Salvage.tags(body)); if (cat.isBlank()) cat = Categories.validate(Salvage.field(body, "category").orEmpty())
+                body = b }
+            if (Salvage.looksJson(body)) body = body.replace(Regex("\"(?:title|body|tags|category)\"\\s*:\\s*"), "").replace(Regex("[{}\\[\\]]"), "").replace("\\n", "\n")
+        }
+        val t = Sanitize.title(title).ifBlank { a.title }
+        return Article(t, Sanitize.body(body, t), tags, cat)
+    }
+    private fun raw(text: String, fallbackTitle: String): Article {
         val j = CleanParse.lenient(text)
         if (j != null && j.optString("body").isNotBlank()) {
             val ta = j.optJSONArray("tags")
             val tags = if (ta != null) (0 until ta.length()).map { ta.optString(it) } else j.optString("tags").split(" ", ",", "，")
             return Article(j.optString("title").trim().ifBlank { fallbackTitle }, j.optString("body").trim(), cleanTags(tags), Categories.validate(j.optString("category")))
+        }
+        // JSON 坏了（没转义的引号 / 截断）：按字段抠
+        if (Regex("\"body\"\\s*[:：]\\s*\"").containsMatchIn(text)) {
+            val body = Salvage.field(text, "body").orEmpty()
+            if (body.isNotBlank()) return Article(Salvage.field(text, "title")?.trim()?.ifBlank { null } ?: fallbackTitle, body.trim(),
+                cleanTags(Salvage.tags(text)), Categories.validate(Salvage.field(text, "category").orEmpty()))
         }
         var t = text.replace(Regex("<think>[\\s\\S]*?</think>"), "").trim()
         Regex("```(?:markdown|md)?\\s*([\\s\\S]*?)```").find(t)?.let { t = it.groupValues[1].trim() }
@@ -194,16 +214,16 @@ object Export {
     fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
     fun inline(s: String) = Md.spans(s).joinToString("") { (t, b) -> if (b) "<strong>" + esc(t) + "</strong>" else esc(t) }
     /** 阅读排版 A 的 HTML（富文本复制 / .html / 发布接口共用） */
-    fun htmlLine(l: MdLine, accent: String = "#2F6BFF"): String = when (l.kind) {
-        MdKind.H2 -> "<h2 style=\"font-size:20px;font-weight:700;line-height:1.45;margin:28px 0 10px;color:#111827;\">${inline(l.text)}</h2>"
-        MdKind.H3 -> "<h3 style=\"font-size:17px;font-weight:700;margin:20px 0 8px;color:#1F2937;\">${inline(l.text)}</h3>"
-        MdKind.QUOTE -> "<blockquote style=\"border-left:3px solid #CBD5E1;background:#F1F4F8;padding:10px 14px;color:#5B6576;margin:16px 0;border-radius:0 6px 6px 0;\">${inline(l.text)}</blockquote>"
-        MdKind.BULLET -> "<p style=\"font-size:16px;line-height:1.8;margin:0 0 8px;padding-left:1.2em;text-indent:-1.2em;color:#1F2937;\">•&nbsp;&nbsp;${inline(l.text)}</p>"
-        MdKind.NUM -> "<p style=\"font-size:16px;line-height:1.8;margin:0 0 8px;padding-left:1.4em;text-indent:-1.4em;color:#1F2937;\">${esc(l.num)}.&nbsp;${inline(l.text)}</p>"
-        MdKind.HR -> "<hr style=\"border:0;border-top:1px solid #E3E8EF;margin:24px 0;\">"
-        MdKind.P -> "<p style=\"font-size:16px;line-height:1.8;margin:0 0 18px;color:#1F2937;\">${inline(l.text)}</p>"
+    fun htmlLine(l: MdLine, accent: String = "#2E5E6B"): String = when (l.kind) {
+        MdKind.H2 -> "<h2 style=\"font-size:20px;font-weight:700;line-height:1.45;margin:28px 0 10px;color:#1E1B17;\">${inline(l.text)}</h2>"
+        MdKind.H3 -> "<h3 style=\"font-size:17px;font-weight:700;margin:20px 0 8px;color:#2E2923;\">${inline(l.text)}</h3>"
+        MdKind.QUOTE -> "<blockquote style=\"border-left:3px solid #D3C8B6;background:#F2ECE1;padding:10px 14px;color:#5C5348;margin:16px 0;border-radius:0 6px 6px 0;\">${inline(l.text)}</blockquote>"
+        MdKind.BULLET -> "<p style=\"font-size:16px;line-height:1.8;margin:0 0 8px;padding-left:1.2em;text-indent:-1.2em;color:#2E2923;\">•&nbsp;&nbsp;${inline(l.text)}</p>"
+        MdKind.NUM -> "<p style=\"font-size:16px;line-height:1.8;margin:0 0 8px;padding-left:1.4em;text-indent:-1.4em;color:#2E2923;\">${esc(l.num)}.&nbsp;${inline(l.text)}</p>"
+        MdKind.HR -> "<hr style=\"border:0;border-top:1px solid #E5DDCF;margin:24px 0;\">"
+        MdKind.P -> "<p style=\"font-size:16px;line-height:1.8;margin:0 0 18px;color:#2E2923;\">${inline(l.text)}</p>"
     }
-    fun htmlBody(body: String, tags: List<String>, accent: String = "#2F6BFF", pics: List<Pic> = emptyList(), showCredit: Boolean = true): String {
+    fun htmlBody(body: String, tags: List<String>, accent: String = "#2E5E6B", pics: List<Pic> = emptyList(), showCredit: Boolean = true): String {
         val ps = paras(body); val bp = Pics.byPara(pics.filter { it.isWeb }, ps.size)
         val sb = StringBuilder()
         ps.forEachIndexed { i, p ->
@@ -222,8 +242,8 @@ object Export {
     fun htmlDoc(title: String, body: String, tags: List<String>, pics: List<Pic> = emptyList(), showCredit: Boolean = true): String = """<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
-<style>body{margin:0;background:#F5F7FA;font-family:-apple-system,"Noto Sans SC","Source Han Sans SC","PingFang SC",sans-serif;color:#111827}
-article{max-width:680px;margin:0 auto;padding:40px 22px 60px;background:#fff;font-family:"Source Han Serif SC","Noto Serif CJK SC","Songti SC",serif}h1{font-size:26px;line-height:1.4;margin:0 0 18px}</style></head>
+<style>body{margin:0;background:#F4F0E8;font-family:-apple-system,"Noto Sans SC","Source Han Sans SC","PingFang SC",sans-serif;color:#1E1B17}
+article{max-width:680px;margin:0 auto;padding:40px 22px 60px;background:#FFFCF6;font-family:"Source Han Serif SC","Noto Serif CJK SC","Songti SC",serif}h1{font-size:26px;line-height:1.4;margin:0 0 18px}</style></head>
 <body><article><h1>${esc(title)}</h1>
 ${htmlBody(body, tags, pics = pics, showCredit = showCredit)}</article></body></html>
 """
@@ -418,28 +438,35 @@ object Compose {
     val FIELDS = listOf("想写什么" to "想写什么", "观点" to "我的观点", "疑问" to "我的疑惑")
     private val NUM = listOf("一", "二", "三", "四", "五", "六")
 
+    /**
+     * 2.2：底座（user）= 这篇要表达什么 → 篇幅（始终用设置里的篇幅）→ 素材 → 这类文章怎么写（模板原文，占位照常填）→ 平台模块 → 自检。
+     * 旧式模板（带【你是谁】【用户的意图】头）：头里的身份描述保留进「这类文章怎么写」，意图行由底座统一给出。
+     */
     fun prompt(tplName: String, tplDesc: String, tplText: String, values: Map<String, String>, raw: String, length: Int,
-               range: Pair<Int, Int> = Lengths.DEFAULT[length.coerceIn(0, 2)], known: Set<String> = Vars.defaultKnown): String {
+               range: Pair<Int, Int> = Lengths.DEFAULT[length.coerceIn(0, 2)], known: Set<String> = Vars.defaultKnown, xhs: Boolean = false): String {
         val v = values.mapValues { it.value.trim() }.filterValues { it.isNotEmpty() }
         val fv = v + (Vars.RAW to raw.trim())
-        val desc = tplDesc.trim().trimEnd('。')
-        val sp = TplHeader.split(tplText)
-        val task = "写一篇「$tplName」" + (if (desc.isNotEmpty()) "：$desc" else "") + "。" +
-            (if (Lengths.inTemplate(tplText)) "篇幅按模板里的要求。" else "\n" + Lengths.hint(length, range))
-        val src = "下面是用户口播或随手记下的原话，口语化，可能有口头禅、重复和语音识别错误。写作时去掉口头禅和重复、纠正明显的识别错误，但不要改变原意，不要编造原文没有的事实、数据和观点。\n<<<\n${raw.trim()}\n>>>"
-        if (sp != null) {
-            // 模板自带【你是谁】【用户的意图】：不再另加角色/意图；顺序 = 模板头 → 你要创作什么 → 口播 → 她的正文
-            return listOf(TplHeader.fillHeader(sp.first, fv), "【你要创作什么】\n$task", "【素材：用户的口播原文】\n$src",
-                Vars.fillKeep(sp.second, fv, known + Vars.RAW).trimEnd()).filter { it.isNotBlank() }.joinToString("\n\n")
+        val secs = mutableListOf<String>()
+        val intent = buildList {
+            v["想写什么"]?.let { add("想写什么：$it") }
+            v["观点"]?.let { add("用户的观点：$it\n→ 这是全文的立场。顺着它往深处写，让它更站得住；不要稀释成“各有道理”，也不要写成相反的意思。") }
+            v["疑问"]?.let { add("用户的疑惑：$it\n→ 正文里要正面回应。") }
         }
-        val secs = mutableListOf<Pair<String, String>>()
-        secs += "你是谁" to TplHeader.role(tplName)
-        val intent = FIELDS.mapNotNull { (k, label) -> v[k]?.let { "$label：$it" } }
-        if (intent.isNotEmpty()) secs += "用户的意图" to intent.joinToString("\n")
-        secs += "你要创作什么" to task
-        secs += "素材：用户的口播原文" to src
-        secs += "写作模板（用户自己的要求，必须遵守）" to Vars.fillKeep(tplText, fv, known + Vars.RAW).trimEnd()
-        return secs.mapIndexed { i, (t, b) -> "${NUM[i]}、$t\n$b" }.joinToString("\n\n")
+        if (intent.isNotEmpty()) secs += "【这篇要表达什么】\n" + intent.joinToString("\n")
+        secs += "【篇幅】" + Lengths.hint(length, range).removePrefix("篇幅：").trimEnd('。') + "（大约 ${(range.second / 110).coerceAtLeast(2)}–${(range.second / 80).coerceAtLeast(3)} 段，不要超过 ${range.second} 字）。宁可把一个点写透，也不要面面俱到。" +
+            (if (Lengths.inTemplate(tplText)) "（下面写法里如果另有篇幅要求，以这里为准。）" else "")
+        secs += "【素材：用户的口播原文】\n${Prompts22.SRC_NOTE}\n<<<\n${raw.trim()}\n>>>"
+        val sp = TplHeader.split(tplText)
+        val how = if (sp != null) {
+            val role = sp.first.split("\n").let { ls -> val i = ls.indexOfFirst { it.trim() == TplHeader.ROLE }; val j = ls.indexOfFirst { it.trim() == TplHeader.INTENT }
+                if (i >= 0 && j > i) ls.subList(i + 1, j).joinToString("\n").trim() else "" }
+            listOf(role, Vars.fillKeep(sp.second, fv, known + Vars.RAW).trim()).filter { it.isNotBlank() }.joinToString("\n\n")
+        } else Vars.fillKeep(tplText, fv, known + Vars.RAW).trim()
+        val desc = tplDesc.trim().trimEnd('。')
+        secs += "【这类文章怎么写】\n类型：「$tplName」" + (if (desc.isNotEmpty()) "——$desc" else "") + "\n" + how
+        if (xhs) secs += Prompts22.XHS
+        secs += Prompts22.SELF_CHECK
+        return secs.filter { it.isNotBlank() }.joinToString("\n\n")
     }
 }
 

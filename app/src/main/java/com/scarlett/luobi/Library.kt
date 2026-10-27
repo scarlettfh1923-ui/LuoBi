@@ -213,7 +213,7 @@ fun LibraryScreen(
                         Spacer(Modifier.weight(1f))
                         Text("已选 ${selected.size}", color = P3.text3, fontSize = 13.sp)
                         Spacer(Modifier.width(12.dp))
-                        Row(Modifier.height(44.dp).clip(Sq.full).background(if (selected.isEmpty()) Color(0xFF4B5563) else P3.danger)
+                        Row(Modifier.height(44.dp).clip(Sq.full).background(if (selected.isEmpty()) Color(0xFF5C5348) else P3.danger)
                             .clickable(enabled = selected.isNotEmpty()) { confirmBatch = true }.padding(horizontal = 18.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             SvgIcon(Ic.trash, Color.White, 18.dp); Spacer(Modifier.width(6.dp))

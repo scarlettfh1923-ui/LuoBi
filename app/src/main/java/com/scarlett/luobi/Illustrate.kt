@@ -54,7 +54,7 @@ class Illustrator(private val ctx: Context, private val db: AppDb, private val s
             try {
                 val paras = Export.paras(n.body)
                 val mn = s.picMin.coerceIn(1, 6); val mx = s.picMax.coerceIn(mn, 6)
-                val txt = Ai.chatText(Ai.target(ctx, modelRef()), "你是图文编辑。只输出一个合法 JSON 对象。", Pics.planPrompt(paras, mn, mx, s.picOrient), true)
+                val txt = Ai.chatText(Ai.target(ctx, modelRef()), "你是图文编辑。只输出一个合法 JSON 对象。" + Prompts22.NO_FAB_LINE, Pics.planPrompt(paras, mn, mx, s.picOrient), true)
                 val have = n.pics().map { it.after }.toSet()
                 val plans = Pics.parsePlan(txt, paras.size, mn, mx).filter { it.after !in have }
                 if (plans.isEmpty()) snack("AI 没给出合适的插图位置，可以长按段落「在此插图」", false)

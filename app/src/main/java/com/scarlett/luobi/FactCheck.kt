@@ -104,7 +104,7 @@ object FactCheck {
    "correction":"正确说法（可直接替换 span 的短句）",
    "source":"依据来源名称",
    "note":"可选说明"}
-],"skipped":["跳过的评价性句子…"]}"""
+],"skipped":["跳过的评价性句子…"]}""" + Prompts22.NO_FAB_LINE
 
     const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36 LuoBi/1.12"
     private val nameLike = Regex("[《「\"“]([^》」\"”]{1,40})[》」\"”]|([\\p{IsHan}]{2,8}(?:电影|电视剧|小说|导演|主演|作者))")
@@ -531,7 +531,7 @@ object FactCheck {
         val check = resolveCheckModel(s, writerDisplay)
         val target = Ai.target(ctx, check.ref)
         val reply = try {
-            Ai.chatText(target, "你是事实校对编辑。只输出一个合法 JSON 对象。", prompt, true)
+            Ai.chatText(target, "你是事实校对编辑。只输出一个合法 JSON 对象。" + Prompts22.NO_FAB_LINE, prompt, true)
         } catch (e: ApiError) {
             throw refineFactModelError(e, check) ?: e
         }

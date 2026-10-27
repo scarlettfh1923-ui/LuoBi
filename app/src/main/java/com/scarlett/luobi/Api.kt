@@ -70,7 +70,16 @@ object Ai {
     }
     /** 1.16.2 文案生成用的 DeepSeek 设置：深度思考开关 + 温度 */
     data class DsGen(val think: Boolean, val temp: Double)
-    const val DS_THINK_TOKENS = 32768
+    const val DS_THINK_TOKENS = 65536
+    /** 2.2：非思考模式的成稿额度（DeepSeek 默认只有 8K）：篇幅上限 ×4，夹在 8192–32768 */
+    fun writeTokens(rangeMax: Int) = (rangeMax * 4).coerceIn(8192, 32768)
+    /** 2.2：被截断（finish_reason=length）的文章 id，存在 SharedPreferences，不动数据库 */
+    object Truncated {
+        private fun p(ctx: Context) = ctx.getSharedPreferences("truncated", Context.MODE_PRIVATE)
+        fun mark(ctx: Context, id: Long) = p(ctx).edit().putBoolean(id.toString(), true).apply()
+        fun clear(ctx: Context, id: Long) = p(ctx).edit().remove(id.toString()).apply()
+        fun has(ctx: Context, id: Long) = p(ctx).getBoolean(id.toString(), false)
+    }
     fun dsGen(ctx: Context) = Settings(ctx).let { DsGen(it.dsThink, it.dsTemp.toDouble()) }
     fun chatBody(pid: String, model: String, msgs: JSONArray, json: Boolean, maxTokens: Int?, plain: Boolean = false, ds: DsGen? = null): JSONObject {
         if (pid == "kimi") return kimiBody(model, msgs, json && !plain, maxTokens, quick = maxTokens != null && maxTokens < 1000)
@@ -118,7 +127,7 @@ object Ai {
     }
 
     /** OpenAI 兼容 chat/completions，返回文本 */
-    suspend fun chatText(t: Target, system: String?, user: String, json: Boolean, maxTokens: Int? = null, ds: DsGen? = null): String = withContext(Dispatchers.IO) {
+    suspend fun chatText(t: Target, system: String?, user: String, json: Boolean, maxTokens: Int? = null, ds: DsGen? = null, fin: Array<String>? = null): String = withContext(Dispatchers.IO) {
         val msgs = JSONArray()
         if (system != null) msgs.put(JSONObject().put("role", "system").put("content", system))
         msgs.put(JSONObject().put("role", "user").put("content", user))
@@ -132,6 +141,7 @@ object Ai {
         val ch = r.optJSONArray("choices")?.optJSONObject(0) ?: throw AiFormatError("没有返回任何回答", r.toString().take(200))
         val content = ch.optJSONObject("message")?.optString("content").orEmpty()
         val fr = ch.optString("finish_reason").lowercase()
+        fin?.set(0, fr)
         if (fr.contains("content_filter") || fr.contains("sensitive")) throw ContentBlocked("finish_reason=$fr")
         if (content.isBlank()) {
             // 推理模型：思考过程在 reasoning_content 里，绝不当成回答
@@ -150,7 +160,7 @@ object Ai {
      * 1.18：流式生成（stream:true，逐行读 data:），每收到一段就把累计文本回调给 onDelta，用于进度卡的实时字数 / 打字行。
      * 任何异常或没拿到正文时退回普通（非流式）请求，保证不比 1.17 差。
      */
-    suspend fun chatStream(t: Target, system: String?, user: String, json: Boolean, ds: DsGen? = null, onDelta: (String) -> Unit): String = withContext(Dispatchers.IO) {
+    suspend fun chatStream(t: Target, system: String?, user: String, json: Boolean, ds: DsGen? = null, maxTokens: Int? = null, fin: Array<String>? = null, onDelta: (String) -> Unit): String = withContext(Dispatchers.IO) {
         val msgs = JSONArray()
         if (system != null) msgs.put(JSONObject().put("role", "system").put("content", system))
         msgs.put(JSONObject().put("role", "user").put("content", user))
@@ -160,18 +170,20 @@ object Ai {
             val d = l.removePrefix("data:").trim(); if (d.isEmpty() || d == "[DONE]") return
             val j = try { JSONObject(d) } catch (_: Exception) { return }
             val ch = j.optJSONArray("choices")?.optJSONObject(0) ?: return
+            if (!ch.isNull("finish_reason")) ch.optString("finish_reason").takeIf { it.isNotBlank() }?.let { fin?.set(0, it.lowercase()) }
             val dl = ch.optJSONObject("delta") ?: return
             val piece = if (dl.isNull("content")) "" else dl.optString("content")
             if (piece.isNotEmpty()) { acc.append(piece); onDelta(acc.toString()) }
         }
         val got = try {
-            val body = chatBody(t.pid, t.model, msgs, json, null, plain = t.pid == "custom" && !json, ds = ds).put("stream", true)
+            val body = chatBody(t.pid, t.model, msgs, json, maxTokens, plain = t.pid == "custom" && !json, ds = ds).put("stream", true)
             val fake = chatTransport
             if (fake != null) {
                 val r = fake(t.url + "/chat/completions", body.toString())
                 if (r.first !in 200..299) throw ApiError(r.first, r.second, "")
                 if (r.second.contains("data:")) r.second.lineSequence().forEach { eat(it) }
-                else JSONObject(r.second).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")?.let { acc.append(it); onDelta(acc.toString()) }
+                else JSONObject(r.second).optJSONArray("choices")?.optJSONObject(0)?.let { c0 -> c0.optString("finish_reason").takeIf { it.isNotBlank() && it != "null" }?.let { fin?.set(0, it.lowercase()) }
+                    c0.optJSONObject("message")?.optString("content")?.let { acc.append(it); onDelta(acc.toString()) } }
             } else {
                 val c = URL(t.url + "/chat/completions").openConnection() as HttpURLConnection
                 c.requestMethod = "POST"; c.connectTimeout = 20000; c.readTimeout = 180000
@@ -183,7 +195,7 @@ object Ai {
             }
             acc.toString()
         } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { "" }
-        if (got.isNotBlank()) got else chatText(t, system, user, json, null, ds)
+        if (got.isNotBlank()) got else chatText(t, system, user, json, maxTokens, ds, fin)
     }
 
     /** 中转站模型列表：GET {base}/models */
@@ -215,7 +227,7 @@ object Ai {
         // 1.10：旧版「清洗」提示词（输出 cleaned、可能把三项融合成一段）不再用于提取，改用意图提取默认提示词；她的旧文本已备份
         val base = ct?.prompt?.takeIf { it.isNotBlank() && !Defaults.isOldClean(it) } ?: Defaults.INTENT
         val prompt = Vars.fillClean(base, raw, list) + IntentParse.FORMAT
-        val txt = chatText(t, "你是中文写作助理。只输出一个合法 JSON 对象。", prompt, true)
+        val txt = chatText(t, "你是中文写作助理。只输出一个合法 JSON 对象。" + Prompts22.NO_FAB_LINE, prompt, true)
         return IntentParse.parse(txt, raw)
     }
 
@@ -233,7 +245,7 @@ object Ai {
         if (d.kind != "write" || d.templateId <= 0) return null
         val db = AppDb.get(ctx); val tpl = db.templates().get(d.templateId) ?: return null
         val s = Settings(ctx)
-        return Compose.prompt(tpl.name, tpl.desc, tpl.prompt, d.values, d.raw, s.length, s.lengthRange())
+        return Compose.prompt(tpl.name, tpl.desc, tpl.prompt, d.values, d.raw, s.length, s.lengthRange(), xhs = s.xhsMode)
     }
 
     /** 第 ③ 步：生成并存入文案库，返回 note id */
@@ -241,29 +253,46 @@ object Ai {
         val t = target(ctx, d.model)
         // 1.4：每次（含失败重试）都按「当前」模板重新拼提示词，不用排队时存下的旧快照
         val prompt = current(ctx, d) ?: d.finalPrompt
-        val txt = if (onDelta != null) chatStream(t, "你是专业的中文写作者。$OUT_RULE", prompt, true, dsGen(ctx), onDelta)
-            else chatText(t, "你是专业的中文写作者。$OUT_RULE", prompt, true, ds = dsGen(ctx))
+        val fin = arrayOf("")
+        val mt = if (t.pid == "deepseek") writeTokens(Settings(ctx).lengthRange().second) else null
+        val txt = if (onDelta != null) chatStream(t, Prompts22.system(), prompt, true, dsGen(ctx), mt, fin, onDelta)
+            else chatText(t, Prompts22.system(), prompt, true, mt, dsGen(ctx), fin)
         val a = ArticleParse.parse(txt, d.cleaned.take(20))
         if (a.body.isBlank()) throw AiFormatError("缺少正文", txt.take(200))
         val db = AppDb.get(ctx)
         val n = Note(title = a.title, body = a.body, tags = a.tags.joinToString(" "), raw = d.raw, cleaned = d.cleaned,
             intent = JSONObject(d.values as Map<*, *>).toString(), category = a.category, categoryAi = a.category, templateId = d.templateId, templateName = d.templateName, model = "${t.name} · ${t.model}", finalPrompt = prompt)
         val id = db.notes().insert(n); db.notes().update(n.copy(id = id, rootId = id))
+        if (fin[0] == "length") Truncated.mark(ctx, id)
         return id
     }
 
+    /** 2.2：「续写」用的特殊改写指令 */
+    const val CONTINUE = "__continue__"
     /** 改写：基于某版本 + 指令，存成新版本 */
     suspend fun rewrite(ctx: Context, noteId: Long, instruction: String, modelRef: String): Long {
         val db = AppDb.get(ctx)
         val n = db.notes().get(noteId) ?: throw ConfigError("这篇文章已被删除")
         val ref = modelRef.ifBlank { Settings(ctx).defaultModel.ifBlank { Settings(ctx).configured().firstOrNull()?.ref ?: "p:deepseek" } }
         val t = target(ctx, ref)
-        val prompt = "下面是一篇文章，请按要求修改。\n修改要求：$instruction\n保持事实和观点不变，不要添加原文没有的信息。\n\n标题：${n.title}\n\n正文：\n${n.body}\n\n标签：${n.tagList().joinToString(" ")}"
-        val txt = chatText(t, "你是专业的中文编辑。$OUT_RULE", prompt, true, ds = dsGen(ctx))
-        val a = ArticleParse.parse(txt, n.title)
+        val fin = arrayOf("")
+        val mt = if (t.pid == "deepseek") writeTokens(maxOf(Settings(ctx).lengthRange().second, n.body.length + 800)) else null
+        val cont = instruction == CONTINUE
+        val txt: String; val a: Article
+        if (cont) {
+            txt = chatText(t, Prompts22.system(), Prompts22.continuePrompt(n.title, n.body), false, mt, dsGen(ctx), fin)
+            val more = Sanitize.body(txt.replace(Regex("^\\s*[{\\[][\\s\\S]*\"body\"\\s*:\\s*\""), ""), n.title)
+            a = Article(n.title, n.body.trimEnd() + more.let { if (n.body.trimEnd().lastOrNull()?.let { c -> c in "。！？”…」）" } == true) "\n\n$it" else it }, n.tagList(), n.category)
+        } else {
+            val prompt = "下面是一篇文章，请按要求修改。\n修改要求：$instruction\n保持事实和观点不变，不要添加原文没有的信息。\n\n标题：${n.title}\n\n正文：\n${n.body}\n\n标签：${n.tagList().joinToString(" ")}"
+            txt = chatText(t, Prompts22.system() + "\n\n你现在是在修改一篇已有的文章。", prompt, true, mt, dsGen(ctx), fin)
+            a = ArticleParse.parse(txt, n.title)
+        }
         val v = (db.notes().maxVersion(n.root) ?: n.version) + 1
-        return db.notes().insert(n.copy(id = 0, createdAt = System.currentTimeMillis(), title = a.title, body = a.body,
-            tags = (a.tags.ifEmpty { n.tagList() }).joinToString(" "), rootId = n.root, version = v, instruction = instruction, model = "${t.name} · ${t.model}", factReportJson = "", category = if (n.category.isNotBlank() && n.category != n.categoryAi) n.category else a.category.ifBlank { n.category }, categoryAi = a.category.ifBlank { n.categoryAi }))
+        val nid = db.notes().insert(n.copy(id = 0, createdAt = System.currentTimeMillis(), title = a.title, body = a.body,
+            tags = (a.tags.ifEmpty { n.tagList() }).joinToString(" "), rootId = n.root, version = v, instruction = if (cont) "续写被截断的部分" else instruction, model = "${t.name} · ${t.model}", factReportJson = "", category = if (n.category.isNotBlank() && n.category != n.categoryAi) n.category else a.category.ifBlank { n.category }, categoryAi = a.category.ifBlank { n.categoryAi }))
+        if (fin[0] == "length") Truncated.mark(ctx, nid)
+        return nid
     }
 
     /** 在任意嵌套的 JSON 里找第一张 base64 图片（Gemini generateContent 的 inlineData / Interactions 的 image 块都适用） */

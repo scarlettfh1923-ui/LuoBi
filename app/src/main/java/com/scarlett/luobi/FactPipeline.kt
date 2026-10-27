@@ -159,7 +159,7 @@ object FactPipeline {
     }.getOrDefault("")
 
     // ---------------- 1 抽取 + 写查询 ----------------
-    const val EXTRACT_SYS = "你是事实校对编辑。只输出一个合法 JSON 对象。"
+    const val EXTRACT_SYS = "你是事实校对编辑。只输出一个合法 JSON 对象。" + Prompts22.NO_FAB_LINE
     fun extractPrompt(title: String, body: String) = """先把文章逐句分拣成三类：硬事实（数字、日期、人物、机构、引语、事件——可以用公开资料核对的）、观点（作者自己的判断）、描写（文学描写、氛围、比喻、个人经历感受）。
 只把「硬事实」拿出来核查；观点和描写只计数，不要放进 claims。
 每条 claim 对应原文里一句话（span 必须是原文里一字不差的片段，尽量是完整的一句），只含一个最值得核对的要点；同一句有多个要点可拆成多个 details。
@@ -398,7 +398,7 @@ $body"""
     }
 
     // ---------------- 5 裁决 ----------------
-    const val JUDGE_SYS = "你是严谨的事实校对编辑。只依据给出的资料裁决，绝不编造引文或链接。只输出一个合法 JSON 对象。"
+    const val JUDGE_SYS = "你是严谨的事实校对编辑。只依据给出的资料裁决，绝不编造引文或链接。只输出一个合法 JSON 对象。" + Prompts22.NO_FAB_LINE
     fun judgePrompt(c: FactClaim, ev: Map<String, List<Evidence>>): String {
         val sb = StringBuilder("原文：「${c.span.ifBlank { c.claim }}」\n逐个细节裁决。\n")
         c.details.forEach { d ->

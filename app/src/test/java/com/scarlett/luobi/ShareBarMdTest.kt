@@ -62,7 +62,7 @@ class MdTest {
         val h = Export.htmlBody("## 标题\n\n正文**金句**\n\n> 引用\n\n- 列表项\n\n---", emptyList())
         assertTrue(h.contains("<h2 style=\"font-size:20px;font-weight:700"))
         assertTrue(h.contains("正文<strong>金句</strong>"))
-        assertTrue(h.contains("<blockquote style=\"border-left:3px solid #CBD5E1;background:#F1F4F8"))
+        assertTrue(h.contains("<blockquote style=\"border-left:3px solid #D3C8B6;background:#F2ECE1"))
         assertTrue(h.contains("•&nbsp;&nbsp;列表项"))
         assertTrue(h.contains("<hr "))
         assertTrue(h.contains("margin:0 0 18px")) // 段距大于行距

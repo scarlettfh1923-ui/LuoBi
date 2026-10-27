@@ -67,7 +67,7 @@ class VarsTest {
 
     @Test fun cleanPromptFill() {
         val p = Vars.fillClean(Defaults.CLEAN, "嗯原文", "- 观点表达：x")
-        assertTrue(p.endsWith("嗯原文")); assertTrue(p.contains("- 观点表达：x")); assertFalse(p.contains("{原始文本}"))
+        assertTrue(p.contains("嗯原文")); assertTrue(p.contains(Prompts22.NO_FAB_MARK)); assertTrue(p.contains("- 观点表达：x")); assertFalse(p.contains("{原始文本}"))
     }
 
     @Test fun finalPromptAddsLengthAndRaw() {

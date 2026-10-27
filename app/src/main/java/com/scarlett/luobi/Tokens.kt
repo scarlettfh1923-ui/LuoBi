@@ -20,11 +20,11 @@ import kotlinx.coroutines.launch
  */
 object DS {
     // ---- 颜色：只有一个强调色 + 一个危险红 ----
-    val accent = Color(0xFF2F6BFF)
-    val danger = Color(0xFFE0362C)           // 删除、错误（对话框里的「删除」、错误卡）
-    val dangerSoft = Color(0xFFFDECEA)
-    val scrim = Color(0x47000000)             // 弹层 / 对话框遮罩，全 App 同一个
-    val ink = Color(0xFF111827)               // 深色提示条底色
+    val accent = Color(0xFF2E5E6B)
+    val danger = Color(0xFFA8432F)           // 删除、错误（对话框里的「删除」、错误卡）
+    val dangerSoft = Color(0xFFF6E6E0)
+    val scrim = Color(0x472A2016)             // 弹层 / 对话框遮罩，全 App 同一个
+    val ink = Color(0xFF26221D)               // 深色提示条底色
 
     // ---- 圆角（dp） ----
     object R { val xs = 10.dp; val s = 14.dp; val m = 18.dp; val l = 22.dp; val xl = 24.dp; val card = 26.dp; val alert = 26.dp }
@@ -36,7 +36,7 @@ object DS {
     object Elev { val none = 0.dp; val float = 6.dp; val bar = 10.dp; val card = 8.dp; val alert = 18.dp }
 
     // ---- 玻璃材质 ----
-    object Glassy { val blur = 18.dp; val tintAlpha = .74f; val fallbackAlpha = .92f; val rimAlpha = .95f; val alertTint = Color(0xFFF7F7FA).copy(alpha = .86f) }
+    object Glassy { val blur = 18.dp; val tintAlpha = .74f; val fallbackAlpha = .92f; val rimAlpha = .95f; val alertTint = Color(0xFFFAF6EE).copy(alpha = .86f) }
 
     // ---- 字号 ----
     object Type {

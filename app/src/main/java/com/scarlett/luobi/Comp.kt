@@ -98,7 +98,7 @@ fun GroupLabel(t: String, modifier: Modifier = Modifier) {
 @Composable
 fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, busy: Boolean = false, onClick: () -> Unit) {
     FilledButton(onClick, modifier.fillMaxWidth().height(52.dp), enabled = enabled && !busy, shape = Sq.full,
-        colors = ButtonDefaults.buttonColors(containerColor = P3.accent, contentColor = Color.White, disabledContainerColor = Color(0xFFE5E7EB), disabledContentColor = Color(0xFF6B7280))) {
+        colors = ButtonDefaults.buttonColors(containerColor = P3.accent, contentColor = Color.White, disabledContainerColor = Color(0xFFE5DDCF), disabledContentColor = Color(0xFF6B6155))) {
         if (busy) { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = P3.accent); Spacer(Modifier.width(8.dp)) }
         Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
@@ -216,5 +216,5 @@ fun SegChip(text: String, sel: Boolean, onClick: () -> Unit) {
 /** 1.6 统一分组小标题：12sp 半粗 #6B7280，左缩进与卡内文字对齐 */
 @Composable
 fun SectionLabel(t: String, modifier: Modifier = Modifier) {
-    Text(t, modifier.padding(start = 12.dp, top = 16.dp, bottom = 6.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF6B7280))
+    Text(t, modifier.padding(start = 12.dp, top = 16.dp, bottom = 6.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF6B6155))
 }

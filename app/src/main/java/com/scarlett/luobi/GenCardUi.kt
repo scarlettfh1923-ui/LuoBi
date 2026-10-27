@@ -71,7 +71,7 @@ private fun GenRunning(p: GenProgress, onCancel: () -> Unit) {
             Spacer(Modifier.weight(1f))
             Text("${CopyWorker.fmtWords(p.words)} 字", Modifier.testTag("genWords"), fontSize = DS.Type.callout, fontWeight = FontWeight.SemiBold, color = P3.text)
             Box(Modifier.padding(start = 6.dp).size(32.dp).clip(Sq.full).clickable(onClick = onCancel).testTag("genCancel"), contentAlignment = Alignment.Center) {
-                Box(Modifier.size(24.dp).clip(Sq.full).background(Color(0x14000000)), contentAlignment = Alignment.Center) { Text("×", fontSize = 15.sp, color = P3.text2, lineHeight = 15.sp) }
+                Box(Modifier.size(24.dp).clip(Sq.full).background(Color(0x142A2016)), contentAlignment = Alignment.Center) { Text("×", fontSize = 15.sp, color = P3.text2, lineHeight = 15.sp) }
             }
         }
         val head = when { p.step >= 3 -> "正在整理，放进案头…"; p.title.isNotBlank() -> "正在写：${p.title}"; else -> "正在构思标题…" }
@@ -87,7 +87,7 @@ private fun GenRunning(p: GenProgress, onCancel: () -> Unit) {
         }
         val target = when (p.step) { 1 -> .08f; 2 -> .15f + .75f * (p.words / 3000f).coerceAtMost(1f); else -> .96f }
         val f by animateFloatAsState(target, if (Motion.reduced) snap() else tween(DS.Dur.LONG, easing = DS.Standard), label = "genP")
-        Box(Modifier.padding(top = 10.dp, end = 8.dp).fillMaxWidth().height(3.dp).clip(Sq.full).background(Color(0x12000000))) {
+        Box(Modifier.padding(top = 10.dp, end = 8.dp).fillMaxWidth().height(3.dp).clip(Sq.full).background(Color(0x122A2016))) {
             Box(Modifier.fillMaxWidth(f).fillMaxHeight().clip(Sq.full).background(DS.accent))
         }
     }
@@ -113,7 +113,7 @@ private fun GenDone(c: GenCardState, onOpen: () -> Unit) {
             }
             Text(c.title, Modifier.padding(top = 4.dp), fontSize = DS.Type.headline, fontWeight = FontWeight.SemiBold, color = P3.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        HorizontalDivider(thickness = Dp.Hairline, color = Color(0x1F3C3C43))
+        HorizontalDivider(thickness = Dp.Hairline, color = Color(0x1F3C3428))
         Box(Modifier.fillMaxWidth().height(44.dp).clickable(onClick = onOpen).testTag("genOpen"), contentAlignment = Alignment.Center) {
             Text("去看看", fontSize = DS.Type.callout, fontWeight = FontWeight.SemiBold, color = DS.accent)
         }

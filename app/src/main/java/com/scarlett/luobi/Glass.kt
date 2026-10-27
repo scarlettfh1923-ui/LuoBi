@@ -57,24 +57,24 @@ fun Modifier.backdropSource(b: Backdrop?): Modifier = if (b != null && Glass.blu
 object Glass {
     /** 由 MainActivity 按系统版本与内存设定 */
     var blur: Boolean = Build.VERSION.SDK_INT >= 31
-    val tintLight = Color(0xFFFAFAFC).copy(alpha = .74f)
-    val fallbackLight = Color.White.copy(alpha = .92f)
-    val tintDark = Color(0xFF1E1E22).copy(alpha = .74f)
-    val fallbackDark = Color(0xFF1E1E22).copy(alpha = .94f)
-    val rim = Color.White.copy(alpha = .95f)
+    val tintLight = Color(0xFFFFFCF6).copy(alpha = .72f)
+    val fallbackLight = Color(0xFFFFFCF6).copy(alpha = .93f)
+    val tintDark = Color(0xFF221F1B).copy(alpha = .74f)
+    val fallbackDark = Color(0xFF221F1B).copy(alpha = .94f)
+    val rim = Color(0xFFFFFDF8).copy(alpha = .95f)
     fun init(ctx: android.content.Context) {
         val am = ctx.getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
         blur = Build.VERSION.SDK_INT >= 31 && am?.isLowRamDevice != true
     }
 }
 
-val Hairline = Color(0xFFE3E4E8)
+val Hairline = Color(0xFFE5DDCF)
 /** 浮动层玻璃：阴影 + 圆角 + 背景模糊（或半透明兜底）+ 白色描边 */
 fun Modifier.frosted(shape: androidx.compose.ui.graphics.Shape = Sq.full, elevation: Dp = 6.dp, tint: Color = Color.White, dark: Boolean = false): Modifier = composed {
     val b = LocalBackdrop.current
     val base = this.softShadow(shape, elevation).clip(shape)
     val filled = if (b != null && Glass.blur) base.hazeChild(b.haze, shape = shape, style = HazeStyle(
-            backgroundColor = if (dark) Color(0xFF1E1E22) else P3.bg,
+            backgroundColor = if (dark) Color(0xFF221F1B) else P3.bg,
             tint = HazeTint(if (dark) Glass.tintDark else Glass.tintLight), blurRadius = 18.dp, noiseFactor = 0f,
             fallbackTint = HazeTint(if (dark) Glass.fallbackDark else Glass.fallbackLight)))
         else base.background(if (dark) Glass.fallbackDark else Glass.fallbackLight)
@@ -83,7 +83,7 @@ fun Modifier.frosted(shape: androidx.compose.ui.graphics.Shape = Sq.full, elevat
 
 /** 分享栏 / 导航的统一网格（detail.png）：等宽格；图标框 24dp（图标 20dp 居中）；间距 3dp；标签行高 14dp；整组垂直居中；整格可点 */
 object GridSpec { val icon = 24.dp; val glyph = 20.dp; val gap = 3.dp; val label = 14.dp }
-val NavInk = Color(0xFF374151)
+val NavInk = Color(0xFF3A342D)
 private val labelStyle = TextStyle(fontSize = 10.5.sp, lineHeight = 14.sp, textAlign = TextAlign.Center,
     lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both))
 
@@ -121,7 +121,7 @@ fun FloatingNav(sel: Int, onSel: (Int) -> Unit) {
             val cw = (maxWidth - 12.dp) / items.size
             val x by animateDpAsState(cw * sel, Motion.springDp(), label = "tabPill")
             // 选中胶囊（同心圆角：外 33 − 内边距 6 = 27）
-            Box(Modifier.padding(6.dp).offset(x = x).width(cw).fillMaxHeight().softShadow(Sq.full, 2.dp).clip(Sq.full).background(Color.White))
+            Box(Modifier.padding(6.dp).offset(x = x).width(cw).fillMaxHeight().softShadow(Sq.full, 2.dp).clip(Sq.full).background(P3.surface))
             Row(Modifier.fillMaxSize().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 items.forEach { (l, ic, i) -> GridCell(ic, l, sel == i, P3.text3, P3.text3, pill = false) { onSel(i) } }
             }
@@ -153,7 +153,7 @@ fun FloatAction(icon: List<String>, tint: Color, desc: String, badge: Int = 0, p
             val sc = remember { androidx.compose.animation.core.Animatable(if (Motion.reduced) 1f else 0f) }
             LaunchedEffect(Unit) { sc.animateTo(1f, Motion.bounce()) }
             Box(Modifier.align(Alignment.TopEnd).padding(top = 9.dp, end = 9.dp).size(8.dp).graphicsLayer { scaleX = sc.value; scaleY = sc.value }
-                .clip(Sq.full).background(Color.White).padding(1.5.dp).clip(Sq.full).background(Color(0xFFEF4444)).semantics { contentDescription = "已检测" })
+                .clip(Sq.full).background(P3.surface).padding(1.5.dp).clip(Sq.full).background(Color(0xFFA8432F)).semantics { contentDescription = "已检测" })
         }
         if (badge > 0) {
             Box(Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).size(if (badge > 9) 16.dp else 14.dp)
@@ -175,10 +175,10 @@ fun GeneratingNib(modifier: Modifier = Modifier) {
     Column(modifier.semantics { contentDescription = "正在生成" }, horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.graphicsLayer { translationY = -bob * 6f; rotationZ = -8f + bob * 6f }) { SvgIcon(Ic.edit, P3.accent, 34.dp) }
         Spacer(Modifier.height(12.dp))
-        Box(Modifier.width(150.dp).height(6.dp).clip(Sq.full).background(Color(0x1A2F6BFF)).drawWithContent {
+        Box(Modifier.width(150.dp).height(6.dp).clip(Sq.full).background(Color(0x1A2E5E6B)).drawWithContent {
             drawContent()
             val w = size.width * .35f; val sx = size.width * x - w / 2
-            drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0x002F6BFF), Color(0xAA8FB4FF), Color(0x002F6BFF)), sx, sx + w), androidx.compose.ui.geometry.Offset(sx, 0f), androidx.compose.ui.geometry.Size(w, size.height))
+            drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0x002E5E6B), Color(0xAA7FA9B3), Color(0x002E5E6B)), sx, sx + w), androidx.compose.ui.geometry.Offset(sx, 0f), androidx.compose.ui.geometry.Size(w, size.height))
         })
     }
 }

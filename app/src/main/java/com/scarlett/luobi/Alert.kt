@@ -54,7 +54,7 @@ fun GlassAlert(title: String, message: String? = null, actions: List<AlertAction
             }
             AnimatedVisibility(state, enter = Motion.alertIn, exit = Motion.alertOut) {
                 Column(Modifier.testTag("glassAlert").padding(horizontal = 40.dp).widthIn(max = 300.dp).fillMaxWidth().imePadding()
-                    .softShadow(Sq.alert, DS.Elev.alert).clip(Sq.alert).background(if (Glass.blur) DS.Glassy.alertTint else Color(0xFFF7F7FA))
+                    .softShadow(Sq.alert, DS.Elev.alert).clip(Sq.alert).background(if (Glass.blur) DS.Glassy.alertTint else Color(0xFFFAF6EE))
                     .hairline(Sq.alert, Glass.rim), horizontalAlignment = Alignment.CenterHorizontally) {
                     Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(title, fontSize = DS.Type.headline, fontWeight = FontWeight.SemiBold, color = P3.text, textAlign = TextAlign.Center, lineHeight = 22.sp17)
@@ -63,7 +63,7 @@ fun GlassAlert(title: String, message: String? = null, actions: List<AlertAction
                         if (content != null) Column(Modifier.fillMaxWidth().padding(top = 12.dp)) { content() }
                     }
                     actions.forEach { a ->
-                        HorizontalDivider(thickness = Dp.Hairline, color = Color(0x2E3C3C43))
+                        HorizontalDivider(thickness = Dp.Hairline, color = Color(0x2E3C3428))
                         Box(Modifier.fillMaxWidth().heightIn(min = 50.dp).clickable { close(a.onClick) }.testTag("alert:${a.label}"), contentAlignment = Alignment.Center) {
                             Text(a.label, fontSize = DS.Type.headline, color = if (a.role == AlertAction.Role.Destructive) DS.danger else DS.accent,
                                 fontWeight = if (a.role == AlertAction.Role.Default) FontWeight.Normal else FontWeight.SemiBold)

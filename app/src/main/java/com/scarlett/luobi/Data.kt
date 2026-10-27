@@ -151,6 +151,8 @@ abstract class AppDb : RoomDatabase() {
     abstract fun factJobs(): FactJobDao
     companion object {
         @Volatile private var inst: AppDb? = null
+        /** 仅供 JVM 测试：每个用例一个干净的库 */
+        fun resetForTest() { synchronized(this) { runCatching { inst?.close() }; inst = null } }
         fun get(c: Context): AppDb = inst ?: synchronized(this) {
             inst ?: run { DbBackup.beforeOpen(c.applicationContext, NAME, VERSION)
                 // 不用 fallbackToDestructiveMigration：缺迁移时宁可报错，也绝不清空文章（备份在 files/db-backup）
@@ -185,11 +187,13 @@ object Defaults {
 {"cleaned": "清洗后的完整文字", "疑问": "……", "观点": "……", "想写什么": "……", "recommend": "模板名称"}
 
 用户原文：
-{原始文本}"""
+{原始文本}""" + Prompts22.NO_FAB_LINE
 
     /** 1.9：意图提取提示词（替代清洗：不再输出清洗后文字，口头禅交给生成时处理） */
     const val INTENT_NAME = "意图提取"
-    val INTENT = """你是一名中文写作助理。下面是用户的一段口播、语音转写或随手记下的想法，口语化，可能有口头禅和识别错误。请从中提取写作意图，并推荐一个模板。
+    val INTENT get() = Prompts22.INTENT
+    /** 2.1 及以前的意图提取默认（只用于识别她没改过） */
+    val INTENT21 = """你是一名中文写作助理。下面是用户的一段口播、语音转写或随手记下的想法，口语化，可能有口头禅和识别错误。请从中提取写作意图，并推荐一个模板。
 
 一、提取意图
 - 想写什么：用户想写一篇什么样的文章（主题 + 角度，可带体裁、风格），用一句话概括。这一项必须输出；原文没明说时，根据内容推断最可能想写的文章。
@@ -211,8 +215,36 @@ object Defaults {
     /** 1.9–1.13 的内置默认（只给 migrateHeaders 识别「没改过的 1.8 默认」用，行为不变） */
     private val templates19 get() = rawTemplates.map { t -> t.copy(prompt = TplHeader.header(t.name) + t.prompt.lines().filter { it.startsWith("写作要求") }.joinToString("\n")) }
     /** 1.14 内置默认：她的 5 个模板 + 标签指令。只用于全新安装和「恢复默认」；已有用户的模板不覆盖 */
-    val templates get() = DefaultTemplates114.texts.keys.map { n ->
-        Template(name = n, desc = DefaultTemplates114.descs[n].orEmpty(), builtIn = true, sort = DefaultTemplates114.sorts[n] ?: 0, prompt = DefaultTemplates114.prompt(n)!!)
+    /** 2.2 内置默认：8 个写作类型（模块正文存进模板库，可编辑；底座在代码里） */
+    val templates get() = Prompts22.TYPES.mapIndexed { i, t -> Template(name = t.name, desc = t.desc, builtIn = true, sort = i, prompt = t.module) }
+    /** 2.2 退役的旧内置 → 新类型（没改过的直接换成新类型；null = 退役删除） */
+    val RETIRED: Map<String, String?> = mapOf("豆瓣影评" to "影评剧评", "财经非虚构" to "社会观察", "专栏评论" to "观点评论", "通用非虚构" to null,
+        "小红书风格" to null, "口播转文章" to null, "观点表达" to "观点评论", "答疑解惑" to "干货科普")
+    /** 某个旧内置名的所有「出厂」文本（任一相同 = 她没改过） */
+    fun factoryTexts(name: String): Set<String> = listOfNotNull(DefaultTemplates114.prompt(name), DefaultTemplates114.prompt(builtinName(name)),
+        rawTemplates.firstOrNull { it.name == name }?.prompt, templates19.firstOrNull { it.name == name }?.prompt).map { it.trim() }.toSet()
+    /**
+     * 2.2 模板迁移（幂等）：
+     * - 没改过的旧内置：有对应新类型就就地换成新类型（保留 id，旧文章和排队任务仍能对上），否则删除；
+     * - 她改过的旧内置：原文一字不动，转成「我的模板」（builtIn=false）；
+     * - 缺哪个新内置就补哪个；她自己的模板一律不动。
+     */
+    suspend fun migrate22(db: AppDb): List<String> {
+        val log = mutableListOf<String>()
+        val newNames = Prompts22.TYPES.map { it.name }.toSet()
+        val all = db.templates().list()
+        val taken = all.filter { it.builtIn && it.name in newNames }.map { it.name }.toMutableSet()
+        for (t in all.filter { it.builtIn && it.name !in newNames }) {
+            val edited = t.prompt.trim() !in factoryTexts(t.name)
+            val target = RETIRED[t.name]?.let { Prompts22.type(it) }
+            when {
+                edited -> { db.templates().update(t.copy(builtIn = false, updatedAt = System.currentTimeMillis())); log += "保留为我的模板：${t.name}" }
+                target != null && target.name !in taken -> { db.templates().update(t.copy(name = target.name, desc = target.desc, prompt = target.module, sort = Prompts22.TYPES.indexOf(target))); taken += target.name; log += "换成新类型：${t.name} → ${target.name}" }
+                else -> { db.templates().delete(t); log += "退役：${t.name}" }
+            }
+        }
+        Prompts22.TYPES.forEachIndexed { i, ty -> if (ty.name !in taken) { db.templates().insert(Template(name = ty.name, desc = ty.desc, builtIn = true, sort = i, prompt = ty.module)); log += "新增：${ty.name}" } }
+        return log
     }
     /** 旧内置名（口播转文章/观点表达/答疑解惑）→ 1.14 新名 */
     fun builtinName(name: String) = DefaultTemplates114.RENAMED[name] ?: name
@@ -253,6 +285,7 @@ object Defaults {
         if (db.templates().count() == 0) templates.forEach { db.templates().insert(it) }
         db.notes().repairRoots()
         migrateHeaders(db)
+        migrate22(db)
         if (db.cleans().count() == 0) db.cleans().insert(CleanTpl(name = INTENT_NAME, prompt = INTENT, fields = Vars.DEFAULT_FIELDS.joinToString("\n"), builtIn = true, active = true))
         // 1.9：没改过的内置清洗提示词自动换成意图提取；她改过的原样保留（解析兼容旧格式），页面上提示可恢复默认
         db.cleans().all().first().filter { it.builtIn && it.prompt.trim() == CLEAN.trim() }.forEach {
@@ -263,16 +296,21 @@ object Defaults {
             db.cleans().insert(CleanTpl(name = "旧清洗提示词（备份）", prompt = it.prompt, fields = it.fields, builtIn = false, active = false))
             db.cleans().update(it.copy(name = INTENT_NAME, prompt = INTENT, fields = Vars.DEFAULT_FIELDS.joinToString("\n")))
         }
+        // 2.2：没改过的旧意图提取提示词换成 8 类型版；她改过的不动
+        db.cleans().all().first().filter { it.builtIn && it.prompt.trim() == INTENT21.trim() }.forEach { db.cleans().update(it.copy(prompt = INTENT)) }
         if (db.cleans().active() == null) db.cleans().all().first().firstOrNull { it.builtIn }?.let { db.cleans().activate(it.id) }
     }
     /** 旧版清洗提示词：要求输出 cleaned / 清洗后文字 */
     fun isOldClean(p: String) = p.contains("\"cleaned\"") || p.contains("清洗文本") || (p.contains("清洗") && !p.contains("\"想写什么\""))
-    fun builtinPrompt(name: String) = DefaultTemplates114.prompt(builtinName(name))
-    fun builtinDesc(name: String) = DefaultTemplates114.descs[builtinName(name)]
+    fun builtinPrompt(name: String) = Prompts22.type(name)?.module
+    fun builtinDesc(name: String) = Prompts22.type(name)?.desc
     /** 1.9 迁移：每个模板开头补【你是谁】【用户的意图】，正文逐字节保留；已有头的不动（幂等） */
     suspend fun migrateHeaders(db: AppDb): Int {
         var n = 0
-        db.templates().list().forEach { t ->
+        val list = db.templates().list()
+        // 2.2 起模板不再需要头：已经有 2.2 内置类型（迁移过 / 新装）就不再给任何模板加头
+        if (list.any { t -> t.builtIn && Prompts22.type(t.name) != null }) return 0
+        list.forEach { t ->
             // 从没改过的 1.8 内置默认 → 直接换成 1.9 默认；其余（她自己的正文）只在开头加头
             val old = rawTemplates.firstOrNull { it.name == t.name && it.prompt == t.prompt }
             val m = if (t.builtIn && old != null) templates19.first { it.name == t.name }.prompt else TplHeader.migrate(t.name, t.prompt)
@@ -342,7 +380,7 @@ class Settings(val c: Context) {
 
     /** 1.10 灵感：每日选题提示词（空 = 默认）与启用的热榜来源 */
     var inspirePrompt: String get() = s("inspirePrompt", "").ifBlank { Inspire.DEFAULT_PROMPT }; set(v) = put("inspirePrompt", if (v.trim() == Inspire.DEFAULT_PROMPT.trim()) "" else v)
-    var inspireSources: Set<String> get() = s("inspireSrc", HotSources.all.joinToString(",") { it.id }).split(",").filter { it.isNotBlank() }.toSet(); set(v) = put("inspireSrc", v.joinToString(","))
+    var inspireSources: Set<String> get() = s("inspireSrc", HotSources.all.joinToString(",") { it.id }).split(",").map { if (it == "bili") "baidu" else it }.filter { it.isNotBlank() }.toSet(); set(v) = put("inspireSrc", v.joinToString(","))
     /** 1.11 事实校对：提示词 + 检索源（deepseek / wiki / bocha）+ 博查 Key */
     var factPrompt: String get() = s("factPrompt", "").ifBlank { FactCheck.DEFAULT_PROMPT }; set(v) = put("factPrompt", if (v.trim() == FactCheck.DEFAULT_PROMPT.trim()) "" else v)
     var factSearch: String get() = s("factSearch", "deepseek"); set(v) = put("factSearch", v)
@@ -369,6 +407,8 @@ class Settings(val c: Context) {
     /** any / landscape / portrait */
     var picOrient get() = s("picOrient", "any"); set(v) = put("picOrient", v)
     /** 1.16.2 DeepSeek 文案生成：深度思考（默认关）+ 温度（默认 0.7，范围 0–2，新键，老用户自然落到 0.7） */
+    /** 2.2：小红书平台写法（叠加在任何类型上） */
+    var xhsMode get() = p.getBoolean("xhsMode", false); set(v) = put("xhsMode", v)
     var dsThink get() = p.getBoolean("dsThink", false); set(v) = put("dsThink", v)
     var dsTemp: Float get() = p.getFloat("dsTemp", 0.7f).coerceIn(0f, 2f); set(v) = put("dsTemp", (Math.round(v.coerceIn(0f, 2f) * 10) / 10f))
     var attachRaw get() = p.getBoolean("attachRaw", true); set(v) = put("attachRaw", v)

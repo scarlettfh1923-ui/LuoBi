@@ -14,7 +14,8 @@ class Inspire110Test {
         assertEquals(1, l.size); assertEquals("怎么看 DeepSeek？", l[0].title)
     }
     @Test fun douyin() { assertEquals("日美大规模军演引发多地抗议", HotSources.douyin("""{"status_code":0,"word_list":[{"word":"日美大规模军演引发多地抗议","hot_value":1}]}""")[0].title) }
-    @Test fun bili() { assertEquals("热梗是否会对中文表达造成负面影响", HotSources.bili("""{"code":0,"data":{"trending":{"list":[{"keyword":"k","show_name":"热梗是否会对中文表达造成负面影响"}]}}}""")[0].title) }
+    @Test fun baidu() { val l = HotSources.baidu("""{"data":{"cards":[{"content":[{"content":[{"word":"置顶","isTop":true},{"word":"热梗是否会对中文表达造成负面影响","desc":"d"}]}]}]}}""")
+        assertEquals(listOf("热梗是否会对中文表达造成负面影响"), l.map { it.title }); assertEquals("百度", l[0].source) }
     @Test fun badSourceJsonThrowsSoFetchSkipsIt() { assertTrue(runCatching { HotSources.weibo("<html>403</html>") }.isFailure) }
 
     @Test fun parseReplyFormats() {
