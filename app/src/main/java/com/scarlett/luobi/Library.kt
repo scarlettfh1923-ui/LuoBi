@@ -39,7 +39,8 @@ import java.util.*
 import kotlin.math.absoluteValue
 
 private val SortLabels = listOf("最新", "最早", "字数", "收藏")
-private fun shortDate(t: Long) = SimpleDateFormat("M月d日", Locale.CHINA).format(Date(t))
+/** 2.3 案头 B：右侧短日期 10/28 */
+internal fun deskDate(t: Long) = SimpleDateFormat("MM/dd", Locale.CHINA).format(Date(t))
 
 @Composable
 fun LibraryScreen(
@@ -185,7 +186,7 @@ fun LibraryScreen(
                 }
             } else {
                 shown.groupBy { Desk.section(it.createdAt) }.forEach { (d, list) ->
-                    item(key = "d$d$sort") { SectionLabel(d, Modifier.padding(start = 16.dp)) }
+                    item(key = "d$d$sort") { DeskSectionHeader(d) }
                     items(list, key = { it.id }) { n ->
                         Box(Modifier.animateItem(fadeInSpec = Motion.enter(Motion.SHORT), placementSpec = Motion.enter(), fadeOutSpec = Motion.exit())) { LibraryRow(n, managing, n.id in selected, openSwipeId == n.id,
                             onOpen = {
@@ -233,30 +234,34 @@ fun LibraryScreen(
     }
 }
 
+/** 2.3 方案 B：日期分组标题 + 发丝线 */
 @Composable
-private fun ElevCard(modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    val shape = Sq.xl
-    Column(modifier.fillMaxWidth().surface(shape, if (selected) P3.accentSoft else P3.surface, outline = if (selected) cs.primary.copy(alpha = .4f) else null)
-        .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), content = content)
+private fun DeskSectionHeader(t: String) {
+    Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 20.dp, top = 14.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(t, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF6B6155))
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.weight(1f).height(0.5.dp).background(P3.borderStrong))
+    }
 }
 
+/** 2.3 方案 B：一行一篇。圆点/勾选框 · 单行标题 · (收藏心) · 分类小标签 · 短日期 */
 @Composable
-private fun NoteTitleBlock(n: Note, showHeart: Boolean, onToggleFav: () -> Unit = {}) {
+private fun DeskRowContent(n: Note, managing: Boolean, selected: Boolean) {
     val cs = MaterialTheme.colorScheme
-    // 1.5：标题一行 + 摘要一行 + 一行弱化信息
-    // 1.15 方案 A：蓝色小分类 + 标题 + 日期 · 字数
-    if (n.category.isNotBlank()) Text(n.category, Modifier.padding(bottom = 3.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = P3.accent, maxLines = 1)
-    Text(n.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = P3.text)
-    Row(Modifier.padding(top = 4.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(listOf(java.text.SimpleDateFormat("M月d日", java.util.Locale.CHINA).format(java.util.Date(n.createdAt)), "%,d".format(n.body.length) + " 字", if (n.version > 1) "第 ${n.version} 版" else "").filter { it.isNotBlank() }.joinToString(" · ") + n.tagList().take(2).joinToString("") { "  #$it" }, Modifier.weight(1f), fontSize = 12.sp, color = t3(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (showHeart) Box(Modifier.size(32.dp).clip(Sq.full).clickable { onToggleFav() }, contentAlignment = Alignment.Center) {
-            // 1.16：收藏心形轻弹（蓝色），缩放回弹不闪烁
-            val pop = remember { androidx.compose.animation.core.Animatable(1f) }
-            var last by remember { mutableStateOf(n.favorite) }
-            LaunchedEffect(n.favorite) { if (n.favorite && !last && !Motion.reduced) { pop.snapTo(.7f); pop.animateTo(1f, Motion.bounce()) }; last = n.favorite }
-            Box(Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value }) { SvgIcon(Ic.heart, if (n.favorite) P3.accent else t3(), 18.dp, if (n.favorite) P3.accent else null, "收藏") }
+    Row(Modifier.fillMaxWidth().height(46.dp).padding(start = 24.dp, end = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.width(18.dp), contentAlignment = Alignment.CenterStart) {
+            if (managing) Box(Modifier.size(18.dp).clip(Sq.full)
+                .background(if (selected) cs.primary else Color.Transparent)
+                .hairline(Sq.full, if (selected) cs.primary else cs.outline, 1.5.dp), contentAlignment = Alignment.Center) {
+                if (selected) SvgIcon(Ic.check, Color.White, 10.dp)
+            } else Box(Modifier.size(5.dp).clip(CircleShape).background(P3.accent))
         }
+        Spacer(Modifier.width(if (managing) 10.dp else 4.dp))
+        Text(n.title.ifBlank { "无标题" }, Modifier.weight(1f), fontSize = 15.sp, color = P3.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (n.favorite) Box(Modifier.padding(start = 6.dp)) { SvgIcon(Ic.heart, P3.accent, 12.dp, P3.accent, "已收藏") }
+        if (n.category.isNotBlank()) Text(n.category, Modifier.padding(start = 8.dp).widthIn(max = 84.dp).clip(Sq.full).background(if (selected) P3.surface else P3.accentSoft).padding(horizontal = 6.dp, vertical = 1.dp),
+            fontSize = 10.sp, lineHeight = 14.sp, color = P3.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(deskDate(n.createdAt), Modifier.padding(start = 8.dp).width(34.dp), fontSize = 11.sp, color = t3(), textAlign = TextAlign.End, maxLines = 1)
     }
 }
 
@@ -265,11 +270,11 @@ private fun LibraryRow(
     n: Note, managing: Boolean, selected: Boolean, revealed: Boolean,
     onOpen: () -> Unit, onToggleFav: () -> Unit, onReveal: (Boolean) -> Unit, onTapDelete: () -> Unit,
 ) {
-    val cs = MaterialTheme.colorScheme
     val density = LocalDensity.current
     val actionPx = with(density) { 80.dp.toPx() }
     val scope = rememberCoroutineScope()
     val offset = remember(n.id) { Animatable(0f) }
+    var menu by remember { mutableStateOf(false) }
 
     LaunchedEffect(revealed, managing) {
         if (managing) offset.snapTo(0f)
@@ -277,57 +282,37 @@ private fun LibraryRow(
     }
 
     if (managing) {
-        ElevCard(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), selected = selected, onClick = onOpen) {
-            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.padding(top = 2.dp).size(22.dp).clip(Sq.full)
-                    .background(if (selected) cs.primary else Color.Transparent)
-                    .hairline(Sq.full, if (selected) cs.primary else cs.outline, 1.5.dp), contentAlignment = Alignment.Center) {
-                    if (selected) SvgIcon(Ic.check, Color.White, 12.dp)
-                }
-                Column(Modifier.weight(1f)) { NoteTitleBlock(n, showHeart = false) }
+        Box(Modifier.fillMaxWidth().background(if (selected) P3.accentSoft else Color.Transparent).clickable(onClick = onOpen)) { DeskRowContent(n, true, selected) }
+        return
+    }
+    Box(Modifier.fillMaxWidth()) {
+        // 右滑露出删除（与 1.x 一致，需点按确认）；红底只在滑开时画
+        Box(Modifier.matchParentSize().background(if (offset.value != 0f) P3.danger else Color.Transparent), contentAlignment = Alignment.CenterStart) {
+            if (offset.value != 0f) Row(Modifier.width(80.dp).fillMaxHeight().clickable { onTapDelete() }, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                SvgIcon(Ic.trash, Color.White, 16.dp); Spacer(Modifier.width(4.dp))
+                Text("删除", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
-    } else {
-        Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().heightIn(min = 48.dp).clip(Sq.xl)) {
-            // Left reveal: red delete — TAP required
-            // 1.7 修复：红色底层只在卡片滑开时才画。之前它常驻在卡片后面（圆角还比卡片小），
-            // 圆角处抗锯齿把红色透出来——这就是 1.5/1.6 一直存在的「红色毛边」。
-            Box(Modifier.matchParentSize().background(if (offset.value != 0f) P3.danger else Color.Transparent), contentAlignment = Alignment.CenterStart) {
-                Column(
-                    Modifier.width(80.dp).fillMaxHeight().clickable { onTapDelete() },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    SvgIcon(Ic.trash, Color.White, 20.dp)
-                    Text("删除", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
+        Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(offset.value.toInt(), 0) }
+            .background(MaterialTheme.colorScheme.background)
+            .pointerInput(n.id) {
+                detectHorizontalDragGestures(
+                    onDragEnd = { scope.launch { val open = offset.value > actionPx * 0.4f; offset.animateTo(if (open) actionPx else 0f, Motion.dragSpring); onReveal(open) } },
+                    onHorizontalDrag = { _, dx -> scope.launch { offset.snapTo((offset.value + dx).coerceIn(0f, actionPx)) } })
             }
-            ElevCard(
-                modifier = Modifier.offset { androidx.compose.ui.unit.IntOffset(offset.value.toInt(), 0) }
-                    .pointerInput(n.id) {
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                scope.launch {
-                                    val open = offset.value > actionPx * 0.4f
-                                    offset.animateTo(if (open) actionPx else 0f, Motion.dragSpring)
-                                    onReveal(open)
-                                }
-                            },
-                            onHorizontalDrag = { _, dx ->
-                                // right swipe (positive) reveals left button
-                                scope.launch {
-                                    offset.snapTo((offset.value + dx).coerceIn(0f, actionPx))
-                                }
-                            }
-                        )
-                    },
-                onClick = {
-                    if (offset.value > actionPx * 0.3f) {
-                        scope.launch { offset.animateTo(0f, Motion.dragSpring); onReveal(false) }
-                    } else onOpen()
-                }
-            ) {
-                NoteTitleBlock(n, showHeart = true, onToggleFav = onToggleFav)
+            .combinedClickable(
+                onClick = { if (offset.value > actionPx * 0.3f) scope.launch { offset.animateTo(0f, Motion.dragSpring); onReveal(false) } else onOpen() },
+                onLongClick = { menu = true },
+                onLongClickLabel = "更多操作")
+        ) {
+            DeskRowContent(n, false, false)
+            // 长按菜单：收藏 / 删除
+            DropdownMenu(menu, { menu = false }, offset = androidx.compose.ui.unit.DpOffset(40.dp, 0.dp), shape = Sq.m) {
+                DropdownMenuItem(text = { Text(if (n.favorite) "取消收藏" else "收藏") },
+                    leadingIcon = { SvgIcon(Ic.heart, P3.accent, 16.dp, if (n.favorite) null else P3.accent) },
+                    onClick = { menu = false; onToggleFav() })
+                DropdownMenuItem(text = { Text("删除", color = P3.danger) }, leadingIcon = { SvgIcon(Ic.trash, P3.danger, 16.dp) },
+                    onClick = { menu = false; onTapDelete() })
             }
         }
     }
