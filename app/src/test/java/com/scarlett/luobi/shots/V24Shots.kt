@@ -15,14 +15,14 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** 2.4 技能包写作：5 个页面的截图 + 行为（两种输入顺序、续做横幅、确认页、管理页）。跑真实 App，不联网 */
+/** 2.4.1：创作页无灵感/导入；设定里技能包管理。截图 + 行为。跑真实 App，不联网 */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], application = TestApp::class, qualifiers = "w393dp-h852dp-xxhdpi")
 class V24Shots {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     private val ctx: Context get() = RuntimeEnvironment.getApplication()
-    private val dir = System.getProperty("user.dir") + "/../../screenshots/v2.4/"
+    private val dir = System.getProperty("user.dir") + "/../../screenshots/v2.4.1/"
     private val topic = "张雪峰：一个把高考焦虑做成产业的人"
     private fun idle(ms: Long = 400) { rule.mainClock.advanceTimeBy(ms); rule.waitForIdle() }
     private fun shot(n: String) { idle(); captureScreenRoboImage("$dir$n.png") }
@@ -39,7 +39,15 @@ class V24Shots {
         listOf("开篇：志愿填报直播间里的「救命感」", "成名：考研焦虑如何变成可售卖服务", "扩张：从课程到机构，生意边界在哪", "争议：毒舌、阶层叙事与被放大的焦虑", "落点：教育市场里，确定性为什么值钱", "参考资料与可核验事实清单"),
         "缺少机构财务数据", "约 4500 字", listOf("教育", "焦虑", "商业"), "社会观察")
 
-    @Test fun s01_createEmpty() { idle(1000); rule.onNodeWithTag("manageSkills").assertExists(); shot("01-create-empty") }
+    @Test fun s01_createEmpty() {
+        idle(1000)
+        rule.onNodeWithTag("createHeader").assertExists()
+        rule.onNodeWithText("灵感").assertDoesNotExist()
+        rule.onNodeWithTag("importRow").assertDoesNotExist()
+        rule.onNodeWithTag("manageSkills").assertDoesNotExist()
+        rule.onNodeWithText("先选一个技能包").assertExists()
+        shot("01-create-empty")
+    }
 
     @Test fun s02_createSelected_bothOrders() {
         idle(1000)
@@ -50,6 +58,7 @@ class V24Shots {
         rule.onAllNodesWithText("财经非虚构深度写作", substring = true).onFirst().performScrollTo().performClick()
         idle()
         rule.onNodeWithTag("start").assertIsEnabled()
+        rule.onNodeWithText("搜资料并写").assertExists()
         shot("02-create-selected")
         // 顺序 B：先选技能包（取消 + 重选），清空输入再输入
         rule.onAllNodesWithText("财经非虚构深度写作", substring = true).onFirst().performClick(); idle()
@@ -80,13 +89,17 @@ class V24Shots {
         shot("04-confirm-outline")
     }
 
-    @Test fun s05_skillsManage() {
-        idle(1000)
-        rule.onNodeWithTag("manageSkills").performClick(); idle(600)
+    @Test fun s05_skillsManageInSettings() {
+        idle(800)
+        rule.onNodeWithText("设定").performClick(); idle(600)
+        rule.onAllNodesWithText("技能包", substring = false).onFirst().performClick(); idle(800)
         rule.onNodeWithText("财经非虚构深度写作", substring = true).assertExists()
         rule.onNodeWithText("人物传记与时代特稿写作", substring = true).assertExists()
+        rule.onAllNodesWithText("内置", substring = false).assertCountEquals(3)  // 分区标题 + 两枚内置角标
+        rule.onAllNodesWithText("不可删除", substring = true).assertCountEquals(2)
         rule.onNodeWithTag("importRow").assertExists()
-        shot("05-skills-manage")
+        rule.onNodeWithText("每日选题提示词").assertDoesNotExist()
+        shot("05-settings-skills")
     }
 
     @Test fun staleBusySessionIsReported() {

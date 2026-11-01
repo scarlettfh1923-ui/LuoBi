@@ -40,7 +40,7 @@ import androidx.compose.ui.platform.testTag
 import org.json.JSONObject
 
 /**
- * 创作页状态（2.4）：一段想法 + 选中的技能包 + 写作模型。全部存进 SharedPreferences：切底栏、旋转、进程被杀都不丢。
+ * 创作页状态（2.4+）：一段想法 + 选中的技能包 + 写作模型。全部存进 SharedPreferences：切底栏、旋转、进程被杀都不丢。
  * 1.9–2.3 的意图卡字段（values / extractedFor / templateId …）保留为旧草稿的兼容读写，界面不再使用。
  */
 class WriteState(ctx: Context) {
@@ -74,19 +74,18 @@ class WriteState(ctx: Context) {
 }
 
 /** 按钮文案：没选包 / 没输入 / 可以开始（三种状态，和设计稿一致） */
-fun startLabel(hasSkill: Boolean, hasText: Boolean) = when { !hasSkill -> "先选一个技能包"; !hasText -> "先输入关键词"; else -> "开始搜资料" }
+fun startLabel(hasSkill: Boolean, hasText: Boolean) = when { !hasSkill -> "先选一个技能包"; !hasText -> "先输入关键词"; else -> "搜资料并写" }
 
 /**
- * 创作页（2.4）：页眉（创作 + 管理）→ 输入卡 → 技能包 → 灵感；开始按钮固定在底栏上方。
- * 两种顺序都行：先写再选，或先选再写；两者都齐了按钮才亮。
+ * 创作页（2.4.1）：页眉 → 输入卡 → 技能包列表；开始按钮固定在底栏上方。
+ * 灵感整块与导入入口已移除；导入改在设定 → 技能包。两种顺序都行：先写再选，或先选再写。
  */
 @Composable
 fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGenErr: () -> Unit, goModels: () -> Unit, genProg: GenProgress? = null, onCancelGen: () -> Unit = {}, onOpenNote: (Long) -> Unit = {},
-                session: SkillSession? = null, onManage: () -> Unit = {}, onResume: () -> Unit = {}, onStart: (String, SkillPack, String) -> Unit = { _, _, _ -> }) {
+                session: SkillSession? = null, onResume: () -> Unit = {}, onStart: (String, SkillPack, String) -> Unit = { _, _, _ -> }) {
     val ctx = LocalContext.current; val scope = rememberCoroutineScope()
     var packs by remember { mutableStateOf(Skills.builtIns(ctx)) }
     LaunchedEffect(Unit) { packs = withContext(Dispatchers.IO) { Skills.list(ctx) } }
-    val importer = rememberSkillImporter { p, _ -> scope.launch { packs = withContext(Dispatchers.IO) { Skills.list(ctx) }; ws.skillId = p.id; ws.saveSkill() } }
     val sel = packs.firstOrNull { it.id == ws.skillId }
     var startErr by remember { mutableStateOf<Friendly?>(null) }
 
@@ -103,153 +102,55 @@ fun WriteScreen(db: AppDb, ws: WriteState, bottom: Dp, genErr: GenErr?, clearGen
         onStart(text, pack, model)
     }
 
-    // 2.2 灵感：打开先显示缓存（x 分钟前更新），旧了就后台刷新；刷新只抓原始热榜（不调 AI），哪个来源先到先显示；
-    // 点一条再用 AI 现场展开成角度 / 观点 / 疑惑并填进输入框
-    var insp by remember { mutableStateOf(Inspire.cached(ctx)) }
-    var inspBusy by remember { mutableStateOf(false) }
-    var picking by remember { mutableStateOf(false) }
-    var inspErr by remember { mutableStateOf<Friendly?>(null) }
-    var expanding by remember { mutableStateOf<String?>(null) }
-    fun loadInspire() {
-        if (inspBusy) return
-        inspBusy = true; inspErr = null
-        val hadCache = insp != null
-        scope.launch {
-            var first = true
-            try { insp = Inspire.refresh(ctx) { part -> if (!hadCache || !first || part.topics.size >= 10) { insp = part; first = false } } }
-            catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: Throwable) { if (insp == null) inspErr = Errors.explain(e) else snack("热榜刷新失败，先显示上次的结果", false) }
-            finally { inspBusy = false }
-        }
-    }
-    fun aiPick() {
-        if (picking) return
-        picking = true
-        scope.launch {
-            try { insp = Inspire.aiPick(ctx); snack("AI 挑好了 ${insp?.topics?.size ?: 0} 个选题") }
-            catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: CleanParse.BadFormat) { inspErr = Friendly("选题结果格式不对", "模型返回的不是约定的 JSON。可以再试一次，或在「设定 → 每日选题提示词」恢复默认。", e.raw) }
-            catch (e: Throwable) { inspErr = Errors.explain(e) }
-            finally { picking = false }
-        }
-    }
-    fun pickTopic(t: Topic) {
-        if (t.angle.isNotBlank() || t.view.isNotBlank()) { ws.raw = Inspire.fillText(t); ws.saveRaw(); snack("已填入选题，可以修改后再选技能包"); return }
-        if (expanding != null) return
-        if (Inspire.expandHook == null && Inspire.target(ctx) == null) { ws.raw = Inspire.fillText(t); ws.saveRaw(); snack("已填入热点。填写 DeepSeek Key 后，点热点会自动生成角度和观点", false); return }
-        expanding = t.title
-        scope.launch {
-            try { val r = Inspire.expand(ctx, t); insp = insp?.let { c -> c.copy(topics = c.topics.map { if (it.title == t.title && it.source == t.source) r else it }) }
-                ws.raw = Inspire.fillText(r); ws.saveRaw(); snack("已填入选题，可以修改后再选技能包") }
-            catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: Throwable) { ws.raw = Inspire.fillText(t); ws.saveRaw(); snackErr(e, "角度没生成出来，先填入了热点标题：") }
-            finally { expanding = null }
-        }
-    }
-    LaunchedEffect(Unit) { val c = insp; if (c == null || System.currentTimeMillis() - c.updatedAt > Inspire.STALE_MS) loadInspire() }
-
     val imeOn = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
     val hasText = ws.raw.isNotBlank()
     Column(Modifier.fillMaxSize().imePadding()) {
-        CreateHeader(onManage)
-        @OptIn(ExperimentalMaterial3Api::class)
-        androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing = false, onRefresh = { loadInspire() }, modifier = Modifier.weight(1f).fillMaxWidth()) {
-            androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-                item(key = "input") {
-                    var focused by remember { mutableStateOf(false) }
-                    val minH by androidx.compose.animation.core.animateDpAsState(if (focused || ws.raw.length > 60) 150.dp else 96.dp, Motion.springDp(), label = "expand")
-                    var modelMenu by remember { mutableStateOf(false) }
-                    val models = remember(modelMenu) { Settings(ctx).configured() }
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().testTag("inputCard")
-                        .softShadow(Sq.card26, 6.dp).clip(Sq.card26).background(P3.surface)
-                        .hairline(Sq.card26, if (focused) P3.accent.copy(alpha = .45f) else P3.border).padding(horizontal = 18.dp, vertical = 14.dp)) {
-                        Box(Modifier.fillMaxWidth().heightIn(min = minH)) {
-                            if (ws.raw.isEmpty()) Text("写几个关键词，或一两句话…", fontSize = 17.sp, lineHeight = 27.sp, color = P3.text3)
-                            BasicTextField(ws.raw, { ws.raw = it; ws.saveRaw() }, Modifier.fillMaxWidth().testTag("input").onFocusChanged { focused = it.isFocused },
-                                textStyle = TextStyle(fontSize = 17.sp, lineHeight = 27.sp, color = P3.text), cursorBrush = SolidColor(P3.accent))
-                        }
-                        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f)) {
-                                val label = models.firstOrNull { it.ref == ws.model }?.label ?: models.firstOrNull { it.ref == Settings(ctx).defaultModel }?.label ?: models.firstOrNull()?.label
-                                Text(if (label == null) "未配置模型" else "写作模型 · $label  ▾", Modifier.clip(Sq.s).clickable { if (models.isEmpty()) goModels() else modelMenu = true }.padding(vertical = 6.dp, horizontal = 2.dp),
-                                    fontSize = 12.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                DropdownMenu(modelMenu, { modelMenu = false }, shape = Sq.m) {
-                                    models.forEach { m -> DropdownMenuItem(text = { Text(m.label, color = if (m.ref == ws.model) P3.accent else P3.text) }, onClick = { ws.model = m.ref; ws.save(); modelMenu = false }) }
-                                }
-                            }
-                            if (hasText) { Text("${ws.raw.length} 字", fontSize = 12.sp, color = P3.text3, fontFamily = Mono); Text(" · ", color = P3.text3, fontSize = 12.sp); TextAction("清空") { ws.raw = ""; ws.saveRaw() } }
-                            else TextAction("粘贴") {
-                                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val t = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
-                                if (t.isBlank()) snack("剪贴板是空的", false) else { ws.raw = t; ws.saveRaw() }
+        CreateHeader()
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(bottom = 20.dp)) {
+            item(key = "input") {
+                var focused by remember { mutableStateOf(false) }
+                val minH by androidx.compose.animation.core.animateDpAsState(if (focused || ws.raw.length > 60) 150.dp else 110.dp, Motion.springDp(), label = "expand")
+                var modelMenu by remember { mutableStateOf(false) }
+                val models = remember(modelMenu) { Settings(ctx).configured() }
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().testTag("inputCard")
+                    .softShadow(Sq.card26, 3.dp).clip(Sq.card26).background(P3.surface)
+                    .hairline(Sq.card26, if (focused) P3.accent.copy(alpha = .45f) else P3.border).padding(horizontal = 18.dp, vertical = 16.dp)) {
+                    Box(Modifier.fillMaxWidth().heightIn(min = minH)) {
+                        if (ws.raw.isEmpty()) Text("写几个关键词，或一两句话…", fontSize = 17.sp, lineHeight = 27.sp, color = P3.text3)
+                        BasicTextField(ws.raw, { ws.raw = it; ws.saveRaw() }, Modifier.fillMaxWidth().testTag("input").onFocusChanged { focused = it.isFocused },
+                            textStyle = TextStyle(fontSize = 17.sp, lineHeight = 27.sp, color = P3.text), cursorBrush = SolidColor(P3.accent))
+                    }
+                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) {
+                            val label = models.firstOrNull { it.ref == ws.model }?.label ?: models.firstOrNull { it.ref == Settings(ctx).defaultModel }?.label ?: models.firstOrNull()?.label
+                            Text(if (label == null) "未配置模型" else "写作模型 · $label  ▾", Modifier.clip(Sq.s).clickable { if (models.isEmpty()) goModels() else modelMenu = true }.padding(vertical = 6.dp, horizontal = 2.dp),
+                                fontSize = 12.sp, color = P3.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            DropdownMenu(modelMenu, { modelMenu = false }, shape = Sq.m) {
+                                models.forEach { m -> DropdownMenuItem(text = { Text(m.label, color = if (m.ref == ws.model) P3.accent else P3.text) }, onClick = { ws.model = m.ref; ws.save(); modelMenu = false }) }
                             }
                         }
-                    }
-                }
-                item(key = "skillHead") {
-                    Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.Bottom) {
-                        Text("技能包", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = P3.text)
-                        Text(if (hasText || sel != null) "用哪个技能包？" else "也可先点某个包再写", Modifier.weight(1f).padding(start = 10.dp, bottom = 1.dp), fontSize = 12.sp, color = P3.text3, maxLines = 1)
-                    }
-                }
-                items(packs, key = { it.id }, contentType = { "skill" }) { p -> SkillPickCard(p, p.id == sel?.id) { ws.skillId = if (ws.skillId == p.id) "" else p.id; ws.saveSkill() } }
-                item(key = "import") { ImportRow(importer.busy, importer.launch) }
-                startErr?.let { e -> item(key = "startErr") { Box(Modifier.animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade()).padding(vertical = 2.dp)) { ErrorCard(e, null, if (e.settings) goModels else null) { startErr = null } } } }
-                if (session != null && session.phase != "write" && session.phase != "done") item(key = "resume") { SkillResumeBanner(session, onResume) }
-                if (genErr != null) item(key = "genErr") { Box(Modifier.animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade()).padding(vertical = 2.dp)) { ErrorCard(genErr.f, { clearGenErr(); genErr.retry() }, if (genErr.f.settings) goModels else null) { clearGenErr() } } }
-                // 1.18：后台生成卡（方案 C），收起时整项高度动画，灵感平滑上移
-                item(key = "genCard") { GenCardSlot(genProg, onCancelGen, onOpenNote) }
-                // ---- 灵感 ----
-                item(key = "inspHead") {
-                    Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("灵感", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = P3.text)
-                        val sub = remember(insp, inspBusy) { when { inspBusy && insp == null -> "正在抓热榜…"; inspBusy -> "正在刷新…"; else -> insp?.let { Inspire.ago(it.updatedAt) } ?: "" } }
-                        Text(sub, Modifier.weight(1f).padding(start = 10.dp, top = 2.dp), fontSize = 12.sp, color = P3.text3, maxLines = 1)
-                        TextAction(if (picking) "AI 挑选中…" else "AI 帮我挑", enabled = !picking && insp != null) { aiPick() }
-                        TextAction(if (inspBusy) "刷新中…" else "刷新", enabled = !inspBusy) { loadInspire() }
-                    }
-                }
-                inspErr?.let { e -> item(key = "inspErr") { Box(Modifier.animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade())) { ErrorCard(e, { loadInspire() }, if (e.settings) goModels else null) { inspErr = null } } } }
-                val r = insp
-                if (r == null && inspBusy) item(key = "inspLoading") {
-                    Card(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade())) {
-                        repeat(5) { i -> if (i > 0) Spacer(Modifier.height(16.dp)); Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.width(16.dp).height(12.dp).clip(Sq.full).background(P3.surface2)); Spacer(Modifier.width(12.dp))
-                            Box(Modifier.fillMaxWidth(if (i % 2 == 0) .8f else .55f).height(14.dp).clip(Sq.full).background(P3.surface2)) } }
-                    }
-                }
-                if (r != null) {
-                    val note = listOf(r.note, if (r.failed.isNotEmpty()) "${r.failed.joinToString("、")} 暂时没抓到，已跳过" else "", if (!r.ai && r.topics.isNotEmpty()) "点一条，AI 帮你想角度和观点" else "").filter { it.isNotBlank() }.joinToString("；")
-                    if (note.isNotBlank()) item(key = "inspNote") { Text(note, Modifier.padding(horizontal = 24.dp, vertical = 2.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp) }
-                    item(key = "inspList") {
-                        Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade()).animateContentSize(), pad = 0.dp) {
-                            r.topics.forEachIndexed { i, t ->
-                                if (i > 0) HorizontalDivider(Modifier.padding(start = 48.dp), thickness = Dp.Hairline, color = P3.border)
-                                val busy = expanding == t.title
-                                Row(Modifier.fillMaxWidth().clickable(enabled = expanding == null) { pickTopic(t) }.padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {
-                                    Text("${i + 1}", Modifier.width(24.dp), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (i < 3) P3.accent else P3.text3, fontFamily = Mono)
-                                    Column(Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.Top) {
-                                            Text(t.title, Modifier.weight(1f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P3.text, lineHeight = 21.sp)
-                                            if (t.source.isNotBlank()) Text(t.source, Modifier.padding(start = 8.dp, top = 1.dp).clip(Sq.full).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = P3.onAccentSoft, fontWeight = FontWeight.SemiBold)
-                                        }
-                                        if (t.heat.isNotBlank()) Text("热度 " + t.heat, Modifier.padding(top = 3.dp), fontSize = 12.sp, color = P3.text3, fontFamily = Mono)
-                                        if (busy) Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            androidx.compose.material3.CircularProgressIndicator(Modifier.size(12.dp), color = P3.accent, strokeWidth = 1.5.dp)
-                                            Text("AI 正在想角度…", Modifier.padding(start = 8.dp), fontSize = 13.sp, color = P3.accent)
-                                        }
-                                        if (t.angle.isNotBlank()) Text("可以写：" + t.angle, Modifier.padding(top = 4.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp)
-                                        if (t.view.isNotBlank()) Text("观点：" + t.view, Modifier.padding(top = 2.dp), fontSize = 13.sp, color = P3.text3, lineHeight = 19.sp)
-                                    }
-                                }
-                            }
+                        if (hasText) { Text("${ws.raw.length} 字", fontSize = 12.sp, color = P3.text3, fontFamily = Mono); Text(" · ", color = P3.text3, fontSize = 12.sp); TextAction("清空") { ws.raw = ""; ws.saveRaw() } }
+                        else TextAction("粘贴") {
+                            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val t = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
+                            if (t.isBlank()) snack("剪贴板是空的", false) else { ws.raw = t; ws.saveRaw() }
                         }
                     }
                 }
             }
+            item(key = "skillHead") {
+                Row(Modifier.padding(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom) {
+                    Text("技能包", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = P3.text)
+                    Text(if (hasText || sel != null) "用哪个技能包？" else "也可先点某个包再写", Modifier.weight(1f).padding(start = 10.dp, bottom = 1.dp), fontSize = 12.sp, color = P3.text3, maxLines = 1)
+                }
+            }
+            items(packs, key = { it.id }, contentType = { "skill" }) { p -> SkillPickCard(p, p.id == sel?.id) { ws.skillId = if (ws.skillId == p.id) "" else p.id; ws.saveSkill() } }
+            startErr?.let { e -> item(key = "startErr") { Box(Modifier.animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade()).padding(vertical = 2.dp)) { ErrorCard(e, null, if (e.settings) goModels else null) { startErr = null } } } }
+            if (session != null && session.phase != "write" && session.phase != "done") item(key = "resume") { SkillResumeBanner(session, onResume) }
+            if (genErr != null) item(key = "genErr") { Box(Modifier.animateItem(Motion.itemFade(), Motion.itemPlace(), Motion.itemFade()).padding(vertical = 2.dp)) { ErrorCard(genErr.f, { clearGenErr(); genErr.retry() }, if (genErr.f.settings) goModels else null) { clearGenErr() } } }
+            item(key = "genCard") { GenCardSlot(genProg, onCancelGen, onOpenNote) }
         }
-        // 固定在底栏上方的主按钮：按钮文案随「有没有选包 / 有没有输入」变化
-        PrimaryButton(startLabel(sel != null, hasText), Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = if (imeOn) 10.dp else bottom + 6.dp).testTag("start"), enabled = sel != null && hasText) { begin() }
+        PrimaryButton(startLabel(sel != null, hasText), Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = if (imeOn) 12.dp else bottom + 8.dp).testTag("start"), enabled = sel != null && hasText) { begin() }
     }
 }
 

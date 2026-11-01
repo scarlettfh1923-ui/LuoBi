@@ -83,7 +83,7 @@ fun App() {
     var navDir by remember { mutableIntStateOf(0) }
     fun go(r: Route) { navDir = 1; stack.add(route); route = r }
     fun back() { navDir = -1; route = stack.removeLastOrNull() ?: Route.Tab(0) }
-    // 2.4 技能包页面都在「创作」这个 tab 里：skillView = "" 创作首页 / "run" 搜资料·确认·写作流程 / "skills" 管理；底栏始终可点
+    // 2.4.1：skillView = "" 创作首页 / "run" 搜资料·确认·写作流程；技能包管理改去设定
     var skillView by remember { mutableStateOf("") }
     var planEditing by remember { mutableStateOf(false) }
     fun tab(i: Int) { navDir = if (route is Route.Tab) 0 else -1; stack.clear(); skillView = ""; planEditing = false; route = Route.Tab(i) }
@@ -236,16 +236,15 @@ fun App() {
                         val bottom = pad.calculateBottomPadding()
                         when (r.i) {
                             0 -> {
-                                val view = if (skillView == "run" && session != null) "run" else if (skillView == "skills") "skills" else ""
+                                val view = if (skillView == "run" && session != null) "run" else ""
                                 androidx.compose.animation.Crossfade(view, animationSpec = androidx.compose.animation.core.tween(180), label = "skill") { v ->
                                     when (v) {
-                                        "skills" -> SkillManagePage(bottom, { skillView = "" }, statusPad = false)
                                         "run" -> session?.let { sx ->
                                             SkillFlowScreen(sx, stale, bottom, planEditing, { planEditing = it }, { if (planEditing) planEditing = false else skillView = "" }, ::cancelSkill, ::confirmWrite,
                                                 { confirmAsk = "重新搜一遍会丢掉现在的角度和提纲（包括你改过的），要继续吗？" to { restartPlan() } }, ::retrySkill, ::closeSkill, { go(Route.Sub("models")) })
                                         }
                                         else -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) }, genProg, { CopyWorker.cancel(ctx) }, { go(Route.Read(it)) },
-                                            session, { skillView = "skills" }, { skillView = "run"; planEditing = false }, ::startSkill)
+                                            session, { skillView = "run"; planEditing = false }, ::startSkill)
                                     }
                                 }
                             }

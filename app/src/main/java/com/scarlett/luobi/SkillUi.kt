@@ -6,8 +6,10 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,12 +20,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -67,14 +66,14 @@ fun VersionChip(v: String, builtIn: Boolean? = null) {
     Text(t, Modifier.clip(Sq.full).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), color = P3.onAccentSoft, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
 }
 
-/** 创作页的技能包卡：选中 = 黛青浅底 + 1px 黛青线 + 右上勾 */
+/** 创作页的技能包卡：选中 = 黛青浅底 + 1px 黛青线 + 右侧圆点 */
 @Composable
 fun SkillPickCard(p: SkillPack, selected: Boolean, onClick: () -> Unit) {
     val shape = Sq.xl
-    Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().softShadow(Sq.xl, 4.dp)
+    Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().softShadow(Sq.xl, 2.dp)
         .surface(shape, if (selected) P3.accentSoft else P3.surface, outline = if (selected) P3.accent else P3.border)
         .clickable(role = Role.RadioButton, onClick = onClick).semantics { contentDescription = "技能包 ${p.displayName}" + if (selected) "，已选" else "" }
-        .padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        .padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
         SkillBadge(p.kind, 42.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -91,36 +90,29 @@ fun SkillPickCard(p: SkillPack, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** 「导入技能包文件」行：细虚线 + 黛青字 */
+/** 「导入技能包」行：白底浅影 + 加号（设定 · 技能包管理） */
 @Composable
 fun ImportRow(busy: Boolean, onClick: () -> Unit, sub: String = "支持 .zip（含 SKILL.md）或 .md 文件") {
-    val line = P3.accent.copy(alpha = .5f)
-    Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().testTag("importRow")
-        .drawBehind { drawRoundRect(line, cornerRadius = CornerRadius(DS.R.xl.toPx()), style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))) }
+    Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().testTag("importRow")
+        .softShadow(Sq.xl, 2.dp).surface(Sq.xl, P3.surface, outline = P3.border)
         .clip(Sq.xl).clickable(enabled = !busy, role = Role.Button, onClick = onClick).padding(horizontal = 14.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(36.dp).clip(Sq.full).hairline(Sq.full, P3.accent.copy(alpha = .6f)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(36.dp).clip(Sq.full).background(P3.accentSoft), contentAlignment = Alignment.Center) {
             if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = P3.accent) else SvgIcon(Ic.plus, P3.accent, 18.dp)
         }
         Spacer(Modifier.width(12.dp))
         Column {
-            Text(if (busy) "正在导入…" else "导入技能包文件", color = P3.accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(if (busy) "正在导入…" else "导入技能包", color = P3.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             Text(sub, Modifier.padding(top = 1.dp), color = P3.text3, fontSize = 12.sp)
         }
     }
 }
 
-/** 创作页页眉：大标题 + 右上「管理」+ 一行说明 */
+/** 创作页页眉：大标题 + 一行说明（2.4.1：管理 / 导入改去设定） */
 @Composable
-fun CreateHeader(onManage: () -> Unit, subtitle: String = "输入想法，再选技能包写成文章") {
-    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("创作", Modifier.weight(1f), fontSize = 32.sp, fontWeight = FontWeight.Bold, color = P3.text)
-            Row(Modifier.clip(Sq.full).clickable(role = Role.Button, onClick = onManage).padding(horizontal = 10.dp, vertical = 8.dp).testTag("manageSkills"), verticalAlignment = Alignment.CenterVertically) {
-                SvgIcon(Ic.navGear, P3.accent, 18.dp); Spacer(Modifier.width(4.dp))
-                Text("管理", color = P3.accent, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            }
-        }
-        Text(subtitle, Modifier.padding(top = 2.dp, bottom = 10.dp), fontSize = 14.sp, color = P3.text2)
+fun CreateHeader(subtitle: String = "写下想法，选技能包成文") {
+    Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 4.dp).testTag("createHeader")) {
+        Text("创作", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = P3.text)
+        Text(subtitle, Modifier.padding(top = 4.dp, bottom = 8.dp), fontSize = 14.sp, color = P3.text2)
     }
 }
 
@@ -165,50 +157,99 @@ fun rememberSkillImporter(onImported: (SkillPack, Boolean) -> Unit): SkillImport
     return remember(busy) { SkillImporter(busy) { if (!busy) picker.launch(arrayOf("application/zip", "application/x-zip-compressed", "text/markdown", "text/x-markdown", "text/plain", "application/octet-stream")) } }
 }
 
-/* ------------------------------ 技能包管理页 ------------------------------ */
+/* ------------------------------ 技能包管理页（设定子页，2.4.1） ------------------------------ */
 
 @Composable
-fun SkillManageCard(p: SkillPack, expanded: Boolean, onToggle: () -> Unit, onDelete: (() -> Unit)?) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().softShadow(Sq.xl, 4.dp).surface(Sq.xl, P3.surface, outline = P3.border).animateContentSize().padding(14.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SkillBadge(p.kind, 42.dp)
+private fun BuiltinSkillRow(p: SkillPack) {
+    Row(Modifier.padding(horizontal = 20.dp, vertical = 5.dp).fillMaxWidth().softShadow(Sq.xl, 2.dp)
+        .surface(Sq.xl, P3.surface, outline = P3.border).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        SkillBadge(p.kind, 40.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(p.displayName, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("${p.versionChip} · 不可删除", Modifier.padding(top = 3.dp), fontSize = 12.sp, color = P3.text3)
+        }
+        Text("内置", Modifier.clip(Sq.full).background(P3.accentSoft).padding(horizontal = 8.dp, vertical = 3.dp), color = P3.onAccentSoft, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun ImportedSkillSwipe(p: SkillPack, revealed: Boolean, onReveal: (Boolean) -> Unit, onDelete: () -> Unit) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val actionPx = with(density) { 88.dp.toPx() }
+    val scope = rememberCoroutineScope()
+    val offset = remember(p.id) { Animatable(0f) }
+    LaunchedEffect(revealed) { offset.animateTo(if (revealed) -actionPx else 0f, Motion.dragSpring) }
+    Box(Modifier.padding(horizontal = 20.dp, vertical = 5.dp).fillMaxWidth()) {
+        Box(Modifier.matchParentSize().clip(Sq.xl).background(if (offset.value != 0f) P3.danger else Color.Transparent), contentAlignment = Alignment.CenterEnd) {
+            if (offset.value != 0f) Row(Modifier.width(88.dp).fillMaxHeight().clickable(onClick = onDelete), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Text("删除", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Row(Modifier.offset { androidx.compose.ui.unit.IntOffset(offset.value.toInt(), 0) }
+            .fillMaxWidth().softShadow(Sq.xl, 2.dp).surface(Sq.xl, P3.surface, outline = P3.border)
+            .pointerInput(p.id) {
+                detectHorizontalDragGestures(
+                    onDragEnd = { scope.launch { val open = offset.value < -actionPx * 0.4f; offset.animateTo(if (open) -actionPx else 0f, Motion.dragSpring); onReveal(open) } },
+                    onHorizontalDrag = { _, dx -> scope.launch { offset.snapTo((offset.value + dx).coerceIn(-actionPx, 0f)) } })
+            }
+            .clickable {
+                if (offset.value < -actionPx * 0.3f) scope.launch { offset.animateTo(0f, Motion.dragSpring); onReveal(false) }
+            }
+            .padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            SkillBadge(p.kind, 40.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(p.displayName, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = P3.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) { VersionChip(p.versionChip, p.builtIn) }
+                Text("自文件导入 · ${p.versionChip.ifBlank { "—" }}", Modifier.padding(top = 3.dp), fontSize = 12.sp, color = P3.text3)
             }
-            TextAction(if (expanded) "收起" else "详情", onClick = onToggle)
-            if (onDelete != null) TextAction("删除", color = P3.danger, onClick = onDelete)
-        }
-        if (expanded) {
-            Text(p.description.ifBlank { p.tagline }, Modifier.padding(top = 10.dp), fontSize = 13.sp, lineHeight = 20.sp, color = P3.text2, maxLines = 8, overflow = TextOverflow.Ellipsis)
-            Text(if (p.builtIn) "内置技能包，不能删除。" else "导入的技能包，可以随时删除；同名再次导入会覆盖它。", Modifier.padding(top = 8.dp), fontSize = 12.sp, color = P3.text3)
         }
     }
 }
 
-/** 技能包管理（创作页右上「管理」和设定里「技能包」共用）。packs 由外部持有，导入 / 删除后调用 reload */
+/** 技能包管理（仅设定入口）。内置不可删；已导入左滑删除；底部导入 .zip / .md */
 @Composable
 fun SkillManageContent(packs: List<SkillPack>, importer: SkillImporter, onDelete: (SkillPack) -> Unit, bottom: Dp, header: @Composable () -> Unit) {
-    var open by remember { mutableStateOf<String?>(null) }
+    var openSwipe by remember { mutableStateOf<String?>(null) }
     var del by remember { mutableStateOf<SkillPack?>(null) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottom + 24.dp)) {
+    val built = packs.filter { it.builtIn }
+    val imported = packs.filter { !it.builtIn }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottom + 28.dp)) {
         item { header() }
-        item { SectionLabel("已安装 ${packs.size}", Modifier.padding(start = 20.dp)) }
-        items(packs, key = { it.id }, contentType = { "skill" }) { p -> SkillManageCard(p, open == p.id, { open = if (open == p.id) null else p.id }, if (p.builtIn) null else ({ del = p })) }
-        item { SectionLabel("添加", Modifier.padding(start = 20.dp)) }
-        item { ImportRow(importer.busy, importer.launch) }
         item {
-            Text("技能包是一份 SKILL.md：写明这类文章怎么检索、怎么立角度、怎么落笔。导入后，回到创作页就能选用；删除只影响技能包本身，不会动已写好的文章。",
+            Row(Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.Bottom) {
+                Text("内置", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = P3.text2)
+                Text(" · ${built.size}", fontSize = 13.sp, color = P3.text3)
+            }
+        }
+        items(built, key = { it.id }) { BuiltinSkillRow(it) }
+        item {
+            Row(Modifier.padding(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 4.dp), verticalAlignment = Alignment.Bottom) {
+                Text("已导入", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = P3.text2)
+                Text(" · ${imported.size}", Modifier.weight(1f), fontSize = 13.sp, color = P3.text3)
+                if (imported.isNotEmpty()) Text("左滑可删除", fontSize = 12.sp, color = P3.text3)
+            }
+        }
+        if (imported.isEmpty()) item {
+            Text("还没有导入的技能包。", Modifier.padding(horizontal = 24.dp, vertical = 6.dp), fontSize = 13.sp, color = P3.text3)
+        }
+        items(imported, key = { it.id }) { p ->
+            ImportedSkillSwipe(p, openSwipe == p.id, { open -> openSwipe = if (open) p.id else null }, { del = p })
+        }
+        item {
+            ImportRow(importer.busy, importer.launch, sub = "支持 .zip（含 SKILL.md）或 .md 文件")
+        }
+        item {
+            Text("导入后会出现在创作页列表。检索优先元宝，DeepSeek 搜索作补充。",
                 Modifier.padding(horizontal = 24.dp, vertical = 14.dp), fontSize = 12.sp, lineHeight = 18.sp, color = P3.text3)
         }
     }
-    del?.let { p -> ConfirmDialog("删除技能包？", "「${p.displayName}」会从这台手机上移除，已写好的文章不受影响。", "删除", danger = true, onOk = { onDelete(p); del = null; if (open == p.id) open = null }, onDismiss = { del = null }) }
+    del?.let { p -> ConfirmDialog("删除技能包？", "「${p.displayName}」会从这台手机上移除，已写好的文章不受影响。", "删除", danger = true, onOk = { onDelete(p); del = null; if (openSwipe == p.id) openSwipe = null }, onDismiss = { del = null }) }
 }
 
-/** 带数据加载的管理页：tab 内嵌（statusPad=false）或设定子页（true） */
+/** 设定子页：大标题 + 副文案；statusPad 兼容旧调用 */
 @Composable
-fun SkillManagePage(bottom: Dp, onBack: () -> Unit, statusPad: Boolean, onChanged: () -> Unit = {}) {
+fun SkillManagePage(bottom: Dp, onBack: () -> Unit, statusPad: Boolean = true, onChanged: () -> Unit = {}) {
     val ctx = LocalContext.current.applicationContext
     var packs by remember { mutableStateOf(Skills.builtIns(ctx)) }
     LaunchedEffect(Unit) { packs = withContext(Dispatchers.IO) { Skills.list(ctx) } }
@@ -220,7 +261,15 @@ fun SkillManagePage(bottom: Dp, onBack: () -> Unit, statusPad: Boolean, onChange
             packs = withContext(Dispatchers.IO) { Skills.list(ctx) }; onChanged()
             snack(if (ok) "已删除「${p.displayName}」" else "没能删除这个技能包", ok)
         }
-    }, bottom) { SkillBar("技能包管理", onBack, statusPad) }
+    }, bottom) {
+        Column(Modifier.fillMaxWidth().let { if (statusPad) it.statusBarsPadding() else it }.padding(start = 8.dp, end = 20.dp, top = 4.dp, bottom = 8.dp)) {
+            Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconTap(onClick = onBack) { SvgIcon(Ic.back, P3.text, desc = "返回") }
+            }
+            Text("技能包", Modifier.padding(start = 12.dp), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = P3.text)
+            Text("在创作页选用这些包写成文章", Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp), fontSize = 14.sp, color = P3.text2)
+        }
+    }
 }
 
 /* ------------------------------ 流程页 ------------------------------ */

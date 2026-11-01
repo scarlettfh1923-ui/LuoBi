@@ -39,7 +39,7 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
         item { BigTitle("设定") }
         item { RowGroup("创作", listOf(
             { SettingRow(Ic.key, "模型与密钥", "${s.configured().size} 个") { go("models") } },
-            { SettingRow(Ic.skillDoc, "技能包", "${Skills.builtIns(ctx).size} 个内置 · 管理与导入") { go("skills") } },
+            { SettingRow(Ic.skillDoc, "技能包", "${Skills.builtIns(ctx).size} 个内置 · 可导入") { go("skills") } },
             { SettingRow(Ic.tpl, "模板管理", "已由技能包取代 · 仅留存 ${templates.size} 个") { go("templates") } },
             { SettingRow(Ic.search, "事实校对", run {
                 val ss = Settings(LocalContext.current)
@@ -47,7 +47,6 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
                 val check = ss.factModel.takeIf { it.isNotBlank() }?.let { ref -> ss.configured().firstOrNull { it.ref == ref } }?.let { "${it.label}校对" } ?: "校对与写作相同"
                 "${search}检索 · $check"
             }) { go("factcheck") } },
-            { SettingRow(Ic.wand, "每日选题提示词", if (Settings(LocalContext.current).inspirePrompt.trim() == Inspire.DEFAULT_PROMPT.trim()) "默认" else "已修改") { go("inspire") } },
             { SettingRow(Ic.ruler, "篇幅", Lengths.NAMES[s.length.coerceIn(0, 2)] + " · " + s.lengthRange().let { "${it.first}–${it.second}" }) { go("length") } })) }
         item { RowGroup("分享与图片", listOf(
             { SettingRow(Ic.share, "分享栏", "${s.shareBar.size} 项") { go("sharebar") } },
@@ -74,7 +73,6 @@ fun SubPage(db: AppDb, r: Route.Sub, back: () -> Unit, go: (Route) -> Unit) {
                 "templates" -> TemplatesPage(db, back, sub)
                 "template" -> TemplateEdit(db, arg, back)
                 "cleans" -> CleansPage(db, back)
-                "inspire" -> InspirePage(back)
                 "factcheck" -> FactCheckPage(back)
                 "models" -> ModelsPage(back)
                 "channels" -> ChannelsPage(db, back, sub)
@@ -391,43 +389,6 @@ fun FactCheckPage(back: () -> Unit) {
                 Spacer(Modifier.weight(1f))
                 PrimaryButton("保存", Modifier.width(140.dp), enabled = prompt.text != saved) { s.factPrompt = prompt.text; saved = prompt.text; snack("已保存") }
             }
-        }
-    }
-}
-
-// ---------------- 每日选题提示词（1.10 灵感） ----------------
-@Composable
-fun InspirePage(back: () -> Unit) {
-    val ctx = LocalContext.current; val s = remember { Settings(ctx) }
-    var prompt by remember { mutableStateOf(TextFieldValue(s.inspirePrompt)) }
-    var saved by remember { mutableStateOf(s.inspirePrompt) }
-    var srcs by remember { mutableStateOf(s.inspireSources) }
-    Page("每日选题提示词", back) {
-        item { Text("每天第一次打开「创作」时，抓取下面这些热榜，用 DeepSeek 按你的文章和模板挑出 10 个选题。{热榜}{我的文章}{我的模板} 由程序自动填入。", Modifier.padding(bottom = 12.dp), fontSize = 13.sp, color = P3.text2, lineHeight = 19.sp) }
-        item {
-            Card {
-                BasicTextField(prompt, { prompt = it }, Modifier.fillMaxWidth().heightIn(min = 240.dp), textStyle = TextStyle(fontSize = 14.sp, lineHeight = 23.sp, color = P3.text),
-                    cursorBrush = SolidColor(P3.accent), visualTransformation = VarHighlight(setOf("热榜", "我的文章", "我的模板")))
-            }
-            if (!prompt.text.contains("{热榜}")) WarnBox("提示词里没有 {热榜}，模型将看不到今天的热榜。", Modifier.padding(top = 8.dp))
-            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("恢复默认", P3.text2) { s.inspirePrompt = Inspire.DEFAULT_PROMPT; prompt = TextFieldValue(Inspire.DEFAULT_PROMPT); saved = Inspire.DEFAULT_PROMPT; snack("已恢复默认") }
-                Spacer(Modifier.weight(1f))
-                PrimaryButton("保存", Modifier.width(140.dp), enabled = prompt.text != saved) { s.inspirePrompt = prompt.text; saved = prompt.text; snack("已保存，下拉「灵感」即可按新提示词刷新") }
-            }
-        }
-        item { GroupLabel("热榜来源") }
-        item {
-            Card(pad = 0.dp) {
-                HotSources.all.forEachIndexed { i, src ->
-                    if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = Dp.Hairline, color = P3.border)
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(src.name, Modifier.weight(1f), fontSize = 15.sp, color = P3.text)
-                        Switch(src.id in srcs, { on -> srcs = if (on) srcs + src.id else srcs - src.id; s.inspireSources = srcs }, colors = SwitchDefaults.colors(checkedTrackColor = P3.accent))
-                    }
-                }
-            }
-            Text("小红书没有可以免登录访问的公开热榜，暂不支持。某个来源抓取失败时会自动跳过。", Modifier.padding(top = 8.dp, start = 4.dp), fontSize = 12.sp, color = P3.text3, lineHeight = 18.sp)
         }
     }
 }

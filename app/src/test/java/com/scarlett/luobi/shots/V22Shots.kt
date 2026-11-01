@@ -11,6 +11,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Rule
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RuntimeEnvironment
@@ -34,12 +35,12 @@ class V22Shots {
     private fun toInspire() { rule.onAllNodes(hasScrollAction()).onFirst().performTouchInput { swipeUp(startY = bottom * 0.85f, endY = bottom * 0.25f, durationMillis = 400) }; step(900) }
     private fun back() { rule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }; step() }
 
-    @Test fun homeAndInspireLoaded() {
+    @Ignore("2.4.1 创作页已移除灵感模块") @Test fun homeAndInspireLoaded() {
         step(1200); shot("01-home")
         toInspire(); shot("02-inspire-loaded")
     }
 
-    @Test fun inspireLoadingAndPartial() {
+    @Ignore("2.4.1 创作页已移除灵感模块") @Test fun inspireLoadingAndPartial() {
         ctx.getSharedPreferences("inspire", 0).edit().clear().commit()
         val gate = CountDownLatch(1); val wb = CountDownLatch(1)
         HotSources.fake = { s -> if (s.id == "weibo") wb.await().let { """{"data":{"realtime":[{"word":"秋天第一杯热红酒","num":1234567},{"word":"城市夜跑为什么火了","num":987654},{"word":"年轻人开始攒“情绪存款”","num":765432}]}}""" }
@@ -50,7 +51,7 @@ class V22Shots {
         gate.countDown()
     }
 
-    @Test fun inspireExpanding() {
+    @Ignore("2.4.1 创作页已移除灵感模块") @Test fun inspireExpanding() {
         val gate = CompletableDeferred<Unit>()
         Inspire.expandHook = { t -> gate.await(); t.copy(angle = "从补偿方案看大厂的人才账", view = "离职补偿正在变成一种隐形福利") }
         step(1200); toInspire()

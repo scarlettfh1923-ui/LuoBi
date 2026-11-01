@@ -28,10 +28,10 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 /**
- * 1.18 方案 C：创作页「灵感」上方的后台生成卡。
+ * 1.18 方案 C：创作页技能包列表下方的后台生成卡。
  * 进行中：写作 · 第 n 步 / 共 3 步、实时字数、正在写：标题、一行打字（左侧渐隐 + 蓝色光标）、细进度线、× 取消
  * 写好：已写好 · 3,420 字 · 已放进案头、标题、去看看
- * 看过这篇再回来：先淡出（200ms）再收起高度（280ms，标准曲线），下面的「灵感」平滑上移
+ * 看过这篇再回来：先淡出（200ms）再收起高度（280ms，标准曲线），下面的内容平滑上移
  */
 @Composable
 fun GenCardSlot(prog: GenProgress?, onCancel: () -> Unit, onOpen: (Long) -> Unit) {
