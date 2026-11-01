@@ -405,6 +405,7 @@ fun ArticleView(n: Note, versions: List<Note>, font: Float, pal: ReadPalette, fa
         Spacer(Modifier.height(16.dp))
         if (truncated) TruncatedNote(pal, onContinue, onIgnore)
         else Text("— 完 —", Modifier.fillMaxWidth(), color = pal.sub, textAlign = TextAlign.Center, fontSize = 13.sp)
+        RefsNote(n.id, n.root, pal)
         OutlineNote(n.id, n.root, pal)
         Spacer(Modifier.height(bottom + 24.dp))
     }
@@ -714,6 +715,28 @@ fun GlyphCentered(text: String, tf: android.graphics.Typeface?, size: androidx.c
         val r = android.graphics.Rect(); paint.getTextBounds(text, 0, text.length, r)
         val x = this.size.width / 2f - r.exactCenterX(); val y = this.size.height / 2f - r.exactCenterY()
         drawContext.canvas.nativeCanvas.drawText(text, x, y, paint)
+    }
+}
+
+/** 2.4：技能写作的参考资料，放在文末，默认展开，可选中复制 */
+@Composable
+fun RefsNote(id: Long, root: Long, pal: ReadPalette) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val refs by produceState<List<String>>(emptyList(), id, root) { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Refs.forNote(ctx, id, root)?.let { Refs.lines(it) }.orEmpty() } }
+    if (refs.isEmpty()) return
+    var open by remember(id) { mutableStateOf(true) }
+    Spacer(Modifier.height(20.dp))
+    Column(Modifier.fillMaxWidth().clip(Sq.l).hairline(Sq.l, pal.border).padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("参考资料 · ${refs.size} 条", Modifier.weight(1f), color = pal.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(if (open) "收起 ▴" else "展开 ▾", color = pal.sub, fontSize = 13.sp)
+        }
+        if (open) {
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.foundation.text.selection.SelectionContainer {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { refs.forEach { Text(it, color = pal.sub, fontSize = 13.sp, lineHeight = 20.sp) } }
+            }
+        }
     }
 }
 

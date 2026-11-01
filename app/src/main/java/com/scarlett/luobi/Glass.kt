@@ -63,9 +63,9 @@ object Glass {
     val fallbackDark = Color(0xFF221F1B).copy(alpha = .94f)
     val rim = Color(0xFFFFFDF8).copy(alpha = .95f)
     /** 2.3 底部导航：更强模糊 + 更不透明的宣纸色 + #E5DDCF 发丝描边，与密集内容拉开层次 */
-    val navTint = Color(0xFFFFFCF6).copy(alpha = .86f)
-    val navFallback = Color(0xFFFFFCF6).copy(alpha = .97f)
-    val navBlur = 30.dp
+    val navTint = Color(0xFFFFFCF6).copy(alpha = .78f)
+    val navFallback = Color(0xFFFFFCF6).copy(alpha = .96f)
+    val navBlur = 36.dp
     fun init(ctx: android.content.Context) {
         val am = ctx.getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
         blur = Build.VERSION.SDK_INT >= 31 && am?.isLowRamDevice != true
@@ -93,16 +93,16 @@ private val labelStyle = TextStyle(fontSize = 10.5.sp, lineHeight = 14.sp, textA
     lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both))
 
 @Composable
-fun RowScope.GridCell(icon: List<String>, label: String, on: Boolean, base: Color, sub: Color, busy: Boolean = false, glyph: Dp = GridSpec.glyph, pill: Boolean = true, onClick: () -> Unit) {
+fun RowScope.GridCell(icon: List<String>, label: String, on: Boolean, base: Color, sub: Color, busy: Boolean = false, glyph: Dp = GridSpec.glyph, pill: Boolean = true, fillOn: Boolean = true, onClick: () -> Unit) {
     val c = if (on) P3.accent else base
     Column(Modifier.weight(1f).fillMaxHeight().clip(Sq.full).clickable(onClick = onClick).semantics { selected = on }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         // 1.6 选中态：图标后面一块浅蓝胶囊（不改变网格尺寸）
         Box(Modifier.size(width = 56.dp, height = GridSpec.icon + 8.dp).clip(Sq.full).background(if (on && pill) P3.accentSoft else Color.Transparent), contentAlignment = Alignment.Center) {
-            if (busy) CircularProgressIndicator(Modifier.size(16.dp), color = P3.accent, strokeWidth = 2.dp) else SvgIcon(icon, c, glyph, if (on && !pill) c else null)
+            if (busy) CircularProgressIndicator(Modifier.size(16.dp), color = P3.accent, strokeWidth = 2.dp) else SvgIcon(icon, c, glyph, if (on && !pill && fillOn) c else null)
         }
         Spacer(Modifier.height(GridSpec.gap - 2.dp))
         Box(Modifier.heightIn(min = GridSpec.label).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text(label, style = if (on && !pill) labelStyle.copy(fontWeight = FontWeight.Bold) else labelStyle, color = if (on) P3.accent else sub, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+            Text(label, style = if (on && !pill) labelStyle.copy(fontWeight = if (fillOn) FontWeight.Bold else FontWeight.SemiBold) else labelStyle, color = if (on) P3.accent else sub, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
         }
     }
 }
@@ -117,18 +117,19 @@ fun FloatingBar(height: Dp = 64.dp, dark: Boolean = false, content: @Composable 
 /** 浮动导航 + 主按钮所需的底部留白 */
 val FloatingBarSpace = 64.dp + 8.dp + 12.dp + 12.dp
 
-/** 1.16：主导航——玻璃胶囊，选中项是一块白色胶囊，切换时轻弹簧滑动 */
+/** 2.4：主导航——更强的玻璃（36dp 模糊 + 78% 宣纸色），钢笔尖 / 叠纸 / 细线齿轮三枚新图标，选中项是一块黛青浅底胶囊，切换时轻弹簧滑动 */
 @Composable
 fun FloatingNav(sel: Int, onSel: (Int) -> Unit) {
-    val items = listOf(Triple("创作", Ic.write, 0), Triple("案头", Ic.library, 1), Triple("设定", Ic.settings, 2))
-    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp)) {
-        BoxWithConstraints(Modifier.fillMaxWidth().height(66.dp).frosted(elevation = 14.dp, lightTint = Glass.navTint, lightFallback = Glass.navFallback, blur = Glass.navBlur, rim = Hairline)) {
+    val items = listOf(Triple("创作", Ic.navWrite, 0), Triple("案头", Ic.navDesk, 1), Triple("设定", Ic.navGear, 2))
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)) {
+        BoxWithConstraints(Modifier.fillMaxWidth().height(64.dp).frosted(elevation = 14.dp, lightTint = Glass.navTint, lightFallback = Glass.navFallback, blur = Glass.navBlur, rim = Hairline)) {
             val cw = (maxWidth - 12.dp) / items.size
-            val x by animateDpAsState(cw * sel, Motion.springDp(), label = "tabPill")
-            // 选中胶囊（同心圆角：外 33 − 内边距 6 = 27）
-            Box(Modifier.padding(6.dp).offset(x = x).width(cw).fillMaxHeight().clip(Sq.full).background(P3.accent.copy(alpha = .10f)))
+            val pillW = 80.dp
+            val x by animateDpAsState(cw * sel + (cw - pillW) / 2, Motion.springDp(), label = "tabPill")
+            // 选中胶囊：宽 80、高 52（外 32 − 内边距 6 = 26 的同心圆角）
+            Box(Modifier.padding(6.dp).offset(x = x).width(pillW).fillMaxHeight().clip(Sq.full).background(P3.accentSoft))
             Row(Modifier.fillMaxSize().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                items.forEach { (l, ic, i) -> GridCell(ic, l, sel == i, P3.text3, P3.text3, pill = false) { onSel(i) } }
+                items.forEach { (l, ic, i) -> GridCell(ic, l, sel == i, P3.text3, P3.text3, pill = false, fillOn = false) { onSel(i) } }
             }
         }
     }

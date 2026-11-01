@@ -71,9 +71,9 @@ class MigrateDb19Test {
     }
     @Test fun writeStateSurvivesRecreate() {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val a = WriteState(ctx); a.raw = "口播"; a.values["想写什么"] = "W"; a.extractedFor = "口播"; a.templateId = 3; a.sheet = true; a.save()
+        val a = WriteState(ctx); a.raw = "口播"; a.values["想写什么"] = "W"; a.extractedFor = "口播"; a.templateId = 3; a.skillId = "b-x"; a.save()
         val b = WriteState(ctx)
-        assertEquals("口播", b.raw); assertEquals("W", b.values["想写什么"]); assertTrue(b.extracted); assertEquals(3L, b.templateId); assertTrue(b.sheet)
+        assertEquals("口播", b.raw); assertEquals("W", b.values["想写什么"]); assertTrue(b.extracted); assertEquals(3L, b.templateId); assertEquals("b-x", b.skillId); assertFalse(b.sheet)
         b.raw = "改了"; assertFalse(b.extracted)
     }
 }

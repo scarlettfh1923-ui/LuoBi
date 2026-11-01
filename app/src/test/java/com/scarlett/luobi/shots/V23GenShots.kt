@@ -28,14 +28,6 @@ class V23GenShots {
     private val ctx get() = RuntimeEnvironment.getApplication()
     private fun shot(n: String) { rule.mainClock.advanceTimeBy(900); rule.waitForIdle(); rule.onRoot().captureRoboImage("$dir$n.png") }
 
-    @Test fun picker() {
-        val db = AppDb.get(ctx); runBlocking { Defaults.ensure(db, ctx) }
-        val ws = WriteState(ctx).apply { raw = "周末商场里人少，奶茶店排队"; sheet = true }
-        rule.setContent { AppTheme { Box(Modifier.fillMaxSize().background(P3.bg)) { IntentSheet(db, ws, {}, {}, {}, {}) } } }
-        rule.mainClock.advanceTimeBy(900); rule.waitForIdle()
-        rule.onAllNodesWithText("模板", substring = false).onFirst().performClick()
-        rule.mainClock.advanceTimeBy(900); rule.waitForIdle(); com.github.takahirom.roborazzi.captureScreenRoboImage("${dir}01-type-picker.png")
-    }
     @Test fun settingsToggle() {
         Settings(ctx).polish23 = false
         rule.setContent { AppTheme { LengthPage {} } }

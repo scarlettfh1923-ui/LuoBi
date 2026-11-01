@@ -117,12 +117,13 @@ data class GenJob(
  */
 class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
     /** 1.18.1：只有 Android 11 及以下的加急任务才会走到这里；任何异常都退回不带类型的通知，绝不抛出 */
-    override suspend fun getForegroundInfo(): ForegroundInfo = try { fgInfo() } catch (_: Throwable) { Notif.fallback(applicationContext, NID_PROGRESS, Notif.CH_GEN, "正在写文章…") }
+    override suspend fun getForegroundInfo(): ForegroundInfo = try { fgInfo() } catch (_: Throwable) { Notif.fallback(applicationContext, NID_PROGRESS, Notif.CH_GEN, fgTitle()) }
+    private fun fgTitle() = if (inputData.getString(K_KIND) == "skill-plan") "正在搜资料…" else "正在写文章…"
     private fun fgInfo(): ForegroundInfo {
         val nm = applicationContext.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("gen", "文章生成中", NotificationManager.IMPORTANCE_LOW))
         val n: Notification = NotificationCompat.Builder(applicationContext, "gen").setSmallIcon(R.drawable.ic_stat_notify)
-            .setContentTitle("正在写文章…").setContentText(inputData.getString(K_LABEL) ?: "").setOngoing(true).setSilent(true).build()
+            .setContentTitle(fgTitle()).setContentText(inputData.getString(K_LABEL) ?: "").setOngoing(true).setSilent(true).build()
         return ForegroundInfo(NID_PROGRESS, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
@@ -131,6 +132,7 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
         val job = try { GenJob.parse(ctx.getSharedPreferences("gen", Context.MODE_PRIVATE).getString("job", "{}") ?: "{}") } catch (e: Exception) { return Result.failure() }
         // 2.0.1：前台 dataSync 通知，锁屏 / 切应用也不被系统停掉；不允许（后台启动限制等）时照常以加急任务继续
         runCatching { setForeground(fgInfo()) }
+        if (job.kind == "skill-plan" || job.kind == "skill-write") return doSkill(ctx, job)
         return try {
             val stages = if (Settings(ctx).polish23) 3 else 2
             if (job.kind != "rewrite") { GenCard.clear(ctx); report(GenProgress(1, stages = stages)) }
@@ -169,6 +171,39 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
         }
     }
 
+    /** 2.4：技能写作。skill-plan = 搜资料 + 出角度提纲（停在确认页）；skill-write = 确认后写正文 */
+    private suspend fun doSkill(ctx: Context, job: GenJob): Result = try {
+        if (SkillFlow.state.value == null) SkillFlow.load(ctx)   // 进程被杀后由 WorkManager 重新拉起时，会话还在 SharedPreferences 里
+        if (job.kind == "skill-plan") {
+            SkillRun.plan(ctx)
+            if (AppState.visible <= 0) notify(ctx, "资料搜好了", "《${SkillFlow.state.value?.topic?.take(24).orEmpty()}》的角度和提纲等你确认", 0L)
+            Result.success(workDataOf(K_KIND to job.kind))
+        } else {
+            GenCard.clear(ctx); report(GenProgress(2, stage = 2, stages = 2))
+            var last = 0L
+            val latest = kotlinx.coroutines.flow.MutableStateFlow<GenProgress?>(null)
+            val id = kotlinx.coroutines.coroutineScope {
+                val reporter = launch { latest.collect { p -> if (p != null) { report(p); SkillFlow.update(ctx, persist = false) { it.copy(words = p.words, title = p.title, line = p.line) }; kotlinx.coroutines.delay(250) } } }
+                try {
+                    SkillRun.write(ctx) { acc -> val now = System.currentTimeMillis(); if (now - last >= 250) { last = now; latest.value = SkillPeek.progress(acc) } }
+                } finally { reporter.cancel() }
+            }
+            val note = AppDb.get(ctx).notes().get(id)
+            val title = note?.title ?: ""; val w = StreamPeek.words(note?.body.orEmpty())
+            report(GenProgress(3, w, title, stage = 2, stages = 2))
+            GenCard.done(ctx, id, title, w)
+            notify(ctx, DONE_TITLE, doneText(title, w) + (if (Ai.Truncated.has(ctx, id)) "（没写完，被截断了，打开可以续写）" else ""), id)
+            Result.success(workDataOf(K_NOTE to id, K_KIND to job.kind))
+        }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        val f = SkillRun.friendly(e)
+        SkillRun.fail(ctx, job.kind, f)
+        if (AppState.visible <= 0) notify(ctx, (if (job.kind == "skill-plan") "搜资料失败：" else "生成失败：") + f.title, f.detail, 0L)
+        Result.failure(workDataOf(K_ERR_TITLE to f.title, K_ERR_DETAIL to f.detail, K_ERR_RAW to f.raw.take(400), K_ERR_SET to f.settings, K_KIND to job.kind))
+    }
+
     private suspend fun report(p: GenProgress) = try { setProgress(workDataOf(P_STEP to p.step, P_WORDS to p.words, P_TITLE to p.title, P_LINE to p.line.takeLast(60), P_STAGE to p.stage, P_STAGES to p.stages)) } catch (_: Exception) {}
 
     companion object {
@@ -186,7 +221,7 @@ class CopyWorker(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
         fun start(c: Context, job: GenJob) {
             c.getSharedPreferences("gen", Context.MODE_PRIVATE).edit().putString("job", job.json()).apply()
             val req = OneTimeWorkRequestBuilder<CopyWorker>()
-                .setInputData(workDataOf(K_LABEL to job.label))
+                .setInputData(workDataOf(K_LABEL to job.label, K_KIND to job.kind))
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .build()
             try { WorkManager.getInstance(c).enqueueUniqueWork(NAME, ExistingWorkPolicy.KEEP, req) } catch (_: Throwable) {}

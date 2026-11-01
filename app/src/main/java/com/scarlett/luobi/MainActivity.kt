@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -82,15 +83,26 @@ fun App() {
     var navDir by remember { mutableIntStateOf(0) }
     fun go(r: Route) { navDir = 1; stack.add(route); route = r }
     fun back() { navDir = -1; route = stack.removeLastOrNull() ?: Route.Tab(0) }
-    fun tab(i: Int) { navDir = if (route is Route.Tab) 0 else -1; stack.clear(); route = Route.Tab(i) }
+    // 2.4 技能包页面都在「创作」这个 tab 里：skillView = "" 创作首页 / "run" 搜资料·确认·写作流程 / "skills" 管理；底栏始终可点
+    var skillView by remember { mutableStateOf("") }
+    var planEditing by remember { mutableStateOf(false) }
+    fun tab(i: Int) { navDir = if (route is Route.Tab) 0 else -1; stack.clear(); skillView = ""; planEditing = false; route = Route.Tab(i) }
     val ws = remember { WriteState(ctx) }
+    remember { if (SkillFlow.state.value == null) SkillFlow.load(ctx); 0 }
+    val session by SkillFlow.state.collectAsState()
+    LaunchedEffect(Unit) { withContext(kotlinx.coroutines.Dispatchers.IO) { Skills.list(ctx) } }   // 预热技能包（读 assets / 文件放在后台）
     var genErr by remember { mutableStateOf<GenErr?>(null) }
     var libManaging by remember { mutableStateOf(false) }
     val host = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { Snack.flow.collect { m -> host.currentSnackbarData?.dismiss(); launch { host.showSnackbar(m) } } }
     LaunchedEffect(Unit) { AppState.sharedText.collect { t -> if (t != null) { ws.reset(); ws.raw = t; ws.saveRaw(); tab(0); AppState.sharedText.value = null } } }
-    BackHandler(libManaging || route != Route.Tab(0)) {
-        when { libManaging -> libManaging = false; route is Route.Tab -> tab(0); else -> back() }
+    BackHandler(libManaging || route != Route.Tab(0) || skillView != "") {
+        when {
+            libManaging -> libManaging = false
+            route is Route.Tab && skillView != "" -> if (planEditing) planEditing = false else skillView = ""
+            route is Route.Tab -> tab(0)
+            else -> back()
+        }
     }
 
     // 生成跑在 WorkManager（进程级），切后台 / 旋转 / 页面销毁都不会中断
@@ -101,7 +113,7 @@ fun App() {
     val running = info != null && !info.state.isFinished
     val runningKind = remember(info?.id) { if (running) (try { GenJob.parse(genPrefs.getString("job", "{}") ?: "{}").kind } catch (_: Exception) { "write" }) else "" }
     // 1.18：不再弹全屏遮罩；写作的进度在创作页卡片里，改写用底部进行中提示
-    val genProg = if (running && runningKind != "rewrite") CopyWorker.progressOf(info!!.progress) else null
+    val genProg = if (running && runningKind != "rewrite" && runningKind != "skill-plan") CopyWorker.progressOf(info!!.progress) else null
     LaunchedEffect(running, runningKind) { if (running && runningKind == "rewrite") snackBusy("正在改写…可以先做别的，改好会提醒你") }
     LaunchedEffect(Unit) { GenCard.load(ctx) }
     val notifGate = rememberNotifGate()
@@ -112,6 +124,17 @@ fun App() {
         val wid = i.id.toString()
         if (genPrefs.getString("seen", null) == wid) return@LaunchedEffect
         genPrefs.edit().putString("seen", wid).apply()
+        val doneJob = try { GenJob.parse(genPrefs.getString("job", "{}") ?: "{}") } catch (_: Exception) { null }
+        if (doneJob?.kind == "skill-plan" || doneJob?.kind == "skill-write") {
+            // 技能写作：状态都在 SkillFlow 里（SkillRun 已经把阶段改好），这里只做提示，不走 genErr / 清输入框
+            CopyWorker.clearDoneNotice(ctx)
+            when (i.state) {
+                androidx.work.WorkInfo.State.CANCELLED -> snack(if (doneJob.kind == "skill-plan") "已取消搜资料" else "已取消写正文，提纲还在")
+                androidx.work.WorkInfo.State.FAILED -> if (skillView != "run" && route is Route.Tab) snack(if (doneJob.kind == "skill-plan") "搜资料没成功，点创作页的提示可以重试" else "正文没写成，提纲还在", false)
+                else -> {}
+            }
+            return@LaunchedEffect
+        }
         when (i.state) {
             androidx.work.WorkInfo.State.SUCCEEDED -> {
                 val id = i.outputData.getLong(CopyWorker.K_NOTE, 0L)
@@ -136,6 +159,68 @@ fun App() {
             else -> {}
         }
     }
+    // 技能写作：写好后——人还在流程页就直接打开文章；不在就收起会话，创作页的「已写好」卡片接手
+    val sessionDone = session?.takeIf { it.phase == "done" }
+    LaunchedEffect(sessionDone?.noteId, skillView, route) {
+        val d = sessionDone ?: return@LaunchedEffect
+        if (skillView == "run" && route == Route.Tab(0) && d.noteId > 0) { GenCard.clear(ctx); CopyWorker.clearDoneNotice(ctx); SkillFlow.clear(ctx); skillView = ""; planEditing = false; go(Route.Read(d.noteId)) }
+        else if (skillView != "run") SkillFlow.clear(ctx)
+    }
+    LaunchedEffect(session == null, skillView) { if (session == null && skillView == "run") skillView = "" }
+    // 进行中却没有后台任务：被系统收走了（给 WorkManager 2 秒回报状态，再判定）
+    var stale by remember { mutableStateOf(false) }
+    LaunchedEffect(session?.phase, session?.startedAt, running) {
+        stale = false
+        if (session?.busy == true && !running) { kotlinx.coroutines.delay(2000); stale = true }
+    }
+    var confirmAsk by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    fun launchPlan(topic: String, pack: SkillPack, model: String, clearInput: Boolean) {
+        notifGate {
+            SkillFlow.start(ctx, topic, pack, model)
+            CopyWorker.start(ctx, GenJob(kind = "skill-plan", raw = topic, templateName = pack.displayName, model = model))
+            if (clearInput) { ws.raw = ""; ws.saveRaw() }
+            genErr = null; planEditing = false; skillView = "run"
+        }
+    }
+    fun startSkill(topic: String, pack: SkillPack, model: String) {
+        val cur = SkillFlow.state.value
+        when {
+            running || cur?.busy == true -> snack("正在写一篇，写完再开始下一篇", false)
+            cur != null && cur.phase == "confirm" -> confirmAsk = "开始新的会丢掉上一篇还没确认的角度和提纲，要继续吗？" to { launchPlan(topic, pack, model, true) }
+            else -> launchPlan(topic, pack, model, true)
+        }
+    }
+    fun confirmWrite(plan: SkillPlan) {
+        val cur = SkillFlow.state.value ?: return
+        if (running) { snack("稍等一下再点", false); return }
+        notifGate {
+            SkillFlow.set(ctx, cur.copy(phase = "write", plan = plan, err = null, words = 0, title = "", line = "", startedAt = System.currentTimeMillis()))
+            CopyWorker.start(ctx, GenJob(kind = "skill-write", raw = cur.topic, templateName = cur.skillName, model = cur.model))
+            planEditing = false
+        }
+    }
+    fun restartPlan() {
+        val cur = SkillFlow.state.value ?: return
+        val pack = Skills.find(ctx, cur.skillId)
+        if (pack == null) { SkillFlow.clear(ctx); skillView = ""; snack("这个技能包已被删除，请重新选一个", false); return }
+        if (running) { CopyWorker.cancel(ctx) }
+        launchPlan(cur.topic, pack, cur.model, false)
+    }
+    fun cancelSkill() {
+        val cur = SkillFlow.state.value ?: return
+        CopyWorker.cancel(ctx)
+        if (cur.phase == "plan") {
+            SkillFlow.clear(ctx); skillView = ""
+            if (ws.raw.isBlank()) { ws.raw = cur.topic; ws.saveRaw() }
+            ws.skillId = cur.skillId; ws.saveSkill()
+        } else if (cur.phase == "write") SkillFlow.set(ctx, cur.copy(phase = "confirm", err = null))
+    }
+    fun retrySkill() { val cur = SkillFlow.state.value ?: return; if (cur.phase == "write") SkillFlow.set(ctx, cur.copy(phase = "confirm", err = null)) else restartPlan() }
+    fun closeSkill() {
+        val cur = SkillFlow.state.value
+        SkillFlow.clear(ctx); skillView = ""
+        if (cur != null && ws.raw.isBlank()) { ws.raw = cur.topic; ws.saveRaw(); ws.skillId = cur.skillId; ws.saveSkill() }
+    }
     LaunchedEffect(Unit) {
         AppState.openNote.collect { id -> if (id > 0) { CopyWorker.clearDoneNotice(ctx); go(Route.Read(id)); AppState.openNote.value = 0L } }
     }
@@ -150,7 +235,20 @@ fun App() {
                     Box(Modifier.fillMaxSize().backdropSource(bd).padding(top = pad.calculateTopPadding())) { CompositionLocalProvider(LocalBackdrop provides null) { // 1.18.1：模糊来源内部的玻璃不能再取样自己（Haze 递归绘制 → 闪退）
                         val bottom = pad.calculateBottomPadding()
                         when (r.i) {
-                            0 -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) }, genProg, { CopyWorker.cancel(ctx) }) { go(Route.Read(it)) }
+                            0 -> {
+                                val view = if (skillView == "run" && session != null) "run" else if (skillView == "skills") "skills" else ""
+                                androidx.compose.animation.Crossfade(view, animationSpec = androidx.compose.animation.core.tween(180), label = "skill") { v ->
+                                    when (v) {
+                                        "skills" -> SkillManagePage(bottom, { skillView = "" }, statusPad = false)
+                                        "run" -> session?.let { sx ->
+                                            SkillFlowScreen(sx, stale, bottom, planEditing, { planEditing = it }, { if (planEditing) planEditing = false else skillView = "" }, ::cancelSkill, ::confirmWrite,
+                                                { confirmAsk = "重新搜一遍会丢掉现在的角度和提纲（包括你改过的），要继续吗？" to { restartPlan() } }, ::retrySkill, ::closeSkill, { go(Route.Sub("models")) })
+                                        }
+                                        else -> WriteScreen(db, ws, bottom, genErr, { genErr = null }, { go(Route.Sub("models")) }, genProg, { CopyWorker.cancel(ctx) }, { go(Route.Read(it)) },
+                                            session, { skillView = "skills" }, { skillView = "run"; planEditing = false }, ::startSkill)
+                                    }
+                                }
+                            }
                             1 -> LibraryScreen(db, bottom, { tab(0) }, libManaging, { libManaging = it }) { go(Route.Read(it)) }
                             else -> SettingsHome(db, bottom) { go(Route.Sub(it)) }
                         }
@@ -160,8 +258,7 @@ fun App() {
                 is Route.Sub -> SubPage(db, r, ::back) { go(it) }
             }
         }
-        // 1.9：意图卡底部弹层画在最外层（不在 Scaffold 里），键盘留白只算一次
-        if (route == Route.Tab(0)) IntentSheet(db, ws, { go(Route.Sub("models")) }, { go(Route.Sub("length")) }, { go(Route.Sub("template:$it")) }) { j -> ws.sheet = false; val busy = running; startGen(j); if (!busy && j.kind == "write") ws.clearAfterSubmit() }
+        confirmAsk?.let { (msg, ok) -> ConfirmDialog("确认一下", msg, "继续", onOk = { confirmAsk = null; ok() }, onDismiss = { confirmAsk = null }) }
         SnackbarHost(host, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = 96.dp)) { SoftSnackbar(it) }
     }
 }

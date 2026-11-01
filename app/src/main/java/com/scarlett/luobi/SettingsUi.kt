@@ -39,7 +39,8 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
         item { BigTitle("设定") }
         item { RowGroup("创作", listOf(
             { SettingRow(Ic.key, "模型与密钥", "${s.configured().size} 个") { go("models") } },
-            { SettingRow(Ic.tpl, "模板管理", "${templates.size} 个") { go("templates") } },
+            { SettingRow(Ic.skillDoc, "技能包", "${Skills.builtIns(ctx).size} 个内置 · 管理与导入") { go("skills") } },
+            { SettingRow(Ic.tpl, "模板管理", "已由技能包取代 · 仅留存 ${templates.size} 个") { go("templates") } },
             { SettingRow(Ic.search, "事实校对", run {
                 val ss = Settings(LocalContext.current)
                 val search = FactCheck.SearchProvider.many(ss.factSearch).joinToString("+") { it.label.replace("（推荐）", "") }
@@ -47,7 +48,6 @@ fun SettingsHome(db: AppDb, bottom: Dp, go: (String) -> Unit) {
                 "${search}检索 · $check"
             }) { go("factcheck") } },
             { SettingRow(Ic.wand, "每日选题提示词", if (Settings(LocalContext.current).inspirePrompt.trim() == Inspire.DEFAULT_PROMPT.trim()) "默认" else "已修改") { go("inspire") } },
-            { SettingRow(Ic.wand, "意图提取提示词", if (active?.prompt?.trim() == Defaults.INTENT.trim()) "默认" else "已修改") { go("cleans") } },
             { SettingRow(Ic.ruler, "篇幅", Lengths.NAMES[s.length.coerceIn(0, 2)] + " · " + s.lengthRange().let { "${it.first}–${it.second}" }) { go("length") } })) }
         item { RowGroup("分享与图片", listOf(
             { SettingRow(Ic.share, "分享栏", "${s.shareBar.size} 项") { go("sharebar") } },
@@ -70,6 +70,7 @@ fun SubPage(db: AppDb, r: Route.Sub, back: () -> Unit, go: (Route) -> Unit) {
         // 1.8 修复：底栏留白已经垫过了，告诉子页面这段已被消耗，imePadding 只补超出的部分（之前叠加 = 键盘上方一块空白）
         Box(Modifier.padding(bottom = pad.calculateBottomPadding()).consumeWindowInsets(PaddingValues(bottom = pad.calculateBottomPadding()))) {
             when (name) {
+                "skills" -> SkillManagePage(0.dp, back, statusPad = true)
                 "templates" -> TemplatesPage(db, back, sub)
                 "template" -> TemplateEdit(db, arg, back)
                 "cleans" -> CleansPage(db, back)
